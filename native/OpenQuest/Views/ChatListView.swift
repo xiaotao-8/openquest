@@ -136,7 +136,7 @@ private struct ConversationRow: View {
         HStack(spacing: 12) {
             AvatarDisc(text: avatar.text, hue: avatar.hue, size: 50)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline) {
                     Text(conversation.title)
                         .font(.body.weight(.semibold))
                         .lineLimit(1)
