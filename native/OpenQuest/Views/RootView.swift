@@ -1,3 +1,5 @@
+import SwiftUI
+
 /// 根视图：聊天为主页，底部悬浮玻璃标签栏（聊天 / 技能 / 浏览器 / 设置），
 /// 跟 Muse App 一样的壳。进聊天后标签栏还在，点标签回主页切页。
 struct RootView: View {
