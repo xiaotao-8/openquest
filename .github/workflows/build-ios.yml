@@ -23,20 +23,26 @@ jobs:
       - name: 取代码
         uses: actions/checkout@v4
 
-      - name: 装 Flutter 3.50.0（与本地开发 SDK 对齐）
+      - name: 装 Flutter 3.47.6（上游原项目发布用的版本）
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.50.0
+          flutter-version: 3.47.6
           cache: true
+
+      - name: 关闭 Swift Package Manager（上游同款设置）
+        run: flutter config --no-enable-swift-package-manager
 
       - name: 拉依赖
         run: flutter pub get
 
-      - name: 装原生编译工具（meson/ninja/llvm/lld）
-        # 说明：语音等原生依赖（sherpa_onnx）编译时需要这套工具，
-        # GitHub 的 macOS 机器默认没装，缺了会在 Xcode 构建末尾报错。
-        run: brew install meson ninja llvm lld
+      - name: 准备 iSH 沙箱产物（含 fakefsify 工具）
+        # 说明：Xcode 工程引用了 ios/sandbox/build/fakefsify 这个宿主工具，
+        # 须先跑 ensure_artifacts.sh 把它编出来，否则构建会报
+        # unknown target 'tools/fakefsify'。上游原项目就是这么做的。
+        run: |
+          brew install meson ninja llvm lld libarchive
+          ios/sandbox/ensure_artifacts.sh
 
       - name: 构建 iOS（release、不签名）
         # 说明：不用 `flutter build ipa --no-codesign`——它只产出 .xcarchive，
