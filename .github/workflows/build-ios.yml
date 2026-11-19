@@ -33,6 +33,11 @@ jobs:
       - name: 拉依赖
         run: flutter pub get
 
+      - name: 装原生编译工具（meson/ninja/llvm/lld）
+        # 说明：语音等原生依赖（sherpa_onnx）编译时需要这套工具，
+        # GitHub 的 macOS 机器默认没装，缺了会在 Xcode 构建末尾报错。
+        run: brew install meson ninja llvm lld
+
       - name: 构建 iOS（release、不签名）
         # 说明：不用 `flutter build ipa --no-codesign`——它只产出 .xcarchive，
         # 无签名时无法导出 .ipa。改用 build ios 拿到 Runner.app 后手动打包，
