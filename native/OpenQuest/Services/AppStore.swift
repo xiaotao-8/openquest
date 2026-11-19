@@ -118,6 +118,36 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    /// 从供应商接口自动拉模型列表（GET /models），本地没有的补进来。
+    func fetchModels(providerId: UUID) async -> String {
+        guard let p = providers.first(where: { $0.id == providerId }) else { return "供应商不见了" }
+        guard let key = KeychainHelper.key(ref: p.keyRef), !key.isEmpty else { return "先填 Key 才能拉" }
+        let base = p.baseURL.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: base + "/models") else { return "接口地址不对" }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 30
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200 else { return "服务返回 \(code)" }
+            guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let list = root["data"] as? [[String: Any]] else { return "列表格式看不懂" }
+            let ids = list.compactMap { $0["id"] as? String }
+            guard let i = providers.firstIndex(where: { $0.id == providerId }) else { return "供应商不见了" }
+            var added = 0
+            for id in ids where !providers[i].models.contains(where: { $0.id == id }) {
+                providers[i].models.append(AIModel(id: id))
+                added += 1
+            }
+            save()
+            return added > 0 ? "新拉到 \(added) 个" : "共 \(ids.count) 个，已都在"
+        } catch {
+            return "拉取失败"
+        }
+    }
+
     func setProviderKey(id: UUID, apiKey: String) {
         guard let p = providers.first(where: { $0.id == id }) else { return }
         if apiKey.isEmpty { KeychainHelper.deleteKey(ref: p.keyRef) }

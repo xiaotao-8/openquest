@@ -52,6 +52,7 @@ struct ProvidersView: View {
             ForEach(store.providers) { p in
                 Section {
                     KeyRow(provider: p)
+                    FetchModelsRow(providerId: p.id)
                     ForEach(p.models) { m in
                         Text(m.name)
                     }
@@ -78,6 +79,35 @@ struct ProvidersView: View {
             }
         }
         .sheet(isPresented: $showingAdd) { AddProviderView() }
+    }
+}
+
+/// 自动拉模型列表行：点一下从供应商接口把模型都拉回来，不用手填。
+private struct FetchModelsRow: View {
+    @EnvironmentObject var store: AppStore
+    let providerId: UUID
+    @State private var busy = false
+    @State private var status: String?
+
+    var body: some View {
+        Button {
+            busy = true
+            Task {
+                status = await store.fetchModels(providerId: providerId)
+                busy = false
+            }
+        } label: {
+            HStack {
+                Text("自动获取模型列表").foregroundStyle(.primary)
+                Spacer()
+                if busy {
+                    ProgressView()
+                } else if let status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .disabled(busy)
     }
 }
 

@@ -173,16 +173,23 @@ struct ChatView: View {
             hops += 1
             working = [(speaker.name, "正在回复…")]
             setWorking("\(speaker.name) 正在回复…")
-            let result = await replyFrom(speaker)
+            // 先放一个空消息占位，流式分片到了就往里填，界面上就是逐字出现。
+            let placeholder = Message(senderId: speaker.id.uuidString, text: "")
+            append(placeholder)
+            let result = await replyFrom(speaker, placeholderId: placeholder.id)
             setWorking(nil)
-            guard let result else { break }
+            guard let result else { removeMessage(id: placeholder.id); break }
             switch result {
             case .text(let reply, let reasoning):
-                guard !reply.isEmpty else { return }
-                append(Message(senderId: speaker.id.uuidString, text: reply, reasoning: reasoning))
+                if reply.isEmpty {
+                    updateMessage(id: placeholder.id, text: "（没收到回复）", reasoning: reasoning)
+                } else {
+                    updateMessage(id: placeholder.id, text: reply, reasoning: reasoning)
+                }
                 floorHolder = mentionedMember(in: reply, members: members, excluding: speaker)
             case .card(let card):
-                // 卡片挂起等用户作答，本轮结束。
+                // 卡片挂起等用户作答，本轮结束；占位消息撤掉。
+                removeMessage(id: placeholder.id)
                 if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
                     store.conversations[i].pendingCard = card
                     store.save()
@@ -190,6 +197,22 @@ struct ChatView: View {
                 return
             }
         }
+    }
+
+    private func updateMessage(id: UUID, text: String, reasoning: String?) {
+        guard let ci = store.conversations.firstIndex(where: { $0.id == conversationId }),
+              let mi = store.conversations[ci].messages.firstIndex(where: { $0.id == id })
+        else { return }
+        store.conversations[ci].messages[mi].text = text
+        store.conversations[ci].messages[mi].reasoning = reasoning
+        store.conversations[ci].lastActivity = Date()
+        store.save()
+    }
+
+    private func removeMessage(id: UUID) {
+        guard let ci = store.conversations.firstIndex(where: { $0.id == conversationId }) else { return }
+        store.conversations[ci].messages.removeAll { $0.id == id }
+        store.save()
     }
 
     /// 第一个发言的人：用户 @ 了谁就是谁；没 @ 时选「最久没发言」的成员轮换，
@@ -207,14 +230,15 @@ struct ChatView: View {
         members.first { $0.id != excluding?.id && text.contains("@\($0.name)") }
     }
 
-    private func replyFrom(_ agent: Agent) async -> AgentRunner.TurnResult? {
+    private func replyFrom(_ agent: Agent, placeholderId: UUID) async -> AgentRunner.TurnResult? {
         guard let conv = conversation,
               let provider = store.providers.first(where: { $0.id.uuidString == agent.providerKey }),
               !agent.modelId.isEmpty
         else {
             return .text("（我还没配好模型，去我的设置里给我选一个供应商和模型。）", reasoning: nil)
         }
-        let history: [(role: String, content: String)] = conv.messages.map { m in
+        // 历史不带最后那条空占位。
+        let history: [(role: String, content: String)] = conv.messages.dropLast().map { m in
             if m.senderId == "user" { return (role: "user", content: m.text) }
             if m.senderId == agent.id.uuidString { return (role: "assistant", content: m.text) }
             let name = store.agent(id: UUID(uuidString: m.senderId) ?? UUID())?.name ?? "成员"
@@ -222,7 +246,12 @@ struct ChatView: View {
         }
         do {
             return try await AgentRunner(provider: provider, server: store.server)
-                .reply(agent: agent, history: history)
+                .reply(agent: agent, history: history) { content, reasoning in
+                    Task { @MainActor in
+                        self.updateMessage(id: placeholderId, text: content,
+                                           reasoning: reasoning.isEmpty ? nil : reasoning)
+                    }
+                }
         } catch {
             return .text("（出错了：\(error.localizedDescription)）", reasoning: nil)
         }
@@ -316,6 +345,14 @@ private struct MessageBubble: View {
     private var isUser: Bool { message.senderId == "user" }
     private var sender: Agent? { store.agent(id: UUID(uuidString: message.senderId) ?? UUID()) }
 
+    /// Markdown 渲染：粗体/斜体/行内代码/链接按格式显示，解析不了就原文。
+    private var rendered: AttributedString {
+        (try? AttributedString(
+            markdown: message.text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(message.text)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             if isUser { Spacer(minLength: 40) }
@@ -337,7 +374,8 @@ private struct MessageBubble: View {
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 10))
                 }
-                Text(message.text)
+                Text(rendered)
+                    .textSelection(.enabled)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(isUser ? Color.blue : Color(white: 0.15))
                     .foregroundStyle(.white)

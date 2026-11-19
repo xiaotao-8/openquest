@@ -24,7 +24,10 @@ struct AgentRunner {
         case card(CardPayload)
     }
 
-    func reply(agent: Agent, history: [(role: String, content: String)]) async throws -> TurnResult {
+    /// 流式回复：模型吐字就回调 onDelta（正文累计、思考累计），界面边收边显示。
+    /// 工具调用也在流里拼出来，拼完照常执行/转卡片，之后继续流式。
+    func reply(agent: Agent, history: [(role: String, content: String)],
+               onDelta: @escaping (String, String) -> Void) async throws -> TurnResult {
         guard let key = KeychainHelper.key(ref: provider.keyRef), !key.isEmpty else {
             throw RunnerError.noKey
         }
@@ -39,6 +42,7 @@ struct AgentRunner {
         }
 
         var reasoningAll = ""
+        var contentAll = ""
         for _ in 0..<6 {  // 最多 6 轮工具调用，防死循环乱调
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
@@ -49,49 +53,74 @@ struct AgentRunner {
                 "model": agent.modelId,
                 "messages": messages,
                 "tools": AgentTools.definitions,
+                "stream": true,
             ])
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (bytes, resp) = try await URLSession.shared.bytes(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard code == 200 else { throw RunnerError.badStatus(code) }
-            guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = root["choices"] as? [[String: Any]],
-                  let msg = choices.first?["message"] as? [String: Any]
-            else { throw RunnerError.badResponse }
-            if let r = msg["reasoning_content"] as? String, !r.isEmpty {
-                reasoningAll += r
+
+            // 拼流式分片：正文、思考、工具调用（按 index 分片拼参数）。
+            var toolCalls: [Int: (id: String, name: String, args: String)] = [:]
+            for try await line in bytes.lines {
+                guard line.hasPrefix("data:") else { continue }
+                let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                if payload == "[DONE]" { break }
+                guard let data = payload.data(using: .utf8),
+                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let delta = (root["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any]
+                else { continue }
+                if let c = delta["content"] as? String { contentAll += c }
+                if let r = delta["reasoning_content"] as? String { reasoningAll += r }
+                if let r = delta["reasoning"] as? String { reasoningAll += r }
+                if let calls = delta["tool_calls"] as? [[String: Any]] {
+                    for call in calls {
+                        let idx = call["index"] as? Int ?? 0
+                        var cur = toolCalls[idx] ?? (id: "", name: "", args: "")
+                        if let id = call["id"] as? String { cur.id = id }
+                        if let fn = call["function"] as? [String: Any] {
+                            if let n = fn["name"] as? String { cur.name += n }
+                            if let a = fn["arguments"] as? String { cur.args += a }
+                        }
+                        toolCalls[idx] = cur
+                    }
+                }
+                onDelta(contentAll, reasoningAll)
             }
 
-            if let calls = msg["tool_calls"] as? [[String: Any]], !calls.isEmpty {
+            if !toolCalls.isEmpty {
+                let ordered = toolCalls.sorted { $0.key < $1.key }.map { $0.value }
                 // 提问卡 / 审批卡要等用户在界面上作答：直接把卡片交出去，本轮结束。
-                for call in calls {
-                    let fn = call["function"] as? [String: Any]
-                    let name = fn?["name"] as? String ?? ""
-                    let args = fn?["arguments"] as? String ?? "{}"
-                    if name == AgentTools.askUserName, let card = Self.askCard(from: args) {
+                for call in ordered {
+                    if call.name == AgentTools.askUserName, let card = Self.askCard(from: call.args) {
                         return .card(card)
                     }
-                    if name == AgentTools.approvalName, let card = Self.approvalCard(from: args) {
+                    if call.name == AgentTools.approvalName, let card = Self.approvalCard(from: call.args) {
                         return .card(card)
                     }
                 }
-                messages.append(msg)
-                for call in calls {
-                    let fn = call["function"] as? [String: Any]
-                    let name = fn?["name"] as? String ?? ""
-                    let args = fn?["arguments"] as? String ?? "{}"
+                messages.append([
+                    "role": "assistant",
+                    "content": contentAll,
+                    "tool_calls": ordered.map { call in
+                        ["id": call.id, "type": "function",
+                         "function": ["name": call.name, "arguments": call.args]] as [String: Any]
+                    },
+                ])
+                for call in ordered {
                     let result = await AgentTools.execute(
-                        name: name, argumentsJSON: args,
+                        name: call.name, argumentsJSON: call.args,
                         agentId: agent.id.uuidString, server: server)
                     messages.append([
                         "role": "tool",
-                        "tool_call_id": call["id"] as? String ?? "",
+                        "tool_call_id": call.id,
                         "content": result,
                     ])
                 }
+                contentAll = ""
                 continue
             }
-            return .text((msg["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-                         reasoning: reasoningAll.isEmpty ? nil : reasoningAll)
+            let finalText = contentAll.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .text(finalText, reasoning: reasoningAll.isEmpty ? nil : reasoningAll)
         }
         return .text("（工具调用轮数用完了，先停一下）", reasoning: nil)
     }

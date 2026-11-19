@@ -37,8 +37,6 @@ struct ChatListView: View {
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption).foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 16).padding(.vertical, 10)
                             .contentShape(Rectangle())
