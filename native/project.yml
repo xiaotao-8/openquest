@@ -1,0 +1,15 @@
+name: OpenQuest
+options:
+  bundleIdPrefix: com.xiaotao
+  deploymentTarget:
+    iOS: "26.0"
+targets:
+  OpenQuest:
+    type: application
+    platform: iOS
+    sources: [OpenQuest]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.xiaotao.openquest
+      INFOPLIST_FILE: OpenQuest/Info.plist
+      SWIFT_VERSION: "5.9"
+      TARGETED_DEVICE_FAMILY: "1,2"
