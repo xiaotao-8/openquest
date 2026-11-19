@@ -41,22 +41,27 @@ struct ChatView: View {
                     }
                 }
             }
-            Divider()
-            HStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 9) {
                 TextField("说点什么", text: $input, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
                 Button {
                     let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty, !running else { return }
                     input = ""
                     Task { await send(text) }
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color.blue, in: Circle())
+                        .glassEffect(.regular.interactive(), in: Circle())
                 }
                 .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || running)
             }
-            .padding(10)
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
         .background(Color.black)
         .navigationTitle(conversation?.title ?? "聊天")
@@ -259,7 +264,7 @@ struct CardView: View {
             }
         }
         .padding(12)
-        .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 14))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func approvalColor(_ opt: CardOption) -> Color {

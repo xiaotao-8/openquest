@@ -81,10 +81,14 @@ workflows:
             -destination "id=$SIM_UDID" -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO
           APP=$(find build-sim/Build/Products -name "OpenQuest.app" -maxdepth 3 | head -1)
           xcrun simctl install "$SIM_UDID" "$APP"
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest
+          sleep 3
+          xcrun simctl io "$SIM_UDID" screenshot preview-empty.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed
           sleep 3
           xcrun simctl io "$SIM_UDID" screenshot preview-list.png
-          ls -lh preview-list.png
+          ls -lh preview-empty.png preview-list.png
       - name: 设备版未签名 IPA
         script: |
           cd native
@@ -97,4 +101,5 @@ workflows:
           ls -lh OpenQuestNative-unsigned.ipa
     artifacts:
       - native/preview-list.png
+      - native/preview-empty.png
       - native/OpenQuestNative-unsigned.ipa
