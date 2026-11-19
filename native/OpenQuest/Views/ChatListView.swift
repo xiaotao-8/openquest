@@ -16,8 +16,36 @@ struct ChatListView: View {
     var body: some View {
         Group {
             if store.conversations.isEmpty {
-                EmptyHomeView { showingNewChat = true }
+                EmptyHomeView(
+                    onDirect: { path.append(store.ensureDirectChat()) },
+                    onCreate: { showingNewChat = true }
+                )
             } else {
+                VStack(spacing: 0) {
+                    if !store.conversations.contains(where: { $0.title == "直接聊" }) {
+                        Button {
+                            path.append(store.ensureDirectChat())
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                    .font(.system(size: 20))
+                                    .frame(width: 50, height: 50)
+                                    .glassEffect(.regular, in: Circle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("直接聊").font(.body.weight(.semibold))
+                                    Text("不用建智能体，点开就能聊")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 78)
+                    }
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filtered) { conv in
@@ -36,6 +64,7 @@ struct ChatListView: View {
                         }
                     }
                 }
+                }
             }
         }
         .background(Color.black)
@@ -52,8 +81,9 @@ struct ChatListView: View {
     }
 }
 
-/// 空状态：什么都不预置，但空得有设计——玻璃圆钮 + 一句引导 + 大按钮。
+/// 空状态：打开就能直接聊，不用先建智能体；想组队再去建。
 private struct EmptyHomeView: View {
+    let onDirect: () -> Void
     let onCreate: () -> Void
 
     var body: some View {
@@ -64,18 +94,21 @@ private struct EmptyHomeView: View {
                 .foregroundStyle(.white)
                 .frame(width: 84, height: 84)
                 .glassEffect(.regular, in: Circle())
-            Text("还没有聊天")
+            Text("想聊就聊")
                 .font(.title3.weight(.semibold))
-            Text("先建一个智能体，给它选好模型，\n再拉它单聊或者组个群。")
+            Text("点下面直接开聊，第一次会让你选个免费源填 Key。\n想组智能体团队，再点新建。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button(action: onCreate) {
-                Label("新建", systemImage: "plus")
+            Button(action: onDirect) {
+                Label("直接聊", systemImage: "bubble.left.and.bubble.right.fill")
                     .font(.body.weight(.semibold))
-                    .padding(.horizontal, 22).padding(.vertical, 11)
+                    .padding(.horizontal, 26).padding(.vertical, 12)
             }
             .glassEffect(.regular.interactive(), in: Capsule())
+            Button("新建智能体 / 建群", action: onCreate)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .frame(maxWidth: .infinity)

@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var running = false
     @State private var working: [(name: String, action: String)] = []
     @State private var showingWorkingPanel = false
+    @State private var showingProviders = false
 
     private var conversation: Conversation? {
         store.conversations.first { $0.id == conversationId }
@@ -66,6 +67,40 @@ struct ChatView: View {
         .background(Color.black)
         .navigationTitle(conversation?.title ?? "聊天")
         .navigationBarTitleDisplayMode(.inline)
+        // 单聊（含直接聊）右上角换模型：不用退回设置里改。
+        .toolbar {
+            if let conv = conversation, conv.memberIds.count == 1,
+               let agent = store.agent(id: conv.memberIds[0]) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ForEach(store.providers) { p in
+                            ForEach(p.models) { m in
+                                Button {
+                                    store.setAgentModel(agentId: agent.id, provider: p, modelId: m.id)
+                                } label: {
+                                    if agent.providerKey == p.id.uuidString && agent.modelId == m.id {
+                                        Label("\(p.name) · \(m.name)", systemImage: "checkmark")
+                                    } else {
+                                        Text("\(p.name) · \(m.name)")
+                                    }
+                                }
+                            }
+                        }
+                        if !store.providers.isEmpty { Divider() }
+                        Button {
+                            showingProviders = true
+                        } label: {
+                            Label("添加供应商（免费源）", systemImage: "plus.circle")
+                        }
+                    } label: {
+                        Image(systemName: "cpu")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingProviders) {
+            NavigationStack { ProvidersView() }
+        }
         // 干活小窗：浮在右下，显示几个人在干活；点开是大面板，写清谁在干什么。
         .overlay(alignment: .bottomTrailing) {
             if !working.isEmpty {

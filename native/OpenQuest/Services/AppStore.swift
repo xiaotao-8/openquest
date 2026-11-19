@@ -47,6 +47,33 @@ final class AppStore: ObservableObject {
 
     func agent(id: UUID) -> Agent? { agents.first { $0.id == id } }
 
+    /// 直接聊：不用先建智能体。第一次点时自动备好一个「助手」，
+    /// 自动挑第一个可用的供应商模型；用户随时能在聊天页右上角换模型。
+    func ensureDirectChat() -> UUID {
+        if let existing = conversations.first(where: { $0.title == "直接聊" }) {
+            return existing.id
+        }
+        var a = Agent(name: "助手", tintHue: 0.62)
+        let usable = providers.first(where: { providerHasKey($0) && !$0.models.isEmpty })
+            ?? providers.first(where: { !$0.models.isEmpty })
+        if let p = usable {
+            a.providerKey = p.id.uuidString
+            a.modelId = p.models[0].id
+        }
+        agents.append(a)
+        let conv = Conversation(title: "直接聊", memberIds: [a.id])
+        conversations.insert(conv, at: 0)
+        save()
+        return conv.id
+    }
+
+    func setAgentModel(agentId: UUID, provider: ModelProvider, modelId: String) {
+        guard let i = agents.firstIndex(where: { $0.id == agentId }) else { return }
+        agents[i].providerKey = provider.id.uuidString
+        agents[i].modelId = modelId
+        save()
+    }
+
     func createAgent(name: String) {
         agents.append(Agent(name: name))
         save()
