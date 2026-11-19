@@ -46,7 +46,17 @@ struct ChatListView: View {
                     }
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        Color.clear.frame(height: 2)
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField("搜索", text: $searchText)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        .padding(.bottom, 6)
                         ForEach(filtered) { conv in
                             Button { path.append(conv.id) } label: {
                                 ConversationRow(conversation: conv)
@@ -69,7 +79,6 @@ struct ChatListView: View {
         }
         .background(Color.black)
         .navigationTitle("聊天")
-        .searchable(text: $searchText, prompt: "搜索")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingNewChat = true } label: {
