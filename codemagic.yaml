@@ -98,7 +98,11 @@ workflows:
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed
           sleep 3
           xcrun simctl io "$SIM_UDID" screenshot preview-list.png
-          ls -lh preview-empty.png preview-list.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewChat
+          sleep 3
+          xcrun simctl io "$SIM_UDID" screenshot preview-chat.png
+          ls -lh preview-empty.png preview-list.png preview-chat.png
       - name: 设备版未签名 IPA
         script: |
           cd native
@@ -112,4 +116,5 @@ workflows:
     artifacts:
       - native/preview-list.png
       - native/preview-empty.png
+      - native/preview-chat.png
       - native/OpenQuestNative-unsigned.ipa

@@ -100,13 +100,15 @@ enum AgentTools {
 
     /// 执行一次工具调用，返回给模型看的文本结果。
     static func execute(name: String, argumentsJSON: String,
-                        agentId: String, server: ServerConfig) async -> String {
+                        agentId: String, server: ServerConfig,
+                        onEvent: ((String, Data?) -> Void)? = nil) async -> String {
         switch name {
         case serverCommandName:
             guard let data = argumentsJSON.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let command = obj["command"] as? String, !command.isEmpty
             else { return "参数不对：缺 command" }
+            onEvent?("正在服务器上执行命令…", nil)
             do {
                 let r = try await ServerClient(config: server).exec(agentId: agentId, command: command)
                 var out = "退出码 \(r.exitCode)"
@@ -121,9 +123,13 @@ enum AgentTools {
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let _ = obj["action"] as? String
             else { return "参数不对：缺 action" }
+            onEvent?("正在用服务器浏览器…", nil)
             do {
                 let r = try await ServerClient(config: server)
                     .browserAction(agentId: agentId, action: obj)
+                if let b64 = r.screenshotBase64, let d = Data(base64Encoded: b64) {
+                    onEvent?("浏览器 · \(r.title)", d)
+                }
                 return "页面：\(r.title)（\(r.url)）\n正文：\n\(String(r.text.prefix(6000)))"
             } catch {
                 return "服务器浏览器操作失败：\(error.localizedDescription)"
@@ -133,6 +139,7 @@ enum AgentTools {
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let raw = obj["url"] as? String, let url = URL(string: raw)
             else { return "参数不对：缺 url" }
+            onEvent?("正在抓取网页…", nil)
             do {
                 var req = URLRequest(url: url)
                 req.timeoutInterval = 20

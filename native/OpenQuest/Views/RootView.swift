@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 根视图：聊天列表为主，左上进设置（供应商、服务器、连接工具都在设置里）。
 struct RootView: View {
+    @EnvironmentObject var store: AppStore
     @State private var path: [UUID] = []
     @State private var showingSettings = false
 
@@ -20,6 +21,13 @@ struct RootView: View {
                 }
         }
         .sheet(isPresented: $showingSettings) { SettingsView() }
+        .onAppear {
+            // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
+            if ProcessInfo.processInfo.arguments.contains("-PreviewChat"),
+               let first = store.conversations.first, path.isEmpty {
+                path = [first.id]
+            }
+        }
     }
 }
 

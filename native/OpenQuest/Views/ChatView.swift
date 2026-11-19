@@ -12,6 +12,10 @@ struct ChatView: View {
     @State private var running = false
     @State private var working: [(name: String, action: String)] = []
     @State private var showingWorkingPanel = false
+    @State private var liveShot: Data? = nil
+    @State private var liveCaption = ""
+    @State private var liveAgentId = ""
+    @State private var showingBrowserFull = false
     @State private var showingProviders = false
     // 待发送附件：选好先挂在输入框上方，发送时跟消息一起走。
     @State private var pendingImage: Data?
@@ -165,42 +169,92 @@ struct ChatView: View {
         .sheet(isPresented: $showingProviders) {
             NavigationStack { ProvidersView() }
         }
-        // 干活小窗：签名式「工作舱」——头像堆叠 + 呼吸绿点 + 当前动作一行；
-        // 点开是卡片面板，每人一张卡：头像、名字、按动作换的图标、实时转圈。
+        // 浏览器小窗 + 干活小窗：AI 用服务器浏览器时，聊天里浮出实时画面小窗，
+        // 点开是整页大图、能直接点按操作；下面是干活状态胶囊。
         .overlay(alignment: .bottomTrailing) {
-            if !working.isEmpty {
-                Button { showingWorkingPanel = true } label: {
-                    HStack(spacing: 9) {
-                        HStack(spacing: -8) {
-                            ForEach(Array(working.prefix(3).enumerated()), id: \.offset) { _, w in
-                                workingAvatar(name: w.name, size: 22)
-                                    .overlay(Circle().stroke(Color.black, lineWidth: 2))
-                            }
-                        }
-                        VStack(alignment: .leading, spacing: 1) {
-                            HStack(spacing: 5) {
-                                Image(systemName: "circle.fill")
-                                    .font(.system(size: 6))
-                                    .foregroundStyle(.green)
-                                    .symbolEffect(.pulse, options: .repeating)
-                                Text("\(working.count) 人在干活")
-                                    .font(.caption.weight(.semibold))
+            VStack(alignment: .trailing, spacing: 10) {
+                if let shot = liveShot, let ui = UIImage(data: shot) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: ui)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 138, height: 184)
+                                .clipped()
+                            Button { liveShot = nil } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .padding(5)
+                                    .background(.black.opacity(0.55), in: Circle())
                                     .foregroundStyle(.white)
                             }
-                            Text(working.first?.action ?? "")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            .padding(5)
                         }
-                        Image(systemName: "chevron.up")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.tertiary)
+                        HStack(spacing: 5) {
+                            Image(systemName: "globe").font(.caption2)
+                            Text(liveCaption).font(.caption2).lineLimit(1)
+                            Spacer(minLength: 2)
+                            Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .frame(width: 138)
+                    .background(Color(white: 0.11), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+                    .onTapGesture { showingBrowserFull = true }
                 }
-                .buttonStyle(.plain)
-                .padding(.trailing, 14).padding(.bottom, 76)
+                if !working.isEmpty {
+                    Button {
+                        showingWorkingPanel = true
+                    } label: {
+                        HStack(spacing: 9) {
+                            HStack(spacing: -7) {
+                                ForEach(Array(working.prefix(3).enumerated()), id: \.offset) { _, w in
+                                    if let a = store.agents.first(where: { $0.name == w.0 }) {
+                                        AvatarDisc(agent: a, size: 22)
+                                            .overlay(Circle().stroke(Color.black, lineWidth: 2))
+                                    }
+                                }
+                            }
+                            .padding(.leading, 2)
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 7, height: 7)
+                                .symbolEffect(.pulse, options: .repeating)
+                            Text(working.first.map { "\($0.0) \($0.1)" } ?? "")
+                                .font(.caption)
+                                .lineLimit(1)
+                            if working.count > 1 {
+                                Text("\(working.count) 个")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .glassEffect(.regular, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.trailing, 14)
+            .padding(.bottom, 78)
+            .animation(.easeInOut(duration: 0.25), value: liveShot != nil)
+        }
+        .onAppear {
+            // 仅模拟器预览（-PreviewChat）：把浏览器小窗摆出来截图验收，
+            // 画面是服务器浏览器实拍帧；正式使用时画面全部实时回传。
+            if ProcessInfo.processInfo.arguments.contains("-PreviewChat"), liveShot == nil {
+                liveShot = Data(base64Encoded: PreviewBrowserFrame.jpegBase64)
+                liveCaption = "浏览器 · 维基百科，自由的百科全书"
+                working = [("小评", "正在用服务器浏览器看维基百科…")]
+            }
+        }
+        .sheet(isPresented: $showingBrowserFull) {
+            if let shot = liveShot {
+                BrowserLiveSheet(agentId: liveAgentId, shotData: shot, caption: liveCaption)
             }
         }
         .sheet(isPresented: $showingWorkingPanel) {
@@ -651,6 +705,63 @@ private struct MessageBubble: View {
                 } label: {
                     Label("删除这条", systemImage: "trash")
                 }
+            }
+        }
+    }
+}
+
+/// 浏览器大图页：点小窗放大。显示服务器浏览器当前画面，点任意位置 =
+/// 在服务器浏览器里点那个位置（相对坐标），顶部可刷新画面。
+private struct BrowserLiveSheet: View {
+    @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) var dismiss
+    let agentId: String
+    @State var shotData: Data
+    @State var caption: String
+    @State private var busy = false
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                ZStack {
+                    Color.black
+                    if let ui = UIImage(data: shotData) {
+                        Image(uiImage: ui)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 0).onEnded { v in
+                                let x = min(max(v.location.x / geo.size.width, 0), 1)
+                                let y = min(max(v.location.y / geo.size.height, 0), 1)
+                                Task { await act(["type": "click", "x": x, "y": y]) }
+                            })
+                    }
+                    if busy { ProgressView().tint(.white) }
+                }
+            }
+            .navigationTitle(caption.isEmpty ? "服务器浏览器" : caption)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("刷新画面") { Task { await act(["type": "screenshot"]) } }
+                }
+            }
+        }
+    }
+
+    private func act(_ action: [String: Any]) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        if let r = try? await ServerClient(config: store.server)
+            .browserAction(agentId: agentId.isEmpty ? "user" : agentId, action: action) {
+            caption = r.title
+            if let b64 = r.screenshotBase64, let d = Data(base64Encoded: b64) {
+                shotData = d
             }
         }
     }

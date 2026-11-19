@@ -29,6 +29,7 @@ struct AgentRunner {
     func reply(agent: Agent, history: [(role: String, content: String)],
                imageJPEG: Data? = nil,
                skillsContext: String = "",
+               onToolEvent: ((String, Data?) -> Void)? = nil,
                onDelta: @escaping (String, String) -> Void) async throws -> TurnResult {
         guard let key = KeychainHelper.key(ref: provider.keyRef), !key.isEmpty else {
             throw RunnerError.noKey
@@ -138,7 +139,8 @@ struct AgentRunner {
                 for call in ordered {
                     let result = await AgentTools.execute(
                         name: call.name, argumentsJSON: call.args,
-                        agentId: agent.id.uuidString, server: server)
+                        agentId: agent.id.uuidString, server: server,
+                        onEvent: onToolEvent)
                     messages.append([
                         "role": "tool",
                         "tool_call_id": call.id,
