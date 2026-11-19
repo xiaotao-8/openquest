@@ -1,0 +1,46 @@
+# OpenQuest iOS 构建（Codemagic，无签名 IPA）
+#
+# 背景：GitHub Actions 的免费 macOS 机器自 2026-11-19 晚起一直排不到
+# （arm64 池连续多轮排 15 分钟被取消），按用户决定改走 Codemagic
+# （Flutter 专用 CI，自有 Mac 机器池，免费档每月 500 分钟）。
+#
+# 配方与 .github/workflows/build-ios.yml 完全一致（上游原项目的做法）：
+# Flutter 3.47.6、关 SPM、brew 装 meson/ninja/llvm/lld/libarchive、
+# 先跑 ios/sandbox/ensure_artifacts.sh、再 flutter build ios --release
+# --no-codesign，最后手动打 Payload 结构的未签名 IPA，交给用户的
+# SideKite 用个人 Apple ID 重签安装。不需要开发者账号/证书/密钥。
+
+workflows:
+  ios-unsigned:
+    name: OpenQuest iOS unsigned
+    instance_type: mac_mini_m1
+    max_build_duration: 120
+    environment:
+      flutter: 3.47.6
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: 关闭 Swift Package Manager（上游同款设置）
+        script: flutter config --no-enable-swift-package-manager
+      - name: 拉依赖
+        script: flutter pub get
+      - name: 准备 iSH 沙箱产物（含 fakefsify 工具）
+        script: |
+          brew install meson ninja llvm lld libarchive
+          ios/sandbox/ensure_artifacts.sh
+      - name: 构建 iOS（release、不签名）
+        script: flutter build ios --release --no-codesign
+      - name: 打包未签名 IPA（Payload 结构）
+        script: |
+          rm -rf Payload OpenQuest-unsigned.ipa
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry OpenQuest-unsigned.ipa Payload
+          ls -lh OpenQuest-unsigned.ipa
+    artifacts:
+      - OpenQuest-unsigned.ipa
