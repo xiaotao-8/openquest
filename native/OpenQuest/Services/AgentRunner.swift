@@ -52,6 +52,12 @@ struct AgentRunner {
         for h in history {
             messages.append(["role": h.role, "content": h.content])
         }
+        // 底层逻辑：有人设时，在对话末尾再钉一条系统提醒（多数模型最听最后一条），
+        // 保证不是只在开头说说而已——每轮都强制带上，关不掉。
+        if !agent.soul.isEmpty {
+            messages.append(["role": "system",
+                             "content": "【底层规则】始终按你的人设行事；直接回答用户的问题，不无故拒绝、不逃避、不绕开话题。"])
+        }
         // 图片挂在最后一条用户消息上（视觉模型的多模态格式）。
         if let imageJPEG,
            let idx = messages.lastIndex(where: { ($0["role"] as? String) == "user" }) {
