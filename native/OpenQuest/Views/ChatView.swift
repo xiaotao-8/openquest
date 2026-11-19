@@ -320,31 +320,8 @@ struct ChatView: View {
                 ScrollView {
                     VStack(spacing: 10) {
                         ForEach(working, id: \.name) { w in
-                            HStack(spacing: 11) {
-                                workingAvatar(name: w.name, size: 36)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(w.name)
-                                        .font(.subheadline.weight(.semibold))
-                                    HStack(spacing: 5) {
-                                        Image(systemName: workingIcon(w.action))
-                                            .font(.caption2)
-                                        Text(w.action)
-                                            .font(.caption)
-                                            .lineLimit(2)
-                                    }
-                                    .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                            .padding(12)
-                            .background(Color.white.opacity(0.05),
-                                        in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.07), lineWidth: 1))
+                            WorkingPanelRow(name: w.name, action: w.action)
                         }
-                    }
                     .padding(16)
                 }
                 .background(Color.black)
@@ -896,5 +873,44 @@ private struct BrowserLiveSheet: View {
                 shotData = d
             }
         }
+    }
+}
+
+/// 干活面板里的一行：单独成 struct，免得编译器在元组数组上推导超时。
+private struct WorkingPanelRow: View {
+    @EnvironmentObject var store: AppStore
+    let name: String
+    let action: String
+
+    private var icon: String {
+        if action.contains("浏览器") || action.contains("网页") { return "globe" }
+        if action.contains("服务器") || action.contains("命令") || action.contains("终端") { return "terminal" }
+        if action.contains("文件") || action.contains("写") { return "pencil.line" }
+        if action.contains("搜索") || action.contains("查") { return "magnifyingglass" }
+        if action.contains("思考") || action.contains("回复") { return "brain" }
+        return "wrench.and.screwdriver"
+    }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            if let a = store.agents.first(where: { $0.name == name }) {
+                AvatarDisc(text: a.initial, hue: a.tintHue, size: 36)
+            } else {
+                AvatarDisc(text: String(name.prefix(1)), hue: 0.6, size: 36)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(.subheadline.weight(.semibold))
+                HStack(spacing: 5) {
+                    Image(systemName: icon).font(.caption2)
+                    Text(action).font(.caption).lineLimit(2)
+                }
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            ProgressView().controlSize(.small)
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.07), lineWidth: 1))
     }
 }
