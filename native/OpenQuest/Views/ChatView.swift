@@ -165,26 +165,77 @@ struct ChatView: View {
         .sheet(isPresented: $showingProviders) {
             NavigationStack { ProvidersView() }
         }
-        // 干活小窗：浮在右下，显示几个人在干活；点开是大面板，写清谁在干什么。
+        // 干活小窗：签名式「工作舱」——头像堆叠 + 呼吸绿点 + 当前动作一行；
+        // 点开是卡片面板，每人一张卡：头像、名字、按动作换的图标、实时转圈。
         .overlay(alignment: .bottomTrailing) {
             if !working.isEmpty {
                 Button { showingWorkingPanel = true } label: {
-                    Label("\(working.count) 人在干活", systemImage: "wrench.and.screwdriver.fill")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .glassEffect(.regular.interactive(), in: Capsule())
+                    HStack(spacing: 9) {
+                        HStack(spacing: -8) {
+                            ForEach(Array(working.prefix(3).enumerated()), id: \.offset) { _, w in
+                                workingAvatar(name: w.name, size: 22)
+                                    .overlay(Circle().stroke(Color.black, lineWidth: 2))
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "circle.fill")
+                                    .font(.system(size: 6))
+                                    .foregroundStyle(.green)
+                                    .symbolEffect(.pulse, options: .repeating)
+                                Text("\(working.count) 人在干活")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                            }
+                            Text(working.first?.action ?? "")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Image(systemName: "chevron.up")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .glassEffect(.regular.interactive(), in: Capsule())
                 }
+                .buttonStyle(.plain)
                 .padding(.trailing, 14).padding(.bottom, 76)
             }
         }
         .sheet(isPresented: $showingWorkingPanel) {
             NavigationStack {
-                List(working, id: \.name) { w in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(w.name).font(.headline)
-                        Text(w.action).foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(working, id: \.name) { w in
+                            HStack(spacing: 11) {
+                                workingAvatar(name: w.name, size: 36)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(w.name)
+                                        .font(.subheadline.weight(.semibold))
+                                    HStack(spacing: 5) {
+                                        Image(systemName: workingIcon(w.action))
+                                            .font(.caption2)
+                                        Text(w.action)
+                                            .font(.caption)
+                                            .lineLimit(2)
+                                    }
+                                    .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            .padding(12)
+                            .background(Color.white.opacity(0.05),
+                                        in: RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.07), lineWidth: 1))
+                        }
                     }
+                    .padding(16)
                 }
+                .background(Color.black)
                 .navigationTitle("正在干活")
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -194,6 +245,31 @@ struct ChatView: View {
             }
             .presentationDetents([.medium, .large])
         }
+    }
+
+
+    // MARK: 干活小窗的零件
+
+    /// 按名字找智能体的头像（找不到就用首字灰盘）。
+    @ViewBuilder
+    private func workingAvatar(name: String, size: CGFloat) -> some View {
+        if let a = store.agents.first(where: { $0.name == name }) {
+            AvatarDisc(text: a.initial, hue: a.tintHue, size: size)
+        } else {
+            AvatarDisc(text: String(name.prefix(1)), hue: 0.6, size: size)
+        }
+    }
+
+    /// 干活内容对应的图标：按真实在做的事换，不糊弄。
+    private func workingIcon(_ action: String) -> String {
+        if action.contains("浏览器") || action.contains("网页") { return "globe" }
+        if action.contains("服务器") || action.contains("命令") || action.contains("终端") {
+            return "terminal"
+        }
+        if action.contains("文件") || action.contains("写") { return "pencil.line" }
+        if action.contains("搜索") || action.contains("查") { return "magnifyingglass" }
+        if action.contains("思考") || action.contains("回复") { return "brain" }
+        return "wrench.and.screwdriver"
     }
 
     // MARK: 卡片作答
