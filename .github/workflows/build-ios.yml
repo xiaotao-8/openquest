@@ -67,3 +67,50 @@ jobs:
           name: openquest-ios-ipa
           path: OpenQuest-unsigned.ipa
           if-no-files-found: error
+
+  build-ipa-intel:
+    # 备用通道：macos-13 是 Intel 机器池，和 arm64 池分开排队。
+    # arm64 池自 2026-11-19 21:54 起连续多轮排 15 分钟分不到机器被取消，
+    # 故并行试 Intel 池。风险：macos-13 自带 Xcode 最高 15.2，
+    # Flutter 3.47.6 若要求更高版本 Xcode，本 job 会在构建步快速失败，
+    # 不影响上面的 arm64 主通道。任一通道先出包即可用。
+    runs-on: macos-13
+    steps:
+      - name: 取代码
+        uses: actions/checkout@v4
+
+      - name: 装 Flutter 3.47.6（上游原项目发布用的版本）
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6
+          cache: true
+
+      - name: 关闭 Swift Package Manager（上游同款设置）
+        run: flutter config --no-enable-swift-package-manager
+
+      - name: 拉依赖
+        run: flutter pub get
+
+      - name: 准备 iSH 沙箱产物（含 fakefsify 工具）
+        run: |
+          brew install meson ninja llvm lld libarchive
+          ios/sandbox/ensure_artifacts.sh
+
+      - name: 构建 iOS（release、不签名）
+        run: flutter build ios --release --no-codesign
+
+      - name: 打包未签名 IPA（Payload 结构）
+        run: |
+          rm -rf Payload OpenQuest-unsigned.ipa
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry OpenQuest-unsigned.ipa Payload
+          ls -lh OpenQuest-unsigned.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: openquest-ios-ipa-intel
+          path: OpenQuest-unsigned.ipa
+          if-no-files-found: error
