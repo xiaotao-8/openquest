@@ -30,7 +30,7 @@ struct ChatListView: View {
                                 Image(systemName: "bubble.left.and.bubble.right.fill")
                                     .font(.system(size: 20))
                                     .frame(width: 50, height: 50)
-                                    .glassEffect(.regular, in: Circle())
+                                    .liquidGlass(Circle())
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("直接聊").font(.body.weight(.semibold))
                                     Text("不用建智能体，点开就能聊")
@@ -53,7 +53,7 @@ struct ChatListView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+                        .liquidGlass(RoundedRectangle(cornerRadius: 18))
                         .padding(.horizontal, 16)
                         .padding(.top, 4)
                         .padding(.bottom, 6)
@@ -102,7 +102,7 @@ private struct EmptyHomeView: View {
                 .font(.system(size: 34))
                 .foregroundStyle(.white)
                 .frame(width: 84, height: 84)
-                .glassEffect(.regular, in: Circle())
+                .liquidGlass(Circle())
             Text("想聊就聊")
                 .font(.title3.weight(.semibold))
             Text("点下面直接开聊，第一次会让你选个免费源填 Key。\n想组智能体团队，再点新建。")
@@ -114,7 +114,7 @@ private struct EmptyHomeView: View {
                     .font(.body.weight(.semibold))
                     .padding(.horizontal, 26).padding(.vertical, 12)
             }
-            .glassEffect(.regular.interactive(), in: Capsule())
+            .liquidGlassInteractive(Capsule())
             Button("新建智能体 / 建群", action: onCreate)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

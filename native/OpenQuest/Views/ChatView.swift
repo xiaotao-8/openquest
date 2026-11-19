@@ -62,7 +62,7 @@ struct ChatView: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
                         .frame(width: 40, height: 40)
-                        .glassEffect(.regular.interactive(), in: Circle())
+                        .liquidGlassInteractive(Circle())
                 }
                 .buttonStyle(.plain)
                 Spacer()
@@ -90,7 +90,7 @@ struct ChatView: View {
                         Image(systemName: "cpu")
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 40, height: 40)
-                            .glassEffect(.regular.interactive(), in: Circle())
+                            .liquidGlassInteractive(Circle())
                     }
                 } else {
                     Color.clear.frame(width: 40, height: 40)
@@ -118,7 +118,7 @@ struct ChatView: View {
                 .padding(.leading, 7)
                 .padding(.trailing, 13)
                 .padding(.vertical, 6)
-                .glassEffect(.regular, in: Capsule())
+                .liquidGlass(Capsule())
                 .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
             }
             .buttonStyle(.plain)
@@ -164,8 +164,7 @@ struct ChatView: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 27))
-        .overlay(RoundedRectangle(cornerRadius: 27).stroke(Color.white.opacity(0.09), lineWidth: 1))
+        .liquidGlass(RoundedRectangle(cornerRadius: 27))
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .onChange(of: photoItem) { _, item in
@@ -227,9 +226,8 @@ struct ChatView: View {
                 .padding(.vertical, 7)
             }
             .frame(width: 138)
-            .background(Color(white: 0.11), in: RoundedRectangle(cornerRadius: 16))
+            .liquidGlass(RoundedRectangle(cornerRadius: 16))
             .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.22), lineWidth: 0.7))
             .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
             .onTapGesture { showingBrowserFull = true }
         }
@@ -645,7 +643,7 @@ struct CardView: View {
                 }
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 18).padding(.vertical, 8)
-                .glassEffect(.regular.interactive(), in: Capsule())
+                .liquidGlassInteractive(Capsule())
                 .disabled(picked.isEmpty)
                 .padding(.top, 8)
             }

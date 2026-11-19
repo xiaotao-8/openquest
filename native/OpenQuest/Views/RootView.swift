@@ -54,7 +54,7 @@ struct RootView: View {
             tabButton(3, icon: "gearshape.fill", label: "设置")
         }
         .padding(5)
-        .glassEffect(.regular, in: Capsule())
+        .liquidGlass(Capsule())
         .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
     }
 
