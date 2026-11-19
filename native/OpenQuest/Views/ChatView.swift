@@ -28,7 +28,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
                         ForEach(conversation?.messages ?? []) { m in
                             if let card = m.card {
                                 CardView(card: card) { chosen in answerCard(chosen, messageId: m.id) }
@@ -433,6 +433,7 @@ private struct MessageBubble: View {
     @EnvironmentObject var store: AppStore
     let message: Message
     let conversation: Conversation?
+    @State private var showReasoning = false
 
     private var isUser: Bool { message.senderId == "user" }
     private var sender: Agent? { store.agent(id: UUID(uuidString: message.senderId) ?? UUID()) }
@@ -446,48 +447,95 @@ private struct MessageBubble: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if isUser { Spacer(minLength: 40) }
-            if !isUser, let s = sender {
+        HStack(alignment: .top, spacing: 10) {
+            if isUser {
+                AvatarDisc(text: "我", hue: 0.6, size: 30)
+            } else if let s = sender {
                 AvatarDisc(text: s.initial, hue: s.tintHue, size: 30)
             }
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
-                if !isUser, let s = sender, conversation?.isGroup == true {
-                    Text(s.name).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(isUser ? "我" : (sender?.name ?? ""))
+                        .font(.subheadline.weight(.semibold))
+                    Text(message.date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 if let reasoning = message.reasoning, !reasoning.isEmpty {
-                    DisclosureGroup("深度思考") {
-                        Text(reasoning)
-                            .font(.caption)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) { showReasoning.toggle() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "brain")
+                                Text("深度思考")
+                                Image(systemName: "chevron.right")
+                                    .rotationEffect(.degrees(showReasoning ? 90 : 0))
+                            }
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        if showReasoning {
+                            HStack(alignment: .top, spacing: 8) {
+                                RoundedRectangle(cornerRadius: 1)
+                                    .fill(Color.white.opacity(0.15))
+                                    .frame(width: 2)
+                                Text(reasoning)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineSpacing(2)
+                            }
+                        }
                     }
-                    .font(.caption)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.vertical, 2)
                 }
                 if let data = message.imageJPEG, let ui = UIImage(data: data) {
                     Image(uiImage: ui)
                         .resizable().scaledToFit()
-                        .frame(maxWidth: 200, maxHeight: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: 220, maxHeight: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1))
                 }
                 if let name = message.fileName {
-                    Label(name, systemImage: "doc.fill")
-                        .font(.caption)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Color(white: 0.15), in: Capsule())
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.fill")
+                            .foregroundStyle(.secondary)
+                        Text(name)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(Color.white.opacity(0.06),
+                                in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1))
                 }
                 if !message.text.isEmpty {
                     Text(rendered)
+                        .font(.body)
+                        .lineSpacing(3)
                         .textSelection(.enabled)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(isUser ? Color.blue : Color(white: 0.15))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if !isUser { Spacer(minLength: 40) }
+        }
+        .contextMenu {
+            if !message.text.isEmpty {
+                Button {
+                    UIPasteboard.general.string = message.text
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+            }
+            if let cid = conversation?.id {
+                Button(role: .destructive) {
+                    store.deleteMessage(conversationId: cid, messageId: message.id)
+                } label: {
+                    Label("删除这条", systemImage: "trash")
+                }
+            }
         }
     }
 }

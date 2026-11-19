@@ -96,6 +96,12 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    func deleteMessage(conversationId: UUID, messageId: UUID) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationId }) else { return }
+        conversations[i].messages.removeAll { $0.id == messageId }
+        save()
+    }
+
     func deleteConversation(id: UUID) {
         conversations.removeAll { $0.id == id }
         save()
