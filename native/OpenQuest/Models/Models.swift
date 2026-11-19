@@ -37,6 +37,9 @@ struct Message: Identifiable, Codable, Equatable {
     var reasoning: String? = nil     // 深度思考过程，回复上方一个可展开的块，中文显示
     var date: Date = Date()
     var card: CardPayload? = nil     // 带卡片的消息渲染成卡片
+    var imageJPEG: Data? = nil       // 用户发的图片（压缩后）：气泡显示 + 发给视觉模型
+    var fileName: String? = nil      // 用户发的文件名
+    var fileText: String? = nil      // 文本类文件内容（截取后随消息发给模型）
 }
 
 /// 一个模型供应商：用户自己添加——名字、接口地址（OpenAI 兼容）、Key；
@@ -59,6 +62,15 @@ struct AIModel: Identifiable, Codable, Equatable {
 
 /// 一个连接工具（连接器）：只装国内服务——飞书、钉钉、语雀、Gitee、
 /// 博查搜索、阿里云等；全部默认关闭，用户手动开。境外服务不作依赖、不作默认。
+/// 一个技能（Skill）：用户自己写或导入的一段指令，挂到智能体身上后，
+/// 聊天时拼进系统指令里真正生效——不是摆设。
+struct Skill: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var content: String              // 技能正文（指令）
+    var agentIds: [UUID] = []        // 对哪些智能体生效
+}
+
 struct Connector: Identifiable, Codable, Equatable {
     var id: String                   // 如 feishu / dingtalk / yuque / gitee / bocha
     var name: String                 // 显示名

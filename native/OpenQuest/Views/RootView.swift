@@ -40,9 +40,9 @@ struct SettingsView: View {
                                value: store.providers.isEmpty ? nil : "\(store.providers.count)") {
                         ProvidersView()
                     }
-                    SettingRow(icon: "server.rack", color: .green, title: "服务器",
-                               value: store.server.host) {
-                        ServerView()
+                    SettingRow(icon: "wand.and.stars", color: .pink, title: "技能",
+                               value: store.skills.isEmpty ? nil : "\(store.skills.count)") {
+                        SkillsView()
                     }
                     SettingRow(icon: "link", color: .orange, title: "连接工具",
                                value: store.connectors.contains { $0.enabled } ? nil : "全部关") {

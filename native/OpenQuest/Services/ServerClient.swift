@@ -5,6 +5,12 @@ import Foundation
 struct ServerClient {
     let config: ServerConfig
 
+    /// 令牌：优先用打包时内置的那份（用户不用配），没有再读钥匙串。
+    private var token: String? {
+        if !BakedServer.token.isEmpty { return BakedServer.token }
+        return KeychainHelper.key(ref: config.tokenRef)
+    }
+
     struct ExecResult: Decodable {
         var stdout: String = ""
         var stderr: String = ""
@@ -24,7 +30,7 @@ struct ServerClient {
 
     /// 在服务器上以某个智能体的身份执行一条命令（在它自己的工作目录里）。
     func exec(agentId: String, command: String) async throws -> ExecResult {
-        guard let token = KeychainHelper.key(ref: config.tokenRef), !token.isEmpty else {
+        guard let token, !token.isEmpty else {
             throw ClientError.noToken
         }
         guard let url = URL(string: config.baseURL + "/exec") else {
@@ -64,7 +70,7 @@ struct ServerClient {
     /// action 例：["type":"navigate","url":"https://…"]、["type":"click","x":0.5,"y":0.4]、
     /// ["type":"type","text":"…"]、["type":"scroll","dy":600]、["type":"read"]、["type":"screenshot"]
     func browserAction(agentId: String, action: [String: Any]) async throws -> BrowserState {
-        guard let token = KeychainHelper.key(ref: config.tokenRef), !token.isEmpty else {
+        guard let token, !token.isEmpty else {
             throw ClientError.noToken
         }
         guard let endpoint = URL(string: config.baseURL + "/browser") else {
@@ -88,7 +94,7 @@ struct ServerClient {
     /// 用服务器上的浏览器打开网页，返回标题+正文。
     /// 智能体上网一律走服务器的浏览器——手机只是窗口，真正的电脑在服务器上。
     func browse(agentId: String, url: String) async throws -> BrowseResult {
-        guard let token = KeychainHelper.key(ref: config.tokenRef), !token.isEmpty else {
+        guard let token, !token.isEmpty else {
             throw ClientError.noToken
         }
         guard let endpoint = URL(string: config.baseURL + "/browse") else {

@@ -9,6 +9,7 @@ final class AppStore: ObservableObject {
     @Published var providers: [ModelProvider] = []
     @Published var server: ServerConfig = ServerConfig()
     @Published var connectors: [Connector] = builtinConnectors
+    @Published var skills: [Skill] = []
 
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -178,6 +179,35 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    // MARK: 技能
+
+    func addSkill(name: String, content: String) {
+        skills.append(Skill(name: name, content: content))
+        save()
+    }
+
+    func deleteSkill(id: UUID) {
+        skills.removeAll { $0.id == id }
+        save()
+    }
+
+    func setSkill(id: UUID, agentId: UUID, on: Bool) {
+        guard let i = skills.firstIndex(where: { $0.id == id }) else { return }
+        if on {
+            if !skills[i].agentIds.contains(agentId) { skills[i].agentIds.append(agentId) }
+        } else {
+            skills[i].agentIds.removeAll { $0 == agentId }
+        }
+        save()
+    }
+
+    /// 某个智能体启用的技能拼成的上下文，聊天时进系统指令。
+    func skillsContext(for agentId: UUID) -> String {
+        let active = skills.filter { $0.agentIds.contains(agentId) }
+        guard !active.isEmpty else { return "" }
+        return active.map { "## 技能：\($0.name)\n\($0.content)" }.joined(separator: "\n\n")
+    }
+
     func setConnectorEnabled(id: String, _ on: Bool) {
         guard let i = connectors.firstIndex(where: { $0.id == id }) else { return }
         connectors[i].enabled = on
@@ -190,11 +220,13 @@ final class AppStore: ObservableObject {
         var providers: [ModelProvider] = []
         var server: ServerConfig = ServerConfig()
         var connectors: [Connector] = builtinConnectors
+        var skills: [Skill] = []
     }
 
     func save() {
         let snap = Snapshot(agents: agents, conversations: conversations,
-                            providers: providers, server: server, connectors: connectors)
+                            providers: providers, server: server, connectors: connectors,
+                            skills: skills)
         if let data = try? JSONEncoder().encode(snap) {
             try? data.write(to: fileURL, options: .atomic)
         }
@@ -209,5 +241,6 @@ final class AppStore: ObservableObject {
         providers = snap.providers
         server = snap.server
         if !snap.connectors.isEmpty { connectors = snap.connectors }
+        skills = snap.skills
     }
 }

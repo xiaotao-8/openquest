@@ -27,6 +27,8 @@ struct AgentRunner {
     /// 流式回复：模型吐字就回调 onDelta（正文累计、思考累计），界面边收边显示。
     /// 工具调用也在流里拼出来，拼完照常执行/转卡片，之后继续流式。
     func reply(agent: Agent, history: [(role: String, content: String)],
+               imageJPEG: Data? = nil,
+               skillsContext: String = "",
                onDelta: @escaping (String, String) -> Void) async throws -> TurnResult {
         guard let key = KeychainHelper.key(ref: provider.keyRef), !key.isEmpty else {
             throw RunnerError.noKey
@@ -34,11 +36,25 @@ struct AgentRunner {
         let url = URL(string: provider.baseURL.trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions")!
         var messages: [[String: Any]] = []
-        if !agent.soul.isEmpty {
-            messages.append(["role": "system", "content": agent.soul])
+        var system = agent.soul
+        if !skillsContext.isEmpty {
+            system += (system.isEmpty ? "" : "\n\n") + skillsContext
+        }
+        if !system.isEmpty {
+            messages.append(["role": "system", "content": system])
         }
         for h in history {
             messages.append(["role": h.role, "content": h.content])
+        }
+        // 图片挂在最后一条用户消息上（视觉模型的多模态格式）。
+        if let imageJPEG,
+           let idx = messages.lastIndex(where: { ($0["role"] as? String) == "user" }) {
+            let text = messages[idx]["content"] as? String ?? ""
+            messages[idx]["content"] = [
+                ["type": "text", "text": text],
+                ["type": "image_url",
+                 "image_url": ["url": "data:image/jpeg;base64,\(imageJPEG.base64EncodedString())"]],
+            ]
         }
 
         var reasoningAll = ""

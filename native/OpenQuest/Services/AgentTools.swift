@@ -50,7 +50,7 @@ enum AgentTools {
                 "type": "function",
                 "function": [
                     "name": askUserName,
-                    "description": "需要用户做选择时调用：弹一张提问卡（问题+2到4个选项），等用户点选后把答案给你。开放式问题不要调这个，直接在回复里问。",
+                    "description": "需要用户做选择、或需要用户拍板确认时，必须调用本工具弹提问卡（问题+2到4个选项），不要在正文里罗列选项让用户打字回答。等用户点选后答案会给你。开放式问题（没有明确选项）才直接在回复里问。",
                     "parameters": [
                         "type": "object",
                         "properties": [

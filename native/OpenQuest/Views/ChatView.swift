@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 /// 聊天页：消息流 + 卡片 + 输入框 + 干活小窗。
 /// 群聊里智能体自己接话——发言权按「最久没发言的成员优先」轮换，不许永远同一个人；
@@ -11,6 +13,12 @@ struct ChatView: View {
     @State private var working: [(name: String, action: String)] = []
     @State private var showingWorkingPanel = false
     @State private var showingProviders = false
+    // 待发送附件：选好先挂在输入框上方，发送时跟消息一起走。
+    @State private var pendingImage: Data?
+    @State private var pendingFileName: String?
+    @State private var pendingFileText: String?
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showingFileImporter = false
 
     private var conversation: Conversation? {
         store.conversations.first { $0.id == conversationId }
@@ -42,14 +50,52 @@ struct ChatView: View {
                     }
                 }
             }
+            if pendingImage != nil || pendingFileName != nil {
+                HStack(spacing: 8) {
+                    if let data = pendingImage, let ui = UIImage(data: data) {
+                        Image(uiImage: ui)
+                            .resizable().scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    if let name = pendingFileName {
+                        Label(name, systemImage: "doc.fill")
+                            .font(.caption).lineLimit(1)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(Color(white: 0.15), in: Capsule())
+                    }
+                    Button {
+                        pendingImage = nil; pendingFileName = nil; pendingFileText = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 12).padding(.top, 6)
+            }
             HStack(alignment: .bottom, spacing: 9) {
+                Menu {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label("发图片", systemImage: "photo")
+                    }
+                    Button {
+                        showingFileImporter = true
+                    } label: {
+                        Label("发文件", systemImage: "doc")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 16, weight: .bold))
+                        .frame(width: 38, height: 38)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                }
                 TextField("说点什么", text: $input, axis: .vertical)
                     .lineLimit(1...5)
                     .padding(.horizontal, 14).padding(.vertical, 9)
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
                 Button {
                     let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty, !running else { return }
+                    guard !text.isEmpty || pendingImage != nil || pendingFileName != nil, !running else { return }
                     input = ""
                     Task { await send(text) }
                 } label: {
@@ -60,9 +106,27 @@ struct ChatView: View {
                         .background(Color.blue, in: Circle())
                         .glassEffect(.regular.interactive(), in: Circle())
                 }
-                .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || running)
+                .disabled((input.trimmingCharacters(in: .whitespaces).isEmpty && pendingImage == nil && pendingFileName == nil) || running)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        pendingImage = Self.compressedJPEG(data)
+                    }
+                    photoItem = nil
+                }
+            }
+            .fileImporter(isPresented: $showingFileImporter, allowedContentTypes: [.item]) { result in
+                guard case .success(let url) = result else { return }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                guard let data = try? Data(contentsOf: url),
+                      data.count <= 100 * 1024 * 1024 else { return }  // 单文件 100MB 上限，不显示、内部执行
+                pendingFileName = url.lastPathComponent
+                pendingFileText = String(data: data, encoding: .utf8).map { String($0.prefix(20000)) }
+            }
         }
         .background(Color.black)
         .navigationTitle(conversation?.title ?? "聊天")
@@ -158,9 +222,26 @@ struct ChatView: View {
 
     // MARK: 发送与群聊轮转
 
+    /// 图片压到最长边 1280 的 JPEG，省流量也防超模型上限。
+    private static func compressedJPEG(_ data: Data) -> Data? {
+        guard let ui = UIImage(data: data) else { return data }
+        let maxSide: CGFloat = 1280
+        let scale = min(1, maxSide / max(ui.size.width, ui.size.height))
+        let size = CGSize(width: ui.size.width * scale, height: ui.size.height * scale)
+        let rendered = UIGraphicsImageRenderer(size: size).image { _ in
+            ui.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return rendered.jpegData(compressionQuality: 0.8)
+    }
+
     private func send(_ text: String) async {
         guard let conv = conversation else { return }
-        append(Message(senderId: "user", text: text))
+        var userMsg = Message(senderId: "user", text: text)
+        userMsg.imageJPEG = pendingImage
+        userMsg.fileName = pendingFileName
+        userMsg.fileText = pendingFileText
+        pendingImage = nil; pendingFileName = nil; pendingFileText = nil
+        append(userMsg)
         running = true
         defer { running = false; working = [] }
 
@@ -237,16 +318,27 @@ struct ChatView: View {
         else {
             return .text("（我还没配好模型，去我的设置里给我选一个供应商和模型。）", reasoning: nil)
         }
-        // 历史不带最后那条空占位。
-        let history: [(role: String, content: String)] = conv.messages.dropLast().map { m in
-            if m.senderId == "user" { return (role: "user", content: m.text) }
+        // 历史不带最后那条空占位。文件内容拼进对应消息；图片带在最后一条用户消息上。
+        let msgs = Array(conv.messages.dropLast())
+        let lastImage = msgs.last(where: { $0.senderId == "user" })?.imageJPEG
+        let history: [(role: String, content: String)] = msgs.map { m in
+            if m.senderId == "user" {
+                var c = m.text
+                if let fn = m.fileName, let ft = m.fileText {
+                    c += "\n[附件文件：\(fn)]\n\(ft)"
+                } else if let fn = m.fileName {
+                    c += "\n[附件文件：\(fn)（二进制文件，未提取文本）]"
+                }
+                return (role: "user", content: c)
+            }
             if m.senderId == agent.id.uuidString { return (role: "assistant", content: m.text) }
             let name = store.agent(id: UUID(uuidString: m.senderId) ?? UUID())?.name ?? "成员"
             return (role: "user", content: "[\(name)] \(m.text)")
         }
         do {
             return try await AgentRunner(provider: provider, server: store.server)
-                .reply(agent: agent, history: history) { content, reasoning in
+                .reply(agent: agent, history: history, imageJPEG: lastImage,
+                       skillsContext: store.skillsContext(for: agent.id)) { content, reasoning in
                     Task { @MainActor in
                         self.updateMessage(id: placeholderId, text: content,
                                            reasoning: reasoning.isEmpty ? nil : reasoning)
@@ -374,12 +466,26 @@ private struct MessageBubble: View {
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 10))
                 }
-                Text(rendered)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(isUser ? Color.blue : Color(white: 0.15))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                if let data = message.imageJPEG, let ui = UIImage(data: data) {
+                    Image(uiImage: ui)
+                        .resizable().scaledToFit()
+                        .frame(maxWidth: 200, maxHeight: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                if let name = message.fileName {
+                    Label(name, systemImage: "doc.fill")
+                        .font(.caption)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color(white: 0.15), in: Capsule())
+                }
+                if !message.text.isEmpty {
+                    Text(rendered)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(isUser ? Color.blue : Color(white: 0.15))
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
             }
             if !isUser { Spacer(minLength: 40) }
         }

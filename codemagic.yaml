@@ -51,6 +51,8 @@ workflows:
     max_build_duration: 60
     environment:
       xcode: latest
+      groups:
+        - app_vars
     triggering:
       events:
         - push
@@ -58,6 +60,14 @@ workflows:
         - pattern: native
           include: true
     scripts:
+      - name: 注入服务器令牌（构建时生成，不进仓库）
+        script: |
+          if [ -n "$OQ_SERVER_TOKEN" ]; then
+            printf 'enum BakedServer {\n    static let token = "%s"\n}\n' "$OQ_SERVER_TOKEN" > native/OpenQuest/Secrets.swift
+            echo "token injected"
+          else
+            echo "OQ_SERVER_TOKEN not set, keeping placeholder"
+          fi
       - name: 生成 Xcode 工程
         script: |
           brew install xcodegen
