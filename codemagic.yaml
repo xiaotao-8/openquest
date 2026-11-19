@@ -76,6 +76,7 @@ workflows:
           ")
           echo "SIM=$SIM_UDID"
           xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b
           xcodebuild build -project OpenQuest.xcodeproj -scheme OpenQuest \
             -destination "id=$SIM_UDID" -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO
           APP=$(find build-sim/Build/Products -name "OpenQuest.app" -maxdepth 3 | head -1)
@@ -88,7 +89,7 @@ workflows:
         script: |
           cd native
           xcodebuild build -project OpenQuest.xcodeproj -scheme OpenQuest \
-            -destination "generic/platform=iOS" -derivedDataPath build-dev CODE_SIGNING_ALLOWED=NO
+            -destination "generic/platform=iOS" -configuration Release -derivedDataPath build-dev CODE_SIGNING_ALLOWED=NO
           rm -rf Payload OpenQuestNative-unsigned.ipa
           mkdir -p Payload
           cp -R build-dev/Build/Products/Release-iphoneos/OpenQuest.app Payload/
