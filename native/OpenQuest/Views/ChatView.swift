@@ -322,6 +322,7 @@ struct ChatView: View {
                         ForEach(working, id: \.name) { w in
                             WorkingPanelRow(name: w.name, action: w.action)
                         }
+                    }
                     .padding(16)
                 }
                 .background(Color.black)
