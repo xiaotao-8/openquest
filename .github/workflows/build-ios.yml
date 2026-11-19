@@ -1,0 +1,55 @@
+# OpenQuest iOS 构建（无签名 IPA）
+#
+# 目的：产出一个未签名的 OpenQuest.ipa，交给用户的 SideKite
+# 用其个人 Apple ID 重签后装到 iPhone 上。因此这里故意不做任何签名：
+# 不需要 Apple 开发者账号、不需要证书、不需要任何密钥。
+#
+# 触发方式：
+#   1) 推代码到 main 分支自动构建；
+#   2) 在 GitHub 仓库页 Actions 标签里手动点 "Run workflow"。
+# 产物下载：构建完成后在本工作流运行页底部 Artifacts 里下载 openquest-ios-ipa。
+
+name: build-ios
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - name: 取代码
+        uses: actions/checkout@v4
+
+      - name: 装 Flutter 3.50.0（与本地开发 SDK 对齐）
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.0
+          cache: true
+
+      - name: 拉依赖
+        run: flutter pub get
+
+      - name: 构建 iOS（release、不签名）
+        # 说明：不用 `flutter build ipa --no-codesign`——它只产出 .xcarchive，
+        # 无签名时无法导出 .ipa。改用 build ios 拿到 Runner.app 后手动打包，
+        # 这是侧载工具（SideKite 等）最通用的未签名 IPA 形式。
+        run: flutter build ios --release --no-codesign
+
+      - name: 打包未签名 IPA（Payload 结构）
+        run: |
+          rm -rf Payload OpenQuest-unsigned.ipa
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry OpenQuest-unsigned.ipa Payload
+          ls -lh OpenQuest-unsigned.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: openquest-ios-ipa
+          path: OpenQuest-unsigned.ipa
+          if-no-files-found: error
