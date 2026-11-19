@@ -18,7 +18,9 @@ on:
 
 jobs:
   build-ipa:
-    runs-on: macos-latest
+    # 用 macos-14 固定版本：macos-latest 两次在构建中途被 GitHub 取消任务，
+    # 固定镜像更稳。Xcode 16 足够本项目使用。
+    runs-on: macos-14
     steps:
       - name: 取代码
         uses: actions/checkout@v4
