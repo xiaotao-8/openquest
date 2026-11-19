@@ -85,7 +85,7 @@ struct AgentRunner {
                 "tools": AgentTools.definitions,
                 "stream": true,
             ])
-            let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+            let (bytes, resp) = try await Net.session.bytes(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard code == 200 else { throw RunnerError.badStatus(code) }
 

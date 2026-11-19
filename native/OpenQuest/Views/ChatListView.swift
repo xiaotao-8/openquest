@@ -46,6 +46,7 @@ struct ChatListView: View {
                     }
                 ScrollView {
                     LazyVStack(spacing: 0) {
+                        Color.clear.frame(height: 2)
                         ForEach(filtered) { conv in
                             Button { path.append(conv.id) } label: {
                                 ConversationRow(conversation: conv)
@@ -60,6 +61,7 @@ struct ChatListView: View {
                             }
                             Divider().padding(.leading, 76)
                         }
+                        Color.clear.frame(height: 96)
                     }
                 }
                 }
@@ -150,7 +152,7 @@ private struct ConversationRow: View {
                 if let note = conversation.workingNote {
                     Text(note)
                         .font(.caption)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.green)
                         .lineLimit(1)
                 }
             }

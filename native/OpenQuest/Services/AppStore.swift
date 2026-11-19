@@ -10,6 +10,9 @@ final class AppStore: ObservableObject {
     @Published var server: ServerConfig = ServerConfig()
     @Published var connectors: [Connector] = builtinConnectors
     @Published var skills: [Skill] = []
+    @Published var plugins: [Plugin] = []
+    @Published var dnsMode: String = DNSSettings.mode
+    @Published var dnsCustom: String = DNSSettings.custom
 
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -136,7 +139,7 @@ final class AppStore: ObservableObject {
         req.timeoutInterval = 30
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await Net.session.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard code == 200 else { return "服务返回 \(code)" }
             guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -214,6 +217,76 @@ final class AppStore: ObservableObject {
         return active.map { "## 技能：\($0.name)\n\($0.content)" }.joined(separator: "\n\n")
     }
 
+    // MARK: DNS（写穿到 DNSSettings，Net.session 立刻按新设置走）
+
+    func setDNS(mode: String, custom: String = "") {
+        dnsMode = mode
+        if !custom.isEmpty { dnsCustom = custom }
+        DNSSettings.mode = mode
+        DNSSettings.custom = dnsCustom
+        save()
+    }
+
+    // MARK: 插件（DSH 风格单文件包）
+
+    func addPlugin(_ plugin: Plugin) {
+        plugins.append(plugin)
+        save()
+    }
+
+    func deletePlugin(id: UUID) {
+        plugins.removeAll { $0.id == id }
+        save()
+    }
+
+    func setPluginEnabled(id: UUID, _ on: Bool) {
+        guard let i = plugins.firstIndex(where: { $0.id == id }) else { return }
+        plugins[i].enabled = on
+        save()
+    }
+
+    /// 启用的指令类插件拼成的上下文，聊天时和技能一起进系统指令。
+    func pluginsContext() -> String {
+        let active = plugins.filter { $0.enabled && $0.type == "instruction" && !$0.content.isEmpty }
+        guard !active.isEmpty else { return "" }
+        return active.map { "## 插件：\($0.name)\n\($0.content)" }.joined(separator: "\n\n")
+    }
+
+    /// 插件名/说明是英文时，用用户自己配的第一个可用模型译成中文（免费、国内源）。
+    /// 没配模型或翻译失败就原样返回，不拦安装。
+    func translatePluginText(name: String, summary: String) async -> (String, String) {
+        func looksEnglish(_ t: String) -> Bool {
+            !t.isEmpty && t.allSatisfy { $0.isASCII || $0.isWhitespace } && t.contains(where: { $0.isLetter })
+        }
+        guard looksEnglish(name) || looksEnglish(summary),
+              let p = providers.first(where: { providerHasKey($0) && !$0.models.isEmpty }),
+              let key = KeychainHelper.key(ref: p.keyRef),
+              let model = p.models.first?.id
+        else { return (name, summary) }
+        let base = p.baseURL.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: base + "/chat/completions") else { return (name, summary) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 30
+        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let prompt = "把下面这个软件插件的名字和说明译成简体中文，只输出两行：第一行译名，第二行译后的说明，不要任何多余文字。\n名字：\(name)\n说明：\(summary)"
+        let payload: [String: Any] = ["model": model,
+                                      "messages": [["role": "user", "content": prompt]],
+                                      "stream": false]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        guard let (data, _) = try? await Net.session.data(for: req),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = root["choices"] as? [[String: Any]],
+              let msg = choices.first?["message"] as? [String: Any],
+              let text = msg["content"] as? String
+        else { return (name, summary) }
+        let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard lines.count >= 1, !lines[0].isEmpty else { return (name, summary) }
+        return (lines[0], lines.count > 1 ? lines[1] : summary)
+    }
+
     func setConnectorEnabled(id: String, _ on: Bool) {
         guard let i = connectors.firstIndex(where: { $0.id == id }) else { return }
         connectors[i].enabled = on
@@ -227,12 +300,13 @@ final class AppStore: ObservableObject {
         var server: ServerConfig = ServerConfig()
         var connectors: [Connector] = builtinConnectors
         var skills: [Skill] = []
+        var plugins: [Plugin] = []
     }
 
     func save() {
         let snap = Snapshot(agents: agents, conversations: conversations,
                             providers: providers, server: server, connectors: connectors,
-                            skills: skills)
+                            skills: skills, plugins: plugins)
         if let data = try? JSONEncoder().encode(snap) {
             try? data.write(to: fileURL, options: .atomic)
         }
@@ -248,5 +322,6 @@ final class AppStore: ObservableObject {
         server = snap.server
         if !snap.connectors.isEmpty { connectors = snap.connectors }
         skills = snap.skills
+        plugins = snap.plugins
     }
 }

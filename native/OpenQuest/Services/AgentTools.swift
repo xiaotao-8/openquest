@@ -144,7 +144,7 @@ enum AgentTools {
                 var req = URLRequest(url: url)
                 req.timeoutInterval = 20
                 req.setValue("Mozilla/5.0 (iPhone) Safari", forHTTPHeaderField: "User-Agent")
-                let (data, _) = try await URLSession.shared.data(for: req)
+                let (data, _) = try await Net.session.data(for: req)
                 let html = String(data: data, encoding: .utf8) ?? ""
                 return Self.htmlToText(html)
             } catch {

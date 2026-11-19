@@ -71,6 +71,19 @@ struct Skill: Identifiable, Codable, Equatable {
     var agentIds: [UUID] = []        // 对哪些智能体生效
 }
 
+/// 一个 DSH 风格插件包（单文件 JSON 清单）：用户在 App 内下载/粘贴安装。
+/// instruction 类把指令拼进系统提示真生效；script 类是服务器上真跑的脚本；
+/// theme 类是纯网页美化，App 内用不了——安装时就拦下并标注，不糊弄。
+struct Plugin: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var summary: String = ""         // 一行说明（英文会自动译成中文再存）
+    var type: String = "instruction" // instruction / script / theme
+    var content: String = ""         // instruction 类是指令正文；script 类是脚本正文
+    var settingsURL: String = ""     // 网页设置页（有就用内嵌网页在 App 里打开）
+    var enabled: Bool = false        // 默认关，全局原则
+}
+
 struct Connector: Identifiable, Codable, Equatable {
     var id: String                   // 如 feishu / dingtalk / yuque / gitee / bocha
     var name: String                 // 显示名

@@ -1,33 +1,76 @@
-import SwiftUI
-
-/// 根视图：聊天列表为主，左上进设置（供应商、服务器、连接工具都在设置里）。
+/// 根视图：聊天为主页，底部悬浮玻璃标签栏（聊天 / 技能 / 浏览器 / 设置），
+/// 跟 Muse App 一样的壳。进聊天后标签栏还在，点标签回主页切页。
 struct RootView: View {
     @EnvironmentObject var store: AppStore
     @State private var path: [UUID] = []
-    @State private var showingSettings = false
+    @State private var tab = 0
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ChatListView(path: $path)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { showingSettings = true } label: {
-                            Image(systemName: "gearshape")
+        // 预览专用：-PreviewDNS 直接落在 DNS 页截图。
+        if ProcessInfo.processInfo.arguments.contains("-PreviewDNS") {
+            NavigationStack { DNSSettingsView() }
+        } else {
+            ZStack(alignment: .bottom) {
+                Group {
+                    switch tab {
+                    case 1:
+                        NavigationStack { SkillsView() }
+                    case 2:
+                        NavigationStack { BrowserView() }
+                    case 3:
+                        SettingsView()
+                    default:
+                        NavigationStack(path: $path) {
+                            ChatListView(path: $path)
+                                .navigationDestination(for: UUID.self) { id in
+                                    ChatView(conversationId: id)
+                                }
                         }
                     }
                 }
-                .navigationDestination(for: UUID.self) { id in
-                    ChatView(conversationId: id)
+                tabBar
+                    .padding(.bottom, 26)
+            }
+            .background(Color.black)
+            .onAppear {
+                let args = ProcessInfo.processInfo.arguments
+                if args.contains("-PreviewSettings") { tab = 3 }
+                // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
+                if args.contains("-PreviewChat"),
+                   let first = store.conversations.first, path.isEmpty {
+                    path = [first.id]
                 }
-        }
-        .sheet(isPresented: $showingSettings) { SettingsView() }
-        .onAppear {
-            // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
-            if ProcessInfo.processInfo.arguments.contains("-PreviewChat"),
-               let first = store.conversations.first, path.isEmpty {
-                path = [first.id]
             }
         }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 4) {
+            tabButton(0, icon: "message.fill", label: "聊天")
+            tabButton(1, icon: "wand.and.stars", label: "技能")
+            tabButton(2, icon: "globe", label: "浏览器")
+            tabButton(3, icon: "gearshape.fill", label: "设置")
+        }
+        .padding(5)
+        .glassEffect(.regular, in: Capsule())
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
+    }
+
+    private func tabButton(_ index: Int, icon: String, label: String) -> some View {
+        Button {
+            if index == 0 { path = [] }
+            tab = index
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: icon).font(.system(size: 19))
+                Text(label).font(.system(size: 9.5))
+            }
+            .frame(width: 62, height: 44)
+            .background(tab == index ? Color.white.opacity(0.13) : Color.clear,
+                        in: Capsule())
+            .foregroundStyle(tab == index ? .white : .secondary)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -52,6 +95,14 @@ struct SettingsView: View {
                                value: store.skills.isEmpty ? nil : "\(store.skills.count)") {
                         SkillsView()
                     }
+                    SettingRow(icon: "puzzlepiece.fill", color: .indigo, title: "插件",
+                               value: store.plugins.isEmpty ? nil : "\(store.plugins.count)") {
+                        PluginsView()
+                    }
+                    SettingRow(icon: "network", color: .teal, title: "DNS",
+                               value: store.dnsMode == "system" ? "跟随系统" : nil) {
+                        DNSSettingsView()
+                    }
                     SettingRow(icon: "link", color: .orange, title: "连接工具",
                                value: store.connectors.contains { $0.enabled } ? nil : "全部关") {
                         ConnectorsView()
@@ -67,11 +118,6 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("设置")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
-                }
-            }
         }
     }
 }

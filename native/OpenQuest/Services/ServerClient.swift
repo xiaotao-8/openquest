@@ -45,7 +45,7 @@ struct ServerClient {
             "agentId": agentId,
             "command": command,
         ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Net.session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else { throw ClientError.badStatus(code) }
         return try JSONDecoder().decode(ExecResult.self, from: data)
@@ -85,7 +85,7 @@ struct ServerClient {
             "agentId": agentId,
             "action": action,
         ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Net.session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else { throw ClientError.badStatus(code) }
         return try JSONDecoder().decode(BrowserState.self, from: data)
@@ -109,7 +109,7 @@ struct ServerClient {
             "agentId": agentId,
             "url": url,
         ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Net.session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else { throw ClientError.badStatus(code) }
         return try JSONDecoder().decode(BrowseResult.self, from: data)
