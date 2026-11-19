@@ -8,6 +8,7 @@ struct NewChatView: View {
     @State private var newAgentName = ""
     @State private var selected: Set<UUID> = []
     @State private var groupTitle = ""
+    @State private var showingProviders = false
 
     var body: some View {
         NavigationStack {
@@ -24,8 +25,11 @@ struct NewChatView: View {
                         .disabled(newAgentName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                     if store.providers.isEmpty {
-                        Text("提示：先去设置里加供应商和模型，智能体才能开口。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Button {
+                            showingProviders = true
+                        } label: {
+                            Label("先添加供应商和模型（有免费源）", systemImage: "cube")
+                        }
                     }
                 }
                 Section("选成员开聊（选一个是单聊，选多个是群聊）") {
@@ -71,6 +75,9 @@ struct NewChatView: View {
                     .disabled(selected.isEmpty)
                 }
             }
+        }
+        .sheet(isPresented: $showingProviders) {
+            NavigationStack { ProvidersView() }
         }
     }
 }

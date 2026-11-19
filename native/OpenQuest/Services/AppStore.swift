@@ -82,6 +82,25 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    /// 内置免费源：一键添加（地址和常用模型都预填好），用户只剩填 Key。
+    func addPresetProvider(name: String, baseURL: String, modelIds: [String]) {
+        guard !providers.contains(where: { $0.baseURL == baseURL }) else { return }
+        var p = ModelProvider(name: name, baseURL: baseURL)
+        p.models = modelIds.map { AIModel(id: $0) }
+        providers.append(p)
+        save()
+    }
+
+    func setProviderKey(id: UUID, apiKey: String) {
+        guard let p = providers.first(where: { $0.id == id }) else { return }
+        if apiKey.isEmpty { KeychainHelper.deleteKey(ref: p.keyRef) }
+        else { KeychainHelper.setKey(apiKey, ref: p.keyRef) }
+    }
+
+    func providerHasKey(_ p: ModelProvider) -> Bool {
+        KeychainHelper.key(ref: p.keyRef) != nil
+    }
+
     func deleteProvider(id: UUID) {
         if let p = providers.first(where: { $0.id == id }) {
             KeychainHelper.deleteKey(ref: p.keyRef)
