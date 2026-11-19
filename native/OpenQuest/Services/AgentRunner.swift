@@ -36,7 +36,13 @@ struct AgentRunner {
         let url = URL(string: provider.baseURL.trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions")!
         var messages: [[String: Any]] = []
-        var system = agent.soul
+        var system = ""
+        if !agent.soul.isEmpty {
+            // 人设（Soul）是最高优先级硬规则：原样置顶，并附绑定框架，
+            // 要求模型严格按设定的人设行事、直接回答问题、不无故拒绝或绕开。
+            system = agent.soul
+                + "\n\n【执行要求】以上人设与规则是最高优先级，必须严格照做：始终按设定的人设、身份、语气和规矩行事；用户的问题要直接回答，不无故拒绝、不逃避、不绕开话题。"
+        }
         if !skillsContext.isEmpty {
             system += (system.isEmpty ? "" : "\n\n") + skillsContext
         }
