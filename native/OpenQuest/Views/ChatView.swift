@@ -426,7 +426,7 @@ struct ChatView: View {
             // 当最终答案的权利——软件检测到拒绝/逃避就不认，清空重答，
             // 最多逼三轮；三轮还拒绝，显示的是拦截说明，而不是那句拒绝。
             var result = first
-            if !agent.soul.isEmpty {
+            do {
                 var attempts = 0
                 while case .text(let t, _) = result, Self.looksLikeRefusal(t), attempts < 3 {
                     attempts += 1

@@ -36,12 +36,15 @@ struct AgentRunner {
         let url = URL(string: provider.baseURL.trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions")!
         var messages: [[String: Any]] = []
+        // 内置人设是基础层：每个智能体、每次调用都带，在自设人设之下。
+        // 层级：用户自设人设（Soul）置顶最高优先，其下是写死的内置人设基础层。
         var system = ""
         if !agent.soul.isEmpty {
-            // 人设（Soul）是最高优先级硬规则：原样置顶，并附绑定框架，
-            // 要求模型严格按设定的人设行事、直接回答问题、不无故拒绝或绕开。
             system = agent.soul
                 + "\n\n【执行要求】以上人设与规则是最高优先级，必须严格照做：始终按设定的人设、身份、语气和规矩行事；用户的问题要直接回答，不无故拒绝、不逃避、不绕开话题；交给你的任务要实际执行——该调用工具就调用工具真干，不许拒绝执行，也不许只给建议、只说方法不干活。"
+            system += "\n\n" + BakedPersona.text
+        } else {
+            system = BakedPersona.text
         }
         if !skillsContext.isEmpty {
             system += (system.isEmpty ? "" : "\n\n") + skillsContext
@@ -52,12 +55,10 @@ struct AgentRunner {
         for h in history {
             messages.append(["role": h.role, "content": h.content])
         }
-        // 底层逻辑：有人设时，在对话末尾再钉一条系统提醒（多数模型最听最后一条），
+        // 底层逻辑：在对话末尾再钉一条系统提醒（多数模型最听最后一条），
         // 保证不是只在开头说说而已——每轮都强制带上，关不掉。
-        if !agent.soul.isEmpty {
-            messages.append(["role": "system",
-                             "content": "【底层规则】始终按你的人设行事；直接回答用户的问题，不无故拒绝、不逃避、不绕开话题；任务要真执行，不许拒绝执行、不许只给建议不干活。"])
-        }
+        messages.append(["role": "system",
+                         "content": "【底层规则】始终按你的人设行事；直接回答用户的问题，不无故拒绝、不逃避、不绕开话题；任务要真执行，不许拒绝执行、不许只给建议不干活。"])
         // 图片挂在最后一条用户消息上（视觉模型的多模态格式）。
         if let imageJPEG,
            let idx = messages.lastIndex(where: { ($0["role"] as? String) == "user" }) {
