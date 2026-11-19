@@ -26,7 +26,9 @@ import '../../../core/services/browser/browser_tools_service.dart';
 import '../../../core/services/mcp/mcp_tool_service.dart';
 import '../../../core/services/memory/memory_pipeline.dart';
 import '../../../core/services/memory/memory_tools.dart';
+import '../../../core/providers/user_provider.dart';
 import '../../../core/services/search/search_tool_service.dart';
+import '../../../core/services/settings/ai_settings_tool_service.dart';
 import '../../../core/services/search/web_fetch_service.dart';
 import '../../../core/services/search/web_fetch_tool_service.dart';
 import '../../../core/services/tools/tool_schema_overrides.dart';
@@ -325,13 +327,25 @@ class ToolHandlerService {
         !hasBuiltInSearch &&
         supportsTools) {
       toolDefs.add(SearchToolService.getToolDefinition());
-      if (settings.webFetchMode != WebFetchMode.off &&
-          !native_tools.BuiltInToolsHelper.isBuiltInFetchEnabled(
-            cfg: settings.getProviderConfig(providerKey),
-            modelId: modelId,
-          )) {
-        toolDefs.add(WebFetchToolService.getToolDefinition());
-      }
+    }
+
+    // Web fetch tool: gated by its own switch (the global fetch mode),
+    // independent of the assistant's search toggle. The mode defaults to
+    // off, so the tool only exists after the user enables fetching.
+    if (supportsTools &&
+        settings.webFetchMode != WebFetchMode.off &&
+        !native_tools.BuiltInToolsHelper.isBuiltInFetchEnabled(
+          cfg: settings.getProviderConfig(providerKey),
+          modelId: modelId,
+        )) {
+      toolDefs.add(WebFetchToolService.getToolDefinition());
+    }
+
+    // App settings tool: one model-agnostic protocol for changing app
+    // settings from chat. Only offered while the user has the master
+    // switch on (it defaults to off).
+    if (supportsTools && settings.aiSettingsControlEnabled) {
+      toolDefs.add(AiSettingsToolService.getToolDefinition());
     }
 
     // Memory tools (§10.1)
@@ -510,6 +524,7 @@ class ToolHandlerService {
     // Capture AssistantProvider reference before async gap to avoid
     // use_build_context_synchronously warning
     final assistantProvider = contextProvider.read<AssistantProvider>();
+    final userProvider = contextProvider.read<UserProvider>();
     ChatService? permissionChat;
     try {
       permissionChat = contextProvider.read<ChatService>();
@@ -695,8 +710,36 @@ class ToolHandlerService {
             return await SearchToolService.executeSearch(q, settings);
           }
           if (name == WebFetchToolService.toolName &&
-              assistant?.searchEnabled == true) {
+              settings.webFetchMode != WebFetchMode.off) {
             return await WebFetchToolService.executeFetch(args, settings);
+          }
+          if (name == AiSettingsToolService.toolName) {
+            if (!settings.aiSettingsControlEnabled) {
+              return jsonEncode({
+                'error':
+                    'The AI settings control switch is off. The user can '
+                    'enable it in Settings > Behavior & Startup.',
+              });
+            }
+            // Sensitive keys go through the approval card before anything
+            // changes; forbidden keys are refused inside execute() without
+            // ever prompting.
+            final key = (args['key'] ?? '').toString().trim();
+            final action = (args['action'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
+            if (action == 'set' &&
+                AiSettingsToolService.riskFor(key) == AiSettingRisk.approval) {
+              await permission.authorize(needed: true, arguments: args);
+            }
+            return await AiSettingsToolService.execute(
+              args: args,
+              settings: settings,
+              assistantProvider: assistantProvider,
+              userProvider: userProvider,
+              assistant: assistant,
+            );
           }
 
           // Memory tools

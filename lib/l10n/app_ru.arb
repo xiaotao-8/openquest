@@ -5097,7 +5097,7 @@
   "groupSettingsTitle": "Group settings",
   "groupModelSettingsTitle": "Model assignment",
   "groupModelModeIndividual": "Set each agent individually",
-  "groupModelModeUnified": "One model for all Bots",
+  "groupModelModeUnified": "Одна модель для всех агентов",
   "groupModelUnifiedLabel": "Unified model",
   "groupModelNotSet": "Not set",
   "groupModelSelect": "Select",

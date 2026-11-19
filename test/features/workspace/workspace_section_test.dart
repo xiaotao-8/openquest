@@ -526,6 +526,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Full access'));
       await tester.pumpAndSettle();
+      // Enabling full access asks for a risk confirmation first.
+      await tester.tap(find.text('Turn on'));
+      await tester.pumpAndSettle();
       expect(
         ToolPermissionMode.fromExtras(chat.conversation!.extras) ==
             ToolPermissionMode.fullAccess,
@@ -604,6 +607,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('change'));
       await tester.pumpAndSettle();
+      if (!reset) {
+        // Enabling full access asks for a risk confirmation first; the
+        // reset path restores a previous mode and does not ask.
+        await tester.tap(find.text('Turn on'));
+        await tester.pumpAndSettle();
+      }
       expect(find.byType(AlertDialog), findsNothing);
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
@@ -633,6 +642,11 @@ void main() {
       chat.conversation!.id,
       ToolPermissionMode.fullAccess,
     );
+    await tester.pumpAndSettle();
+    // Enabling full access asks for a risk confirmation first; the user
+    // confirms, then a later revocation supersedes the enable.
+    await tester.tap(find.text('Turn on'));
+    await tester.pump();
     final revoked = setToolPermissionFromUi(
       context,
       chat.conversation!.id,
@@ -668,6 +682,9 @@ void main() {
     await tester.tap(find.byKey(WorkspaceSection.permissionKey));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Full access'));
+    await tester.pumpAndSettle();
+    // Enabling full access asks for a risk confirmation first.
+    await tester.tap(find.text('Turn on'));
     await tester.pumpAndSettle();
     expect(find.text('Couldn’t save. Permission unchanged.'), findsOneWidget);
     expect(

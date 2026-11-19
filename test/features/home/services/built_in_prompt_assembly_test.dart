@@ -301,14 +301,19 @@ void main() {
           'All off: ${persona.length} + 0 characters in both versions.',
         );
         final disabled = await assemble(plain, ['Hi.']);
-        expect(systemText(disabled), persona);
+        // OpenQuest always appends its language default and ask-options
+        // guidance after the persona (see MessageBuilderService).
+        const defaults =
+            '${MessageBuilderService.openQuestLanguageDefault}\n\n'
+            '${MessageBuilderService.openQuestAskGuidance}';
+        expect(systemText(disabled), '$persona\n\n$defaults');
         expect(disabled.toolDefs, isEmpty);
         final search = await assemble(plain.copyWith(searchEnabled: true), [
           'Look it up.',
         ]);
         expect(
           systemText(search),
-          '$persona\n\n${SearchToolService.getSystemPrompt()}',
+          '$persona\n\n$defaults\n\n${SearchToolService.getSystemPrompt()}',
         );
         expect(
           descriptions(search.toolDefs)['search_web'],
@@ -431,9 +436,13 @@ void main() {
         final justAfter = await assemble(plain.copyWith(systemPrompt: ''), [
           'lighthouse',
         ]);
-        expect(systemText(justAfter), 'AFTER');
+        // With an empty persona, the OpenQuest default blocks remain.
+        const defaults =
+            '${MessageBuilderService.openQuestLanguageDefault}\n\n'
+            '${MessageBuilderService.openQuestAskGuidance}';
+        expect(systemText(justAfter), '$defaults\nAFTER');
         final noWorkspace = await assemble(plain, ['preface lighthouse']);
-        expect(systemText(noWorkspace), 'BEFORE\n$persona\nAFTER');
+        expect(systemText(noWorkspace), 'BEFORE\n$persona\n\n$defaults\nAFTER');
       });
     },
   );

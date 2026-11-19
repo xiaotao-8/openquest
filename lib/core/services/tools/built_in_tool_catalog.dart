@@ -2,6 +2,7 @@ import '../../services/memory/memory_prompts.dart';
 import '../../services/memory/memory_tools.dart';
 import '../../services/search/search_tool_service.dart';
 import '../../services/search/web_fetch_tool_service.dart';
+import '../../services/settings/ai_settings_tool_service.dart';
 import '../../../features/home/services/local_tools_service.dart';
 import '../workspace/workspace_tools_service.dart';
 import 'view_image_tool.dart';
@@ -47,6 +48,11 @@ abstract final class BuiltInToolCatalog {
         name: WebFetchToolService.toolName,
         defaultDefinition: WebFetchToolService.getToolDefinition(),
         group: BuiltInToolGroup.search,
+      ),
+      BuiltInToolCatalogEntry(
+        name: AiSettingsToolService.toolName,
+        defaultDefinition: AiSettingsToolService.getToolDefinition(),
+        group: BuiltInToolGroup.local,
       ),
       BuiltInToolCatalogEntry(
         name: ViewImageTool.name,

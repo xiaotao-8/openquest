@@ -66,8 +66,35 @@ final class UiTextProjection {
       omission: labels.omitted,
     );
     if (selected != null) {
+      // Ask context entries are shown to the user on the draft chip as well
+      // as sent to the model, so they must read as plain label/value lines,
+      // never raw JSON fragments like "choice": "C". A value that matches
+      // an option of some input in the surface is shown by its option
+      // label (what the user actually picked); other scalars use the same
+      // human formatting as the walk below.
+      final optionLabels = <Object?, String>{};
+      for (final node in read.nodes.values) {
+        final options = node.properties['options'];
+        if (options is List) {
+          for (final option in options.whereType<Map<String, Object?>>()) {
+            final value = option['value'];
+            final label = option['label'];
+            if (value != null && label is String) {
+              optionLabels[value] = label;
+            }
+          }
+        }
+      }
       for (final entry in selected.entries) {
-        output.add('${jsonEncode(entry.key)}: ${jsonEncode(entry.value)}');
+        final value = entry.value;
+        final display =
+            optionLabels[value] ??
+            switch (value) {
+              String s => s,
+              num() || bool() => scalar(value),
+              _ => jsonEncode(value),
+            };
+        output.add('${entry.key}: $display');
       }
     } else {
       _walk(read, output);

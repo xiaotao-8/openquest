@@ -1363,7 +1363,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get museFeedEmpty =>
-      'Nothing here yet. Activity from your chats and Bots will appear here.';
+      'Nothing here yet. Activity from your chats and Agents will appear here.';
 
   @override
   String get museIdeasEmpty => 'No ideas yet.';
@@ -1381,10 +1381,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get groupNameHint => 'Group name';
 
   @override
-  String get groupSelectMembers => 'Members (Bots)';
+  String get groupSelectMembers => 'Members (Agents)';
 
   @override
-  String get groupNoBots => 'No Bots yet — create one first.';
+  String get groupNoBots => 'No Agents yet — create one first.';
 
   @override
   String get groupNewBot => 'New Agent';
@@ -2952,6 +2952,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String chatMessageWidgetAppSettings(String key) {
+    return 'Change setting: $key';
+  }
+
+  @override
   String get chatMessageWidgetBuiltinSearch => 'Built-in Search';
 
   @override
@@ -3369,6 +3374,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String sideDrawerUpdateTitleWithBuild(String version, int build) {
     return 'New version: $version ($build)';
   }
+
+  @override
+  String get cloudUpdateDownloadButton => 'Download Update';
+
+  @override
+  String get cloudUpdateLaterButton => 'Later';
+
+  @override
+  String get cloudUpdateIosHint =>
+      'After the download finishes, open the package with your signing tool to complete the installation.';
+
+  @override
+  String get cloudUpdateFeedUrlTitle => 'Update Feed URL';
+
+  @override
+  String get cloudUpdateFeedUrlEditTitle => 'Set Update Feed URL';
+
+  @override
+  String get cloudUpdateFeedUrlHint => 'Full URL of the version feed file';
+
+  @override
+  String get cloudUpdateFeedUrlSave => 'Save';
+
+  @override
+  String get cloudUpdateFeedUrlCancel => 'Cancel';
+
+  @override
+  String get displaySettingsPageAiSettingsControlTitle => 'AI Settings Control';
+
+  @override
+  String get displaySettingsPageAiSettingsControlSubtitle =>
+      'When on, the assistant can change settings you ask for in chat; sensitive changes still ask for your approval first.';
 
   @override
   String get sideDrawerLinkCopied => 'Link copied';
@@ -5119,7 +5156,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get searchServicesPageWebFetchFooter =>
-      'With web search on, the model can also read full pages. When the search service can\'t read pages, local reading is used, which can\'t handle pages that need JavaScript or block bots.\n\nIf you use the page reader configured here, disable the built-in @openquest/fetch in Settings → MCP to avoid overlapping tools. The page reader configured here will still work.';
+      'With web search on, the model can also read full pages. When the search service can\'t read pages, local reading is used, which can\'t handle pages that need JavaScript or block automated readers.\n\nIf you use the page reader configured here, disable the built-in @openquest/fetch in Settings → MCP to avoid overlapping tools. The page reader configured here will still work.';
 
   @override
   String get searchServicesPageWebFetchSupported => 'Can read web pages';
@@ -5753,7 +5790,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Don\'t collapse assistant list when closing sidebar';
 
   @override
-  String get displaySettingsPageShowUpdatesTitle => 'Show Updates';
+  String get displaySettingsPageShowUpdatesTitle => 'Cloud Update';
 
   @override
   String get displaySettingsPageShowUpdatesSubtitle =>
@@ -15470,6 +15507,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolPermissionFullAccess => 'Full access';
 
   @override
+  String get toolPermissionFullAccessConfirmTitle => 'Turn on full access?';
+
+  @override
+  String get toolPermissionFullAccessConfirmBody =>
+      'In this conversation the assistant will run tools, access files and apply settings changes it is allowed to make without asking you each time. Only turn this on if you trust what it will do. You can turn it off here at any time.';
+
+  @override
+  String get toolPermissionFullAccessConfirmEnable => 'Turn on';
+
+  @override
+  String get toolPermissionFullAccessConfirmCancel => 'Cancel';
+
+  @override
   String get chatInputBarQueuedCompressionCancelled =>
       'Compression was cancelled, so this message won’t send automatically.';
 
@@ -17648,6 +17698,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get botActionUsingTool => 'Using a tool';
 
   @override
+  String botActionRunningCommandDetail(String command) {
+    return 'Running command: $command';
+  }
+
+  @override
+  String botActionReadingFileDetail(String path) {
+    return 'Reading file: $path';
+  }
+
+  @override
+  String botActionWritingFileDetail(String path) {
+    return 'Writing file: $path';
+  }
+
+  @override
+  String botActionServerTool(String tool, String server) {
+    return 'Server tool: $tool ($server)';
+  }
+
+  @override
+  String get workingListAllDone => 'All done — no agent is working right now.';
+
+  @override
   String get settingsButtonTooltip => 'Settings';
 
   @override
@@ -17660,7 +17733,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get groupModelModeIndividual => 'Set each agent individually';
 
   @override
-  String get groupModelModeUnified => 'One model for all Bots';
+  String get groupModelModeUnified => 'One model for all Agents';
 
   @override
   String get groupModelUnifiedLabel => 'Unified model';

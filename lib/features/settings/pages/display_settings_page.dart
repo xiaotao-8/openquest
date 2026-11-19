@@ -1246,6 +1246,51 @@ Widget _sheetDividerNoIcon(BuildContext context) {
   );
 }
 
+Future<void> _showCloudUpdateFeedUrlDialog(BuildContext context) async {
+  final l10n = AppLocalizations.of(context)!;
+  final settings = context.read<SettingsProvider>();
+  final controller = TextEditingController(text: settings.cloudUpdateFeedUrl);
+  try {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(l10n.cloudUpdateFeedUrlEditTitle),
+          content: SizedBox(
+            width: 360,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                helperText: l10n.cloudUpdateFeedUrlHint,
+              ),
+              onSubmitted: (_) => Navigator.of(ctx).pop(true),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(l10n.cloudUpdateFeedUrlCancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(l10n.cloudUpdateFeedUrlSave),
+            ),
+          ],
+        );
+      },
+    );
+    if (saved != true || !context.mounted) return;
+    await settings.setCloudUpdateFeedUrl(controller.text);
+  } finally {
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+  }
+}
+
 Future<void> _showMobileMessageNavModeSheet(BuildContext context) async {
   final l10n = AppLocalizations.of(context)!;
   final choice = await showModalBottomSheet<MobileMessageNavButtonsMode>(
@@ -1927,6 +1972,28 @@ class BehaviorStartupSettingsPage extends StatelessWidget {
                 value: sp.showAppUpdates,
                 onChanged: (v) =>
                     context.read<SettingsProvider>().setShowAppUpdates(v),
+              ),
+              _iosDivider(context),
+              _iosNavRow(
+                context,
+                icon: Lucide.Link,
+                label: l10n.cloudUpdateFeedUrlTitle,
+                detailBuilder: (_) => Text(
+                  sp.cloudUpdateFeedUrl,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => _showCloudUpdateFeedUrlDialog(context),
+              ),
+              _iosDivider(context),
+              _iosSwitchRow(
+                context,
+                icon: Lucide.Settings2,
+                label: l10n.displaySettingsPageAiSettingsControlTitle,
+                tip: l10n.displaySettingsPageAiSettingsControlSubtitle,
+                value: sp.aiSettingsControlEnabled,
+                onChanged: (v) => context
+                    .read<SettingsProvider>()
+                    .setAiSettingsControlEnabled(v),
               ),
               if (defaultTargetPlatform == TargetPlatform.android ||
                   defaultTargetPlatform == TargetPlatform.iOS) ...[

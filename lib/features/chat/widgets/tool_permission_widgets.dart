@@ -20,6 +20,33 @@ Future<bool> setToolPermissionFromUi(
   ToolPermissionMode mode, {
   bool notify = true,
 }) async {
+  // Turning full access ON always takes one explicit risk confirmation
+  // first. (The undo/restore paths call _saveToolPermission directly and
+  // deliberately skip this: they only restore a mode the user already had.)
+  if (mode == ToolPermissionMode.fullAccess) {
+    final permissions = ConversationToolPermissions.forChat(
+      context.read<ChatService>(),
+    );
+    final before = permissions.read(id);
+    final confirmed = await _confirmFullAccess(
+      context,
+      AppLocalizations.of(context)!,
+    );
+    if (confirmed != true || !context.mounted) return false;
+    // The confirmation was given for the state on screen when the dialog
+    // opened. If the conversation's permission context moved meanwhile
+    // (workspace changed, assistant changed, mode already changed), the
+    // confirmation is stale: drop the enable instead of applying it to a
+    // context the user did not confirm.
+    final now = permissions.read(id);
+    if (now == null ||
+        before == null ||
+        now.mode != before.mode ||
+        now.workspaceId != before.workspaceId ||
+        now.assistantId != before.assistantId) {
+      return false;
+    }
+  }
   return _saveToolPermission(
     Navigator.maybeOf(context, rootNavigator: true)?.context ?? context,
     AppLocalizations.of(context)!,
@@ -28,6 +55,36 @@ Future<bool> setToolPermissionFromUi(
     id,
     mode,
     notify: notify,
+  );
+}
+
+Future<bool?> _confirmFullAccess(
+  BuildContext context,
+  AppLocalizations l10n,
+) async {
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) {
+      final cs = Theme.of(ctx).colorScheme;
+      return AlertDialog(
+        icon: Icon(Lucide.ShieldAlert, color: ctx.appColors.warning, size: 28),
+        title: Text(l10n.toolPermissionFullAccessConfirmTitle),
+        content: Text(l10n.toolPermissionFullAccessConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.toolPermissionFullAccessConfirmCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              l10n.toolPermissionFullAccessConfirmEnable,
+              style: TextStyle(color: cs.error),
+            ),
+          ),
+        ],
+      );
+    },
   );
 }
 

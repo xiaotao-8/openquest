@@ -305,7 +305,7 @@ class BrowserService extends ChangeNotifier with WidgetsBindingObserver {
     ).hasMatch(value);
     if (explicit && !hostWithPort) {
       if (!_isPageUrl(value)) {
-        throw const FormatException('Use HTTP(S) or local Kelivo file pages');
+        throw const FormatException('Use HTTP(S) or local file pages');
       }
       if (BrowserWorkspaceResources.isLocalUrl(value)) {
         return BrowserWorkspaceResources.normalizeLocalUrl(value);

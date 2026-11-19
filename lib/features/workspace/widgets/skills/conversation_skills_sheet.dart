@@ -262,7 +262,10 @@ class ConversationSkillsPanel extends StatelessWidget {
                 _switchRow(
                   key: ConversationSkillsPanel.skillKey(listed[i].record.id),
                   icon: Lucide.WandSparkles,
-                  label: listed[i].name,
+                  label: listed[i].displayName(
+                    chineseUi:
+                        Localizations.localeOf(context).languageCode == 'zh',
+                  ),
                   value: followGlobal
                       ? listed[i].record.enabled
                       : inherit

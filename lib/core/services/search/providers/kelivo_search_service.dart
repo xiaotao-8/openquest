@@ -87,7 +87,7 @@ class KelivoSearchService extends SearchService<KelivoOptions> {
 
       return SearchResult(items: results);
     } catch (e) {
-      throw Exception('Kelivo search failed: $e');
+      throw Exception('OpenQuest search failed: $e');
     } finally {
       if (ownsClient) httpClient.close();
     }

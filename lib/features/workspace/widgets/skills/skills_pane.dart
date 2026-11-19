@@ -1,6 +1,10 @@
 import 'dart:async';
 
+import 'package:Kelivo/core/providers/settings_provider.dart';
+import 'package:Kelivo/core/services/api/chat_api_service.dart';
+import 'package:Kelivo/core/services/api/stream/stream_chunk.dart';
 import 'package:Kelivo/core/services/haptics.dart';
+import 'package:Kelivo/core/services/skills/skill_translation_service.dart';
 import 'package:Kelivo/core/services/skills/skills_service.dart';
 import 'package:Kelivo/features/workspace/widgets/skills/skill_detail.dart';
 import 'package:Kelivo/features/workspace/widgets/skills/skill_import.dart';
@@ -158,11 +162,49 @@ class SkillsPaneState extends State<SkillsPane> {
     return child.animate().fadeIn(duration: 200.ms);
   }
 
+  /// Product rule: in a Chinese UI, English skill names/descriptions are
+  /// translated automatically on display with the user's own configured
+  /// model. Kicks off at most once per skill version per launch; results
+  /// are cached on the skill records and arrive via SkillsService.
+  void _kickSkillTranslations(List<Skill> skills) {
+    if (!skills.any(SkillTranslationService.isStale)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final settings = context.read<SettingsProvider>();
+      final providerKey = settings.currentModelProvider;
+      final modelId = settings.currentModelId;
+      if (providerKey == null || modelId == null) return;
+      final config = settings.getProviderConfig(providerKey);
+      unawaited(
+        SkillTranslationService.instance.translateMissing(
+          context.read<SkillsService>(),
+          (prompt) async {
+            final buffer = StringBuffer();
+            await for (final chunk in ChatApiService.sendMessageStream(
+              config: config,
+              modelId: modelId,
+              messages: [
+                {'role': 'user', 'content': prompt},
+              ],
+              textOnly: true,
+            )) {
+              if (chunk is TextDelta) buffer.write(chunk.text);
+            }
+            return buffer.toString();
+          },
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final skills = context.watch<SkillsService>().skills;
+    if (Localizations.localeOf(context).languageCode == 'zh') {
+      _kickSkillTranslations(skills);
+    }
     final filtered = _filtered(skills);
     final showSearch = skills.length > 8;
 
@@ -297,11 +339,12 @@ class _SkillTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final description = skill.description.trim();
+    final chineseUi = Localizations.localeOf(context).languageCode == 'zh';
+    final description = skill.displayDescription(chineseUi: chineseUi).trim();
     return IosNavRow(
       key: SkillsPane.itemKey(skill.record.id),
       icon: Lucide.WandSparkles,
-      label: skill.name,
+      label: skill.displayName(chineseUi: chineseUi),
       labelWeight: AppFontWeights.medium,
       subtitle: description.isEmpty ? null : description,
       caption: l10n.skillsUsedCount(skill.record.useCount),

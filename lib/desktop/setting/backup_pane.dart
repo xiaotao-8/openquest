@@ -294,10 +294,10 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                     _ServerSettingField(
                       label: l10n.backupPagePath,
                       value: dav.path,
-                      hint: 'kelivo_backups',
+                      hint: 'openquest_backups',
                       enabled: !busy,
                       saving: settings.savingWebDavConfig,
-                      defaultValue: 'kelivo_backups',
+                      defaultValue: 'openquest_backups',
                       onChanged: (value) => _saveServerEdit(
                         settings.updateWebDavConfig(
                           (cfg) => cfg.copyWith(path: value),
@@ -523,10 +523,10 @@ class _DesktopBackupPaneState extends State<DesktopBackupPane> {
                     _ServerSettingField(
                       label: l10n.backupPageS3Prefix,
                       value: s3.prefix,
-                      hint: 'kelivo_backups',
+                      hint: 'openquest_backups',
                       enabled: !busy,
                       saving: settings.savingS3Config,
-                      defaultValue: 'kelivo_backups',
+                      defaultValue: 'openquest_backups',
                       onChanged: (value) => _saveServerEdit(
                         settings.updateS3Config(
                           (cfg) => cfg.copyWith(prefix: value),

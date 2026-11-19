@@ -409,7 +409,8 @@ class _SkillDetailBodyState extends State<_SkillDetailBody> {
     final cs = Theme.of(context).colorScheme;
     final body = _body;
     final largeFileBytes = _largeFileBytes;
-    final description = skill.description.trim();
+    final chineseUi = Localizations.localeOf(context).languageCode == 'zh';
+    final description = skill.displayDescription(chineseUi: chineseUi).trim();
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -431,7 +432,7 @@ class _SkillDetailBodyState extends State<_SkillDetailBody> {
               ),
               const SizedBox(height: 10),
               Text(
-                skill.name,
+                skill.displayName(chineseUi: chineseUi),
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: AppFontWeights.semibold,

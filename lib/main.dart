@@ -100,6 +100,7 @@ import 'utils/app_directories.dart';
 import 'utils/platform_utils.dart';
 import 'utils/sandbox_path_resolver.dart';
 import 'shared/widgets/app_overlays.dart';
+import 'shared/widgets/cloud_update_dialog.dart';
 import 'shared/widgets/floating_ipad_padding.dart';
 import 'shared/widgets/snackbar.dart';
 import 'shared/widgets/restore_failure_screen.dart';
@@ -128,6 +129,52 @@ import 'core/services/conversation_tool_permissions.dart';
 final RouteObserver<ModalRoute<dynamic>> routeObserver =
     RouteObserver<ModalRoute<dynamic>>();
 bool _didCheckUpdates = false; // one-time update check flag
+
+/// One cloud-update check + prompt cycle. Runs on app launch (once, from the
+/// first build) and again on every return to the foreground via
+/// [_CloudUpdateLifecycleObserver] — never on a timer. When the feed reports
+/// a newer version, the user is prompted immediately with a dialog.
+Future<void> _runCloudUpdateCheck(
+  SettingsProvider settings,
+  UpdateProvider updates,
+) async {
+  if (!settings.showAppUpdates) return;
+  await settings.loaded;
+  if (!settings.showAppUpdates) return;
+  await updates.checkForUpdates(feedUrl: settings.cloudUpdateFeedUrl);
+  final info = updates.available;
+  if (info == null || !updates.shouldPrompt(info)) return;
+  updates.markPrompted(info.version);
+  final navContext = rootNavigatorKey.currentContext;
+  if (navContext == null || !navContext.mounted) return;
+  await CloudUpdateDialog.show(navContext, info);
+}
+
+Future<void> _checkCloudUpdateAndPrompt(BuildContext context) async {
+  final settings = context.read<SettingsProvider>();
+  final updates = context.read<UpdateProvider>();
+  await _runCloudUpdateCheck(settings, updates);
+}
+
+/// Re-runs the cloud-update check whenever the app returns to the
+/// foreground, so a version published while the app was backgrounded pops
+/// up as soon as the user comes back.
+class _CloudUpdateLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final context = rootNavigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    final settings = context.read<SettingsProvider>();
+    final updates = context.read<UpdateProvider>();
+    unawaited(() async {
+      try {
+        await _runCloudUpdateCheck(settings, updates);
+      } catch (_) {}
+    }());
+  }
+}
+
 bool _didEnsureAssistants = false; // ensure defaults after l10n ready
 bool _didWireWorkspace = false;
 
@@ -233,6 +280,7 @@ Future<void> main(List<String> arguments) async {
     () async {
       try {
         WidgetsFlutterBinding.ensureInitialized();
+        WidgetsBinding.instance.addObserver(_CloudUpdateLifecycleObserver());
         // Balance polling follows the badge's visibility after each frame.
         VisibilityDetectorController.instance.updateInterval = Duration.zero;
         await DesktopStartupService.prepareLaunch(arguments);
@@ -1118,14 +1166,15 @@ class MyApp extends StatelessWidget {
               }
             } catch (_) {}
           });
-          // One-time app update check after first build
+          // Cloud update check after first build; the lifecycle observer
+          // registered in main() repeats it on every foreground return.
           if (settings.showAppUpdates && !_didCheckUpdates) {
             _didCheckUpdates = true;
             WidgetsBinding.instance.addPostFrameCallback((_) async {
               try {
                 await settings.loaded;
                 if (!context.mounted || !settings.showAppUpdates) return;
-                await context.read<UpdateProvider>().checkForUpdates();
+                await _checkCloudUpdateAndPrompt(context);
               } catch (_) {}
             });
           }

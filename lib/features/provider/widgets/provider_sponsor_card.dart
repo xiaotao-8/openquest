@@ -12,7 +12,7 @@ class ProviderSponsorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final info = switch (providerKey.toLowerCase()) {
       'sta1n api' => (
-        description: '专注角色扮演（RP）与角色聊天的 API 服务。感谢 STA1N API 对 Kelivo 的赞助与支持！',
+        description: '专注角色扮演（RP）与角色聊天的 API 服务。感谢 STA1N API 对 OpenQuest 的赞助与支持！',
         website: 'https://sta1n.ai/',
         purchaseUrl: null,
       ),

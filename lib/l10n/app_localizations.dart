@@ -2587,7 +2587,7 @@ abstract class AppLocalizations {
   /// Empty-state text on the Feed skeleton page.
   ///
   /// In en, this message translates to:
-  /// **'Nothing here yet. Activity from your chats and Bots will appear here.'**
+  /// **'Nothing here yet. Activity from your chats and Agents will appear here.'**
   String get museFeedEmpty;
 
   /// Empty-state text on the Ideas skeleton page.
@@ -2623,13 +2623,13 @@ abstract class AppLocalizations {
   /// Label above the Bot member picker in the create-group dialog.
   ///
   /// In en, this message translates to:
-  /// **'Members (Bots)'**
+  /// **'Members (Agents)'**
   String get groupSelectMembers;
 
   /// Text shown in the create-group dialog when no assistants exist yet.
   ///
   /// In en, this message translates to:
-  /// **'No Bots yet — create one first.'**
+  /// **'No Agents yet — create one first.'**
   String get groupNoBots;
 
   /// Button in the create-group dialog that creates a new Bot (assistant).
@@ -5446,6 +5446,12 @@ abstract class AppLocalizations {
   /// **'Read page: {target}'**
   String chatMessageWidgetWebFetch(String target);
 
+  /// Tool-call title for the app_settings tool; {key} is the setting key being read or changed.
+  ///
+  /// In en, this message translates to:
+  /// **'Change setting: {key}'**
+  String chatMessageWidgetAppSettings(String key);
+
   /// Tool-call title for the model's built-in search tool.
   ///
   /// In en, this message translates to:
@@ -6153,6 +6159,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'New version: {version} ({build})'**
   String sideDrawerUpdateTitleWithBuild(String version, int build);
+
+  /// Primary button in the cloud update dialog; starts downloading the new version package.
+  ///
+  /// In en, this message translates to:
+  /// **'Download Update'**
+  String get cloudUpdateDownloadButton;
+
+  /// Dismiss button in the cloud update dialog; postpones the update.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get cloudUpdateLaterButton;
+
+  /// Note in the cloud update dialog shown only on iOS explaining that the signing tool performs the actual install.
+  ///
+  /// In en, this message translates to:
+  /// **'After the download finishes, open the package with your signing tool to complete the installation.'**
+  String get cloudUpdateIosHint;
+
+  /// Settings row title for the cloud update feed address.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Feed URL'**
+  String get cloudUpdateFeedUrlTitle;
+
+  /// Title of the dialog that edits the cloud update feed address.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Update Feed URL'**
+  String get cloudUpdateFeedUrlEditTitle;
+
+  /// Helper text under the cloud update feed address input.
+  ///
+  /// In en, this message translates to:
+  /// **'Full URL of the version feed file'**
+  String get cloudUpdateFeedUrlHint;
+
+  /// Save button in the cloud update feed address dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get cloudUpdateFeedUrlSave;
+
+  /// Cancel button in the cloud update feed address dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cloudUpdateFeedUrlCancel;
+
+  /// Master switch title for letting the AI change app settings from chat.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Settings Control'**
+  String get displaySettingsPageAiSettingsControlTitle;
+
+  /// Explanation under the AI settings control master switch.
+  ///
+  /// In en, this message translates to:
+  /// **'When on, the assistant can change settings you ask for in chat; sensitive changes still ask for your approval first.'**
+  String get displaySettingsPageAiSettingsControlSubtitle;
 
   /// Success snackbar shown after the user copies the update download link.
   ///
@@ -9328,7 +9394,7 @@ abstract class AppLocalizations {
   /// Explanatory footer text about web fetching behavior and a note to disable the built-in @openquest/fetch MCP tool to avoid overlap.
   ///
   /// In en, this message translates to:
-  /// **'With web search on, the model can also read full pages. When the search service can\'t read pages, local reading is used, which can\'t handle pages that need JavaScript or block bots.\n\nIf you use the page reader configured here, disable the built-in @openquest/fetch in Settings → MCP to avoid overlapping tools. The page reader configured here will still work.'**
+  /// **'With web search on, the model can also read full pages. When the search service can\'t read pages, local reading is used, which can\'t handle pages that need JavaScript or block automated readers.\n\nIf you use the page reader configured here, disable the built-in @openquest/fetch in Settings → MCP to avoid overlapping tools. The page reader configured here will still work.'**
   String get searchServicesPageWebFetchFooter;
 
   /// Tooltip/semantic label on an icon indicating a search service supports reading web pages.
@@ -10426,7 +10492,7 @@ abstract class AppLocalizations {
   /// Toggle row label in display settings that shows or hides app update notifications.
   ///
   /// In en, this message translates to:
-  /// **'Show Updates'**
+  /// **'Cloud Update'**
   String get displaySettingsPageShowUpdatesTitle;
 
   /// Toggle subtitle explaining app update notifications are displayed.
@@ -27300,6 +27366,30 @@ abstract class AppLocalizations {
   /// **'Full access'**
   String get toolPermissionFullAccess;
 
+  /// Title of the risk confirmation shown before full access is enabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on full access?'**
+  String get toolPermissionFullAccessConfirmTitle;
+
+  /// Risk explanation in the full-access confirmation dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'In this conversation the assistant will run tools, access files and apply settings changes it is allowed to make without asking you each time. Only turn this on if you trust what it will do. You can turn it off here at any time.'**
+  String get toolPermissionFullAccessConfirmBody;
+
+  /// Confirm button in the full-access risk dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on'**
+  String get toolPermissionFullAccessConfirmEnable;
+
+  /// Cancel button in the full-access risk dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get toolPermissionFullAccessConfirmCancel;
+
   /// Status text noting compression was cancelled so the queued message will not auto-send.
   ///
   /// In en, this message translates to:
@@ -30918,6 +31008,36 @@ abstract class AppLocalizations {
   /// **'Using a tool'**
   String get botActionUsingTool;
 
+  /// Live status in the working panel: the Bot is running this exact terminal command.
+  ///
+  /// In en, this message translates to:
+  /// **'Running command: {command}'**
+  String botActionRunningCommandDetail(String command);
+
+  /// Live status in the working panel: the Bot is reading this exact file.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading file: {path}'**
+  String botActionReadingFileDetail(String path);
+
+  /// Live status in the working panel: the Bot is writing or editing this exact file.
+  ///
+  /// In en, this message translates to:
+  /// **'Writing file: {path}'**
+  String botActionWritingFileDetail(String path);
+
+  /// Live status in the working panel: the Bot is calling this tool on this connected server.
+  ///
+  /// In en, this message translates to:
+  /// **'Server tool: {tool} ({server})'**
+  String botActionServerTool(String tool, String server);
+
+  /// Shown in the working panel when every Bot finished while the panel was open.
+  ///
+  /// In en, this message translates to:
+  /// **'All done — no agent is working right now.'**
+  String get workingListAllDone;
+
   /// Tooltip/semantic label for the settings gear button at the chat header's top-right.
   ///
   /// In en, this message translates to:
@@ -30945,7 +31065,7 @@ abstract class AppLocalizations {
   /// Group model mode option: all Bots in the group use one single model.
   ///
   /// In en, this message translates to:
-  /// **'One model for all Bots'**
+  /// **'One model for all Agents'**
   String get groupModelModeUnified;
 
   /// Label for the unified model row in group settings.

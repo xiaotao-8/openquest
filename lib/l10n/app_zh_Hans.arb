@@ -1026,6 +1026,14 @@
       }
     }
   },
+  "chatMessageWidgetAppSettings": "修改设置：{key}",
+  "@chatMessageWidgetAppSettings": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    }
+  },
   "chatMessageWidgetBuiltinSearch": "模型内置搜索",
   "chatMessageWidgetReadClipboard": "读取剪切板",
   "chatMessageWidgetWriteClipboard": "写入剪切板",
@@ -1172,6 +1180,16 @@
   },
   "sideDrawerUpdateTitle": "发现新版本：{version}",
   "sideDrawerUpdateTitleWithBuild": "发现新版本：{version} ({build})",
+  "cloudUpdateDownloadButton": "下载更新",
+  "cloudUpdateLaterButton": "稍后再说",
+  "cloudUpdateIosHint": "下载完成后，请用签名工具打开安装包完成安装。",
+  "cloudUpdateFeedUrlTitle": "更新源地址",
+  "cloudUpdateFeedUrlEditTitle": "设置更新源地址",
+  "cloudUpdateFeedUrlHint": "版本信息文件的完整网址",
+  "cloudUpdateFeedUrlSave": "保存",
+  "cloudUpdateFeedUrlCancel": "取消",
+  "displaySettingsPageAiSettingsControlTitle": "AI 操控设置",
+  "displaySettingsPageAiSettingsControlSubtitle": "开启后，智能体可在聊天里按你的要求改设置；敏感改动仍会先弹审批卡征得同意。",
   "sideDrawerLinkCopied": "已复制下载链接",
   "sideDrawerPinnedLabel": "置顶",
   "sideDrawerHistory": "聊天历史",
@@ -2008,7 +2026,7 @@
   "displaySettingsPageKeepSidebarOpenOnAssistantTapTitle": "点选助手时不自动关闭侧边栏",
   "displaySettingsPageKeepSidebarOpenOnTopicTapTitle": "点选话题时不自动关闭侧边栏",
   "displaySettingsPageKeepAssistantListExpandedOnSidebarCloseTitle": "关闭侧边栏时不折叠助手列表",
-  "displaySettingsPageShowUpdatesTitle": "显示更新",
+  "displaySettingsPageShowUpdatesTitle": "云更新",
   "displaySettingsPageShowUpdatesSubtitle": "显示应用更新通知",
   "displaySettingsPageKeepScreenOnDuringGenerationTitle": "生成时保持屏幕常亮",
   "displaySettingsPageKeepScreenOnDuringGenerationSubtitle": "防止生成中途锁屏导致中断，会增加耗电",
@@ -5615,6 +5633,10 @@
   "contextDetailNext": "下次发送",
   "contextTaskCancel": "取消压缩",
   "toolPermissionFullAccess": "完全访问",
+  "toolPermissionFullAccessConfirmTitle": "开启完全权限？",
+  "toolPermissionFullAccessConfirmBody": "开启后，在这个会话里智能体运行工具、访问文件、修改它有权改的设置，都不再逐项征求你的同意。只在你信任它要做的事时才开启；随时可以在这里关回。",
+  "toolPermissionFullAccessConfirmEnable": "仍然开启",
+  "toolPermissionFullAccessConfirmCancel": "取消",
   "chatInputBarQueuedCompressionCancelled": "压缩已取消，这条消息不会自动发送。",
   "toolPermissionResetSnack": "已更换工作区 · 此对话权限已恢复为请求批准",
   "contextImpactUndoOne": "撤销",

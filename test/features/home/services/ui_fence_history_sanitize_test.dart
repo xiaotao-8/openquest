@@ -146,4 +146,99 @@ void main() {
       expect(messages[1]['content'], unclosed);
     });
   });
+
+  group('ensureAskParadigm', () {
+    test('swaps unfenced ask turns for the paradigm and inserts it', () {
+      final messages = <Map<String, dynamic>>[
+        {'role': 'user', 'content': '列三个口味让我选'},
+        {
+          'role': 'assistant',
+          'content': '结论：三选一。\n\n- 薄荷撞云 | 清爽解腻\n- 椰林晚照 | 热带度假风\n\n选哪个？',
+        },
+        {'role': 'user', 'content': '再列两个让我拍板'},
+      ];
+      ensureAskParadigm(messages);
+      expect(messages.length, 5);
+      expect(messages[1]['content'], askParadigmAssistantTurn);
+      expect(messages[2]['role'], 'user');
+      expect(messages[3]['role'], 'assistant');
+      expect(messages[3]['content'], askParadigmAssistantTurn);
+      expect(messages[4]['content'], '再列两个让我拍板');
+    });
+
+    test('repairs unfenced asks inside structured part content', () {
+      final messages = <Map<String, dynamic>>[
+        {'role': 'user', 'content': '列三个口味让我选'},
+        {
+          'role': 'assistant',
+          'content': [
+            {
+              'type': 'text',
+              'text': '结论：三选一。\n\n- 薄荷撞云 | 清爽解腻\n- 椰林晚照 | 热带度假风',
+            },
+          ],
+        },
+        {'role': 'user', 'content': '再列两个让我拍板'},
+      ];
+      ensureAskParadigm(messages);
+      final parts = messages[1]['content'] as List;
+      expect((parts[0] as Map)['text'], askParadigmAssistantTurn);
+      expect(messages.length, 5);
+      expect(messages[3]['content'], askParadigmAssistantTurn);
+    });
+
+    test('repairs unfenced asks that come after an old fenced ask', () {
+      final messages = <Map<String, dynamic>>[
+        {
+          'role': 'assistant',
+          'content': '```ask\n选哪个\n- 甲 | 说明一\n- 乙 | 说明二\n```',
+        },
+        {'role': 'user', 'content': '甲'},
+        {
+          'role': 'assistant',
+          'content': '结论：三选一。\n\n- 薄荷撞云 | 清爽解腻\n- 椰林晚照 | 热带度假风\n\n选哪个？',
+        },
+        {'role': 'user', 'content': '再列两个让我拍板'},
+      ];
+      ensureAskParadigm(messages);
+      // The old fenced ask stays untouched; the recent unfenced one is
+      // swapped and the paradigm pair is inserted before the last user.
+      expect(messages[0]['content'], contains('```ask'));
+      expect(messages[2]['content'], askParadigmAssistantTurn);
+      expect(messages.length, 6);
+      expect(messages[4]['content'], askParadigmAssistantTurn);
+      expect(messages[5]['content'], '再列两个让我拍板');
+    });
+
+    test('does nothing once a fenced ask exists in history', () {
+      final messages = <Map<String, dynamic>>[
+        {
+          'role': 'assistant',
+          'content': '```ask\n选哪个\n- 甲 | 说明一\n- 乙 | 说明二\n```',
+        },
+        {'role': 'user', 'content': '甲'},
+      ];
+      ensureAskParadigm(messages);
+      expect(messages.length, 2);
+    });
+
+    test('does nothing when no ask-shaped list exists', () {
+      final messages = <Map<String, dynamic>>[
+        {'role': 'assistant', 'content': '普通回复，没有选项列表。'},
+        {'role': 'user', 'content': '好的'},
+      ];
+      ensureAskParadigm(messages);
+      expect(messages.length, 2);
+    });
+
+    test('ignores option-shaped lines in user messages', () {
+      final messages = <Map<String, dynamic>>[
+        {'role': 'user', 'content': '- 甲 | 这是用户自己贴的'},
+        {'role': 'assistant', 'content': '收到。'},
+        {'role': 'user', 'content': '继续'},
+      ];
+      ensureAskParadigm(messages);
+      expect(messages.length, 3);
+    });
+  });
 }

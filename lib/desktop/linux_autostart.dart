@@ -52,7 +52,7 @@ class LinuxAutostart {
     await file.parent.create(recursive: true);
     final temporary = File('${file.path}.tmp');
     await temporary.writeAsString(
-      '[Desktop Entry]\nType=Application\nName=Kelivo\n'
+      '[Desktop Entry]\nType=Application\nName=OpenQuest\n'
       'Exec=${quoteExecutable(executable)} --autostart\n'
       'Terminal=false\nStartupNotify=false\n',
       flush: true,

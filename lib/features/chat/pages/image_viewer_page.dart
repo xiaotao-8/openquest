@@ -1095,13 +1095,13 @@ class _ImageViewerPageState extends State<ImageViewerPage>
         return;
       }
 
-      final name = 'kelivo-${DateTime.now().millisecondsSinceEpoch}';
+      final name = 'openquest-${DateTime.now().millisecondsSinceEpoch}';
       final format = _formatFromMagicBytes(bytes);
       final dynamic result;
       if (format == 'png' || format == 'gif') {
         // saveImage re-encodes as JPEG, discarding transparency and animation.
         final temp = await getTemporaryDirectory();
-        final directory = await temp.createTemp('kelivo-image-save-');
+        final directory = await temp.createTemp('openquest-image-save-');
         try {
           final file = File(p.join(directory.path, '$name.$format'));
           await file.writeAsBytes(bytes);
@@ -1200,7 +1200,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
         temp = await File(
           p.join(
             tmp.path,
-            'kelivo_${DateTime.now().millisecondsSinceEpoch}.png',
+            'openquest_${DateTime.now().millisecondsSinceEpoch}.png',
           ),
         ).create(recursive: true);
         await temp.writeAsBytes(bytes);
@@ -1213,7 +1213,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
           temp = await File(
             p.join(
               tmp.path,
-              'kelivo_${DateTime.now().millisecondsSinceEpoch}.png',
+              'openquest_${DateTime.now().millisecondsSinceEpoch}.png',
             ),
           ).create(recursive: true);
           await temp.writeAsBytes(bytes);
@@ -1228,7 +1228,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
           temp = await File(
             p.join(
               tmp.path,
-              'kelivo_${DateTime.now().millisecondsSinceEpoch}${ext.isNotEmpty ? ext : '.jpg'}',
+              'openquest_${DateTime.now().millisecondsSinceEpoch}${ext.isNotEmpty ? ext : '.jpg'}',
             ),
           ).create(recursive: true);
           await temp.writeAsBytes(resp.bodyBytes);
@@ -1418,7 +1418,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
           final ext = payload.format == 'jpeg' ? '.jpg' : '.${payload.format}';
           path = p.join(
             dir.path,
-            'kelivo_clip_${DateTime.now().millisecondsSinceEpoch}$ext',
+            'openquest_clip_${DateTime.now().millisecondsSinceEpoch}$ext',
           );
           await File(path).writeAsBytes(payload.bytes);
         }
@@ -2358,7 +2358,8 @@ class _ImageViewerPageState extends State<ImageViewerPage>
         return;
       }
 
-      final defaultName = 'kelivo-${DateTime.now().millisecondsSinceEpoch}$ext';
+      final defaultName =
+          'openquest-${DateTime.now().millisecondsSinceEpoch}$ext';
       final allowed = [ext.replaceFirst('.', '').toLowerCase()];
       String? savePath = await FilePicker.platform.saveFile(
         dialogTitle: l10n.imageViewerPageSaveButton,

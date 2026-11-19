@@ -82,16 +82,27 @@ class UpdateProvider extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
-  Future<void> checkForUpdates() async {
+  /// The newest version the user has already been prompted about in this
+  /// session, so returning to the foreground does not pop the same dialog
+  /// again and again. A different (newer) version prompts again.
+  String? _promptedVersion;
+  bool shouldPrompt(UpdateInfo info) => _promptedVersion != info.version;
+  void markPrompted(String version) => _promptedVersion = version;
+
+  /// Checks the user-configured cloud update feed. Called on app launch and
+  /// on every return to the foreground while the cloud update switch is on —
+  /// never on a timer.
+  Future<void> checkForUpdates({required String feedUrl}) async {
     if (_checking) return;
+    final base = feedUrl.trim();
+    if (base.isEmpty) return;
     _checking = true;
     _error = null;
     notifyListeners();
     try {
       final ts = DateTime.now().millisecondsSinceEpoch;
-      final url = Uri.parse(
-        'https://kelivo.psycheas.top/update.json?kelivo=$ts',
-      );
+      final separator = base.contains('?') ? '&' : '?';
+      final url = Uri.parse('$base${separator}t=$ts');
       final resp = await http.get(url);
       if (resp.statusCode != 200) {
         throw Exception('HTTP ${resp.statusCode}');

@@ -323,7 +323,7 @@ class BrowserToolsService {
               BrowserWorkspaceResources.isLocalUrl(args['url'] as String)) ||
           uri.userInfo.isNotEmpty) {
         throw const FormatException(
-          'Use HTTP(S) or local Kelivo file URLs, with no embedded credentials.',
+          'Use HTTP(S) or local file URLs, with no embedded credentials.',
         );
       }
     }

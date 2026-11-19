@@ -533,6 +533,8 @@ IconData _toolIconFor(String name, [Map<String, dynamic> args = const {}]) {
       return Lucide.Earth;
     case 'fetch_url':
       return Lucide.Link;
+    case 'app_settings':
+      return Lucide.Settings2;
     case 'builtin_search':
       return Lucide.Search;
     // Provider built-in server tools. These are the names the decoders emit,
@@ -742,6 +744,11 @@ String _toolTitleFor(
       );
       final host = Uri.tryParse(url)?.host ?? '';
       return l10n.chatMessageWidgetWebFetch(host.isEmpty ? url : host);
+    case 'app_settings':
+      final settingKey = UnicodeSanitizer.sanitize(
+        (args['key'] ?? '').toString().trim(),
+      );
+      return l10n.chatMessageWidgetAppSettings(settingKey);
     default:
       return isResult
           ? l10n.chatMessageWidgetToolResult(UnicodeSanitizer.sanitize(name))

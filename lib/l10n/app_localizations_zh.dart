@@ -2830,6 +2830,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String chatMessageWidgetAppSettings(String key) {
+    return '修改设置：$key';
+  }
+
+  @override
   String get chatMessageWidgetBuiltinSearch => '模型内置搜索';
 
   @override
@@ -3226,6 +3231,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String sideDrawerUpdateTitleWithBuild(String version, int build) {
     return '发现新版本：$version ($build)';
   }
+
+  @override
+  String get cloudUpdateDownloadButton => '下载更新';
+
+  @override
+  String get cloudUpdateLaterButton => '稍后再说';
+
+  @override
+  String get cloudUpdateIosHint => '下载完成后，请用签名工具打开安装包完成安装。';
+
+  @override
+  String get cloudUpdateFeedUrlTitle => '更新源地址';
+
+  @override
+  String get cloudUpdateFeedUrlEditTitle => '设置更新源地址';
+
+  @override
+  String get cloudUpdateFeedUrlHint => '版本信息文件的完整网址';
+
+  @override
+  String get cloudUpdateFeedUrlSave => '保存';
+
+  @override
+  String get cloudUpdateFeedUrlCancel => '取消';
+
+  @override
+  String get displaySettingsPageAiSettingsControlTitle => 'AI 操控设置';
+
+  @override
+  String get displaySettingsPageAiSettingsControlSubtitle =>
+      '开启后，智能体可在聊天里按你的要求改设置；敏感改动仍会先弹审批卡征得同意。';
 
   @override
   String get sideDrawerLinkCopied => '已复制下载链接';
@@ -5517,7 +5553,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '关闭侧边栏时不折叠助手列表';
 
   @override
-  String get displaySettingsPageShowUpdatesTitle => '显示更新';
+  String get displaySettingsPageShowUpdatesTitle => '云更新';
 
   @override
   String get displaySettingsPageShowUpdatesSubtitle => '显示应用更新通知';
@@ -14671,6 +14707,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolPermissionFullAccess => '完全访问';
 
   @override
+  String get toolPermissionFullAccessConfirmTitle => '开启完全权限？';
+
+  @override
+  String get toolPermissionFullAccessConfirmBody =>
+      '开启后，在这个会话里智能体运行工具、访问文件、修改它有权改的设置，都不再逐项征求你的同意。只在你信任它要做的事时才开启；随时可以在这里关回。';
+
+  @override
+  String get toolPermissionFullAccessConfirmEnable => '仍然开启';
+
+  @override
+  String get toolPermissionFullAccessConfirmCancel => '取消';
+
+  @override
   String get chatInputBarQueuedCompressionCancelled => '压缩已取消，这条消息不会自动发送。';
 
   @override
@@ -16694,6 +16743,29 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get botActionUsingTool => '正在用工具';
+
+  @override
+  String botActionRunningCommandDetail(String command) {
+    return '运行命令：$command';
+  }
+
+  @override
+  String botActionReadingFileDetail(String path) {
+    return '读取文件：$path';
+  }
+
+  @override
+  String botActionWritingFileDetail(String path) {
+    return '写入文件：$path';
+  }
+
+  @override
+  String botActionServerTool(String tool, String server) {
+    return '服务器工具：$tool（$server）';
+  }
+
+  @override
+  String get workingListAllDone => '都完成了，暂时没有智能体在干活。';
 
   @override
   String get settingsButtonTooltip => '设置';
@@ -19597,6 +19669,11 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   }
 
   @override
+  String chatMessageWidgetAppSettings(String key) {
+    return '修改设置：$key';
+  }
+
+  @override
   String get chatMessageWidgetBuiltinSearch => '模型内置搜索';
 
   @override
@@ -19993,6 +20070,37 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String sideDrawerUpdateTitleWithBuild(String version, int build) {
     return '发现新版本：$version ($build)';
   }
+
+  @override
+  String get cloudUpdateDownloadButton => '下载更新';
+
+  @override
+  String get cloudUpdateLaterButton => '稍后再说';
+
+  @override
+  String get cloudUpdateIosHint => '下载完成后，请用签名工具打开安装包完成安装。';
+
+  @override
+  String get cloudUpdateFeedUrlTitle => '更新源地址';
+
+  @override
+  String get cloudUpdateFeedUrlEditTitle => '设置更新源地址';
+
+  @override
+  String get cloudUpdateFeedUrlHint => '版本信息文件的完整网址';
+
+  @override
+  String get cloudUpdateFeedUrlSave => '保存';
+
+  @override
+  String get cloudUpdateFeedUrlCancel => '取消';
+
+  @override
+  String get displaySettingsPageAiSettingsControlTitle => 'AI 操控设置';
+
+  @override
+  String get displaySettingsPageAiSettingsControlSubtitle =>
+      '开启后，智能体可在聊天里按你的要求改设置；敏感改动仍会先弹审批卡征得同意。';
 
   @override
   String get sideDrawerLinkCopied => '已复制下载链接';
@@ -22284,7 +22392,7 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
       '关闭侧边栏时不折叠助手列表';
 
   @override
-  String get displaySettingsPageShowUpdatesTitle => '显示更新';
+  String get displaySettingsPageShowUpdatesTitle => '云更新';
 
   @override
   String get displaySettingsPageShowUpdatesSubtitle => '显示应用更新通知';
@@ -31436,6 +31544,19 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get toolPermissionFullAccess => '完全访问';
+
+  @override
+  String get toolPermissionFullAccessConfirmTitle => '开启完全权限？';
+
+  @override
+  String get toolPermissionFullAccessConfirmBody =>
+      '开启后，在这个会话里智能体运行工具、访问文件、修改它有权改的设置，都不再逐项征求你的同意。只在你信任它要做的事时才开启；随时可以在这里关回。';
+
+  @override
+  String get toolPermissionFullAccessConfirmEnable => '仍然开启';
+
+  @override
+  String get toolPermissionFullAccessConfirmCancel => '取消';
 
   @override
   String get chatInputBarQueuedCompressionCancelled => '压缩已取消，这条消息不会自动发送。';

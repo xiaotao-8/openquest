@@ -82,6 +82,29 @@ final class BusinessPreferences {
   Future<void> flushPendingWrites() async {
     await _mutationTail;
     await _writeTail;
+    await _checkpointAfterWrite();
+  }
+
+  /// Forces committed WAL frames into the main database file.
+  ///
+  /// A committed write normally sits in the `-wal` file until SQLite decides
+  /// to checkpoint, and process-exit flush hooks do not run at all when the
+  /// OS kills the app (mobile) or the process takes SIGTERM (desktop). If
+  /// anything unlinks or discards the WAL before a natural checkpoint, every
+  /// setting changed since the last checkpoint is silently lost. Running a
+  /// FULL checkpoint before a write is reported complete makes each change
+  /// durable in the main file on its own, independent of exit hooks.
+  /// Checkpoint failure never fails the write itself: the frames stay in the
+  /// WAL and the next write retries.
+  Future<void> _checkpointAfterWrite() async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (await _repository.checkpoint()) return;
+      } catch (_) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
   }
 
   /// Drain accepted mutations before closing the shared database. Late timers
@@ -105,7 +128,9 @@ final class BusinessPreferences {
     );
     _mutationTail = tail;
     try {
-      return await result;
+      final value = await result;
+      await _checkpointAfterWrite();
+      return value;
     } finally {
       if (identical(_mutationTail, tail)) _mutationTail = null;
     }
@@ -219,7 +244,11 @@ final class BusinessPreferences {
     if (_writesBlockedForRestore) {
       return Future<T>.error(StateError('business_preferences_restore_fence'));
     }
-    final result = _writeTail.then((_) => operation());
+    final result = _writeTail.then((_) async {
+      final value = await operation();
+      await _checkpointAfterWrite();
+      return value;
+    });
     _writeTail = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace __) {},

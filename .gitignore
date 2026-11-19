@@ -94,3 +94,6 @@ internationalization.md
 *.db
 *.sqlite
 *.sqlite3
+
+# Build artifacts (never commit IPAs)
+*.ipa

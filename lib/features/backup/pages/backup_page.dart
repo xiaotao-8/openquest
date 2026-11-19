@@ -2475,7 +2475,7 @@ class _WebDavSettingsPageState extends State<_WebDavSettingsPage>
     _userCtrl = TextEditingController(text: cfg.username);
     _passCtrl = TextEditingController(text: cfg.password);
     _pathCtrl = TextEditingController(
-      text: cfg.path.isEmpty ? 'kelivo_backups' : cfg.path,
+      text: cfg.path.isEmpty ? 'openquest_backups' : cfg.path,
     );
     _userAgentCtrl = TextEditingController(text: cfg.userAgent);
   }
@@ -2560,7 +2560,7 @@ class _WebDavSettingsPageState extends State<_WebDavSettingsPage>
                             _InputRow(
                               label: l10n.backupPagePath,
                               controller: _pathCtrl,
-                              hint: 'kelivo_backups',
+                              hint: 'openquest_backups',
                             ),
                             const SizedBox(height: 12),
                             _InputRow(
@@ -2598,7 +2598,7 @@ class _WebDavSettingsPageState extends State<_WebDavSettingsPage>
       username: _userCtrl.text.trim(),
       password: _passCtrl.text,
       path: _pathCtrl.text.trim().isEmpty
-          ? 'kelivo_backups'
+          ? 'openquest_backups'
           : _pathCtrl.text.trim(),
       userAgent: _userAgentCtrl.text.trim(),
     );
@@ -2645,7 +2645,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage>
     _secretKeyCtrl = TextEditingController(text: cfg.secretAccessKey);
     _sessionTokenCtrl = TextEditingController(text: cfg.sessionToken);
     _prefixCtrl = TextEditingController(
-      text: cfg.prefix.isEmpty ? 'kelivo_backups' : cfg.prefix,
+      text: cfg.prefix.isEmpty ? 'openquest_backups' : cfg.prefix,
     );
     _userAgentCtrl = TextEditingController(text: cfg.userAgent);
     _pathStyle = cfg.pathStyle;
@@ -2755,7 +2755,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage>
                             _InputRow(
                               label: l10n.backupPageS3Prefix,
                               controller: _prefixCtrl,
-                              hint: 'kelivo_backups',
+                              hint: 'openquest_backups',
                             ),
                             const SizedBox(height: 12),
                             _InputRow(
@@ -2834,7 +2834,7 @@ class _S3SettingsPageState extends State<_S3SettingsPage>
       secretAccessKey: _secretKeyCtrl.text,
       sessionToken: _sessionTokenCtrl.text,
       prefix: _prefixCtrl.text.trim().isEmpty
-          ? 'kelivo_backups'
+          ? 'openquest_backups'
           : _prefixCtrl.text.trim(),
       pathStyle: _pathStyle,
       userAgent: _userAgentCtrl.text.trim(),

@@ -40,8 +40,9 @@ void main() {
     expect(
       fragment,
       contains(
-        'Use a skill when the task matches its description: call read_file on '
-        'its SKILL.md first and follow it.',
+        'Skills are mandatory instructions, not suggestions. Before starting '
+        'any task that matches a skill\'s description, you MUST call read_file '
+        'on its SKILL.md and follow its rules exactly for that task',
       ),
     );
     expect(

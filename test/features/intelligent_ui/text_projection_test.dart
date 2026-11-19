@@ -67,7 +67,7 @@ chart = Chart(kind="line",x="t",y=["a","b"],xLabel="Time",yLabel="Revenue axis",
       final intent = i.activate('root', token: c.token).intent!;
       expect(
         testUiProjection.context(intent.read, selected: intent.context).body,
-        '"tiny": 1.0\n[Some fields omitted]',
+        'tiny: 1\n[Some fields omitted]',
       );
     },
   );
@@ -94,6 +94,25 @@ result = Metric(label="Double",value=$a*2,unit="km")''');
       'Slope: 3.5\nDouble: 7 km',
     );
   });
+  test('Ask context shows the picked option label, not the raw value', () {
+    final c = _controller(
+      '\$choice: string = "A"\n'
+      'root = Column(children=[form,ask])\n'
+      'form = Form(children=[voteGroup])\n'
+      'voteGroup = RadioGroup(label="选一款主推口味", bind=\$choice, options=[{"value":"A","label":"桂花"},{"value":"B","label":"栗子"},{"value":"C","label":"南瓜"}], required=true)\n'
+      'ask = Button(label="提交投票", form=form, action=Ask(text="我选了这款口味", context={"choice":\$choice}))',
+    );
+    c.setInputs({'choice': 'C'}, token: c.token);
+    final i = UiInteractionController(c);
+    addTearDown(i.dispose);
+    final intent = i.activate('ask', token: c.token).intent!;
+    final body = testUiProjection
+        .context(intent.read, selected: intent.context)
+        .body;
+    expect(body, 'choice: 南瓜');
+    expect(body, isNot(contains('"choice"')));
+  });
+
   test(
     'oversized selected fields are omitted whole and later fields survive',
     () {
@@ -105,10 +124,7 @@ result = Metric(label="Double",value=$a*2,unit="km")''');
       final text = testUiProjection
           .context(c.captureRead(), selected: selected)
           .body;
-      expect(
-        text,
-        '"small": {"value":3.1,"label":"示例"}\n[Some fields omitted]',
-      );
+      expect(text, 'small: {"value":3.1,"label":"示例"}\n[Some fields omitted]');
       expect(
         testUiProjection.context(c.captureRead(), selected: {}).body,
         'No fields.',

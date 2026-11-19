@@ -1388,7 +1388,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get museFeedEmpty =>
-      'Nothing here yet. Activity from your chats and Bots will appear here.';
+      'Nothing here yet. Activity from your chats and Agents will appear here.';
 
   @override
   String get museIdeasEmpty => 'No ideas yet.';
@@ -1406,10 +1406,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get groupNameHint => 'Group name';
 
   @override
-  String get groupSelectMembers => 'Members (Bots)';
+  String get groupSelectMembers => 'Members (Agents)';
 
   @override
-  String get groupNoBots => 'No Bots yet — create one first.';
+  String get groupNoBots => 'No Agents yet — create one first.';
 
   @override
   String get groupNewBot => 'New Agent';
@@ -2995,6 +2995,11 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String chatMessageWidgetAppSettings(String key) {
+    return 'Change setting: $key';
+  }
+
+  @override
   String get chatMessageWidgetBuiltinSearch => 'Встроенный поиск';
 
   @override
@@ -3414,6 +3419,38 @@ class AppLocalizationsRu extends AppLocalizations {
   String sideDrawerUpdateTitleWithBuild(String version, int build) {
     return 'Новая версия: $version ($build)';
   }
+
+  @override
+  String get cloudUpdateDownloadButton => 'Download Update';
+
+  @override
+  String get cloudUpdateLaterButton => 'Later';
+
+  @override
+  String get cloudUpdateIosHint =>
+      'After the download finishes, open the package with your signing tool to complete the installation.';
+
+  @override
+  String get cloudUpdateFeedUrlTitle => 'Update Feed URL';
+
+  @override
+  String get cloudUpdateFeedUrlEditTitle => 'Set Update Feed URL';
+
+  @override
+  String get cloudUpdateFeedUrlHint => 'Full URL of the version feed file';
+
+  @override
+  String get cloudUpdateFeedUrlSave => 'Save';
+
+  @override
+  String get cloudUpdateFeedUrlCancel => 'Cancel';
+
+  @override
+  String get displaySettingsPageAiSettingsControlTitle => 'AI Settings Control';
+
+  @override
+  String get displaySettingsPageAiSettingsControlSubtitle =>
+      'When on, the assistant can change settings you ask for in chat; sensitive changes still ask for your approval first.';
 
   @override
   String get sideDrawerLinkCopied => 'Ссылка скопирована';
@@ -15741,6 +15778,19 @@ class AppLocalizationsRu extends AppLocalizations {
   String get toolPermissionFullAccess => 'Полный доступ';
 
   @override
+  String get toolPermissionFullAccessConfirmTitle => 'Turn on full access?';
+
+  @override
+  String get toolPermissionFullAccessConfirmBody =>
+      'In this conversation the assistant will run tools, access files and apply settings changes it is allowed to make without asking you each time. Only turn this on if you trust what it will do. You can turn it off here at any time.';
+
+  @override
+  String get toolPermissionFullAccessConfirmEnable => 'Turn on';
+
+  @override
+  String get toolPermissionFullAccessConfirmCancel => 'Cancel';
+
+  @override
   String get chatInputBarQueuedCompressionCancelled =>
       'Сжатие отменено, поэтому это сообщение не отправится автоматически.';
 
@@ -17950,6 +18000,29 @@ class AppLocalizationsRu extends AppLocalizations {
   String get botActionUsingTool => 'Using a tool';
 
   @override
+  String botActionRunningCommandDetail(String command) {
+    return 'Running command: $command';
+  }
+
+  @override
+  String botActionReadingFileDetail(String path) {
+    return 'Reading file: $path';
+  }
+
+  @override
+  String botActionWritingFileDetail(String path) {
+    return 'Writing file: $path';
+  }
+
+  @override
+  String botActionServerTool(String tool, String server) {
+    return 'Server tool: $tool ($server)';
+  }
+
+  @override
+  String get workingListAllDone => 'All done — no agent is working right now.';
+
+  @override
   String get settingsButtonTooltip => 'Settings';
 
   @override
@@ -17962,7 +18035,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get groupModelModeIndividual => 'Set each agent individually';
 
   @override
-  String get groupModelModeUnified => 'One model for all Bots';
+  String get groupModelModeUnified => 'Одна модель для всех агентов';
 
   @override
   String get groupModelUnifiedLabel => 'Unified model';

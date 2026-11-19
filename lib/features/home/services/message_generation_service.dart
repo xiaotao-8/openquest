@@ -263,6 +263,107 @@ void sanitizeInvalidUiFences(List<Map<String, dynamic>> apiMessages) {
   }
 }
 
+/// The paradigm reply for the Minis-style ask card: a complete, valid
+/// fenced `ask` block. Public for tests.
+const String askParadigmAssistantTurn =
+    '结论：二选一，你拍板。\n\n'
+    '```ask\n'
+    '选一款主推口味\n'
+    '- 桂花乌龙 | 清香回甘，秋日氛围足\n'
+    '- 海盐荔枝 | 清爽微咸，夏日感强\n'
+    '```';
+
+const String _askParadigmUserTurn = '列两个口味选项让我拍板选一个';
+
+final RegExp _unfencedAskLine = RegExp(r'^- .+ \| .+', multiLine: true);
+
+/// Same history-imitation failure as the UI cards, one fence over: a model
+/// that has only ever asked with plain markdown option lists keeps listing
+/// options as prose instead of emitting the fenced `ask` block the app
+/// renders as a tappable card. Repair mirrors the UI-card strategy: an
+/// assistant turn carrying the unfenced shape is swapped whole for
+/// [askParadigmAssistantTurn] in the request payload (stored history is
+/// never touched), and one paradigm exchange is inserted just before the
+/// final user message so the most recent ask example is valid. Recency
+/// decides: only unfenced turns after the last fenced ask are repaired —
+/// one fenced ask deep in history does not sustain the shape when the
+/// model's recent asks have slipped back to plain lists.
+void ensureAskParadigm(List<Map<String, dynamic>> apiMessages) {
+  // Message content may be a plain string or structured parts (list of
+  // part maps), especially on the group path — walk strings recursively,
+  // exactly like sanitizeInvalidUiFences does.
+  bool anyString(Object? value, bool Function(String) test) {
+    if (value is String) return test(value);
+    if (value is List) return value.any((v) => anyString(v, test));
+    if (value is Map) return value.values.any((v) => anyString(v, test));
+    return false;
+  }
+
+  Object? swapStrings(Object? value, bool Function(String) test) {
+    if (value is String) {
+      return test(value) ? askParadigmAssistantTurn : value;
+    }
+    if (value is List) {
+      var changed = false;
+      final out = <Object?>[];
+      for (final part in value) {
+        final next = swapStrings(part, test);
+        if (!identical(next, part)) changed = true;
+        out.add(next);
+      }
+      return changed ? out : value;
+    }
+    if (value is Map) {
+      var changed = false;
+      final out = <String, dynamic>{};
+      value.forEach((key, v) {
+        final next = swapStrings(v, test);
+        if (!identical(next, v)) changed = true;
+        out[key.toString()] = next;
+      });
+      return changed ? out : value;
+    }
+    return value;
+  }
+
+  bool isAssistant(int i) => apiMessages[i]['role'] == 'assistant';
+  bool hasFenced(int i) =>
+      anyString(apiMessages[i]['content'], (s) => s.contains('```ask'));
+  bool hasUnfenced(int i) => anyString(
+    apiMessages[i]['content'],
+    (s) => !s.contains('```ask') && _unfencedAskLine.hasMatch(s),
+  );
+
+  // Recency wins: one fenced ask deep in history does not stop the repair
+  // when the model's recent ask-shaped turns are unfenced again. Only
+  // unfenced turns after the last fenced one are repaired.
+  var lastFenced = -1;
+  for (var i = 0; i < apiMessages.length; i++) {
+    if (isAssistant(i) && hasFenced(i)) lastFenced = i;
+  }
+  var repaired = false;
+  for (var i = lastFenced + 1; i < apiMessages.length; i++) {
+    if (!isAssistant(i) || !hasUnfenced(i)) continue;
+    final content = apiMessages[i]['content'];
+    final swapped = swapStrings(
+      content,
+      (s) => !s.contains('```ask') && _unfencedAskLine.hasMatch(s),
+    );
+    if (!identical(swapped, content)) {
+      apiMessages[i]['content'] = swapped;
+      repaired = true;
+    }
+  }
+  if (!repaired) return;
+  final insertAt = apiMessages.isNotEmpty && apiMessages.last['role'] == 'user'
+      ? apiMessages.length - 1
+      : apiMessages.length;
+  apiMessages.insertAll(insertAt, [
+    {'role': 'user', 'content': _askParadigmUserTurn},
+    {'role': 'assistant', 'content': askParadigmAssistantTurn},
+  ]);
+}
+
 /// Result of preparing a message generation
 class UnprocessedRequestContext {
   UnprocessedRequestContext({
@@ -497,6 +598,7 @@ class MessageGenerationService {
     // renders as red error blocks. Replace fences the app's own parser
     // rejects with a plain placeholder in the request payload only.
     sanitizeInvalidUiFences(apiMessages);
+    ensureAskParadigm(apiMessages);
 
     final promptConversation = currentConversation == null
         ? null

@@ -234,7 +234,7 @@ class _CompressionTemplateLibraryState
   Future<void> _export(String json) async {
     try {
       final path = await FilePicker.platform.saveFile(
-        fileName: 'kelivo-compression.json',
+        fileName: 'openquest-compression.json',
         type: FileType.custom,
         allowedExtensions: ['json'],
         bytes: Uint8List.fromList(utf8.encode(json)),

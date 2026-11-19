@@ -480,6 +480,31 @@ class SkillsService extends ChangeNotifier {
     });
   }
 
+  /// Stores the Chinese display translation of a skill's name/description
+  /// (produced by SkillTranslationService with the user's own model).
+  /// [sourceHash] must be the hash of the source text that was translated
+  /// so a later source change invalidates the cache.
+  Future<void> setTranslation(
+    String id, {
+    required String? translatedName,
+    required String? translatedDescription,
+    required String sourceHash,
+  }) async {
+    await loaded;
+    await _serializeMutation(() async {
+      final skill = _require(id);
+      final next = skill.record.copyWith(
+        translatedName: translatedName,
+        translatedDescription: translatedDescription,
+        translationSourceHash: sourceHash,
+        updatedAt: DateTime.now().toUtc(),
+      );
+      await _upsertRecord(next);
+      _replace(skill, record: next);
+      notifyListeners();
+    });
+  }
+
   Future<void> incrementUseCount(String id) async {
     try {
       await loaded;

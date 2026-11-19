@@ -76,7 +76,7 @@ class WebDavConfig {
     this.url = '',
     this.username = '',
     this.password = '',
-    this.path = 'kelivo_backups',
+    this.path = 'openquest_backups',
     this.userAgent = '',
     this.scope = const BackupScope(),
   });
@@ -158,7 +158,7 @@ class S3Config {
     this.accessKeyId = '',
     this.secretAccessKey = '',
     this.sessionToken = '',
-    this.prefix = 'kelivo_backups',
+    this.prefix = 'openquest_backups',
     this.pathStyle = true,
     this.userAgent = '',
     this.scope = const BackupScope(),

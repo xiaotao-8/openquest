@@ -103,7 +103,9 @@ class SettingsProvider extends ChangeNotifier {
     'KelivoIN',
     '10dian-API',
     'DeepSeek',
+    'Zhipu AI',
     'SiliconFlow',
+    'ModelScope',
     'AIhubmix',
     '随想AI中转站',
     'MaruCode',
@@ -111,7 +113,6 @@ class SettingsProvider extends ChangeNotifier {
     'Vercel',
     'Tensdaq',
     'Aliyun',
-    'Zhipu AI',
     'Claude',
     'Grok',
     'ByteDance',
@@ -280,6 +281,12 @@ class SettingsProvider extends ChangeNotifier {
   static const String _displayKeepScreenOnDuringGenerationKey =
       'display_keep_screen_on_during_generation_v1';
   static const String _displayShowAppUpdatesKey = 'display_show_app_updates_v1';
+  static const String _cloudUpdateFeedUrlKey = 'cloud_update_feed_url_v1';
+
+  /// Placeholder cloud-update feed on the user's own server. The feed file
+  /// itself is published there later; until then checks simply fail quietly.
+  static const String defaultCloudUpdateFeedUrl =
+      'http://47.238.160.204/openquest/update.json';
   static const String _displayKeepSidebarOpenOnAssistantTapKey =
       'display_keep_sidebar_open_on_assistant_tap_v1';
   static const String _displayKeepSidebarOpenOnTopicTapKey =
@@ -420,6 +427,8 @@ class SettingsProvider extends ChangeNotifier {
   static const String _searchAutoTestOnLaunchKey =
       'search_auto_test_on_launch_v1';
   static const String _webFetchModeKey = 'search_web_fetch_v1';
+  static const String _aiSettingsControlEnabledKey =
+      'ai_settings_control_enabled_v1';
   static const String _backupEncryptionEnabledKey =
       'backup_encryption_enabled_v1';
   static const String _webDavConfigKey = 'webdav_config_v1';
@@ -682,8 +691,12 @@ class SettingsProvider extends ChangeNotifier {
   bool _searchAutoTestOnLaunch = false;
   bool get searchAutoTestOnLaunch => _searchAutoTestOnLaunch;
   // follow | local | off | a search service id (see WebFetchMode)
-  String _webFetchMode = WebFetchMode.follow;
+  String _webFetchMode = WebFetchMode.off;
   String get webFetchMode => _webFetchMode;
+  // Master switch for the model-agnostic app_settings tool: when off, the
+  // tool is never offered to models. Defaults to off; the user opts in.
+  bool _aiSettingsControlEnabled = false;
+  bool get aiSettingsControlEnabled => _aiSettingsControlEnabled;
   // Ephemeral connection test results: serviceId -> connected (true), failed (false), or null (not tested)
   final Map<String, bool?> _searchConnection = <String, bool?>{};
   Map<String, bool?> get searchConnection =>
@@ -1175,7 +1188,9 @@ class SettingsProvider extends ChangeNotifier {
     _keepScreenOnDuringGeneration =
         prefs.getBool(_displayKeepScreenOnDuringGenerationKey) ?? false;
     ScreenWakelock.setEnabled(_keepScreenOnDuringGeneration);
-    _showAppUpdates = prefs.getBool(_displayShowAppUpdatesKey) ?? true;
+    _showAppUpdates = prefs.getBool(_displayShowAppUpdatesKey) ?? false;
+    _cloudUpdateFeedUrl =
+        prefs.getString(_cloudUpdateFeedUrlKey) ?? defaultCloudUpdateFeedUrl;
     _keepSidebarOpenOnAssistantTap =
         prefs.getBool(_displayKeepSidebarOpenOnAssistantTapKey) ?? false;
     _keepSidebarOpenOnTopicTap =
@@ -1463,7 +1478,9 @@ class SettingsProvider extends ChangeNotifier {
     _searchEnabled = prefs.getBool(_searchEnabledKey) ?? false;
     _searchAutoTestOnLaunch =
         prefs.getBool(_searchAutoTestOnLaunchKey) ?? false;
-    _webFetchMode = prefs.getString(_webFetchModeKey) ?? WebFetchMode.follow;
+    _webFetchMode = prefs.getString(_webFetchModeKey) ?? WebFetchMode.off;
+    _aiSettingsControlEnabled =
+        prefs.getBool(_aiSettingsControlEnabledKey) ?? false;
 
     // load global proxy
     _globalProxyEnabled = prefs.getBool(_globalProxyEnabledKey) ?? false;
@@ -6097,8 +6114,10 @@ Requirements:
     await prefs.setBool(_displayHapticsOnCardTapKey, v);
   }
 
-  // Display: show app updates notification
-  bool _showAppUpdates = true;
+  // Cloud update: when on, the app checks the feed on every launch and
+  // foreground return and pops a dialog if a newer version exists. Off by
+  // default; the user turns it on by hand.
+  bool _showAppUpdates = false;
   bool get showAppUpdates => _showAppUpdates;
   Future<void> setShowAppUpdates(bool v) async {
     if (_showAppUpdates == v) return;
@@ -6106,6 +6125,18 @@ Requirements:
     notifyListeners();
     final prefs = _preferences;
     await prefs.setBool(_displayShowAppUpdatesKey, v);
+  }
+
+  // Cloud update feed URL (user-configurable).
+  String _cloudUpdateFeedUrl = defaultCloudUpdateFeedUrl;
+  String get cloudUpdateFeedUrl => _cloudUpdateFeedUrl;
+  Future<void> setCloudUpdateFeedUrl(String v) async {
+    final next = v.trim().isEmpty ? defaultCloudUpdateFeedUrl : v.trim();
+    if (_cloudUpdateFeedUrl == next) return;
+    _cloudUpdateFeedUrl = next;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setString(_cloudUpdateFeedUrlKey, next);
   }
 
   // Display: keep sidebar open when selecting assistant (mobile)
@@ -6313,6 +6344,13 @@ Requirements:
     await prefs.setString(_webFetchModeKey, _webFetchMode);
   }
 
+  Future<void> setAiSettingsControlEnabled(bool enabled) async {
+    _aiSettingsControlEnabled = enabled;
+    notifyListeners();
+    final prefs = _preferences;
+    await prefs.setBool(_aiSettingsControlEnabledKey, enabled);
+  }
+
   // Combined update for settings
   Future<void> updateSettings(SettingsProvider newSettings) async {
     if (!listEquals(_searchServices, newSettings._searchServices)) {
@@ -6478,6 +6516,8 @@ Requirements:
     copy._hapticsOnListItemTap = _hapticsOnListItemTap;
     copy._hapticsOnCardTap = _hapticsOnCardTap;
     copy._showAppUpdates = _showAppUpdates;
+    copy._cloudUpdateFeedUrl = _cloudUpdateFeedUrl;
+    copy._aiSettingsControlEnabled = _aiSettingsControlEnabled;
     copy._keepSidebarOpenOnAssistantTap = _keepSidebarOpenOnAssistantTap;
     copy._keepSidebarOpenOnTopicTap = _keepSidebarOpenOnTopicTap;
     copy._keepAssistantListExpandedOnSidebarClose =
@@ -7291,6 +7331,9 @@ class ProviderConfig {
       return 'https://api.moonshot.cn/v1';
     }
     if (k.contains('silicon')) return 'https://api.siliconflow.cn/v1';
+    if (k.contains('modelscope') || k.contains('魔搭')) {
+      return 'https://api-inference.modelscope.cn/v1';
+    }
     if (k.contains('grok') || k.contains('x.ai') || k.contains('xai')) {
       return 'https://api.x.ai/v1';
     }
@@ -7313,7 +7356,6 @@ class ProviderConfig {
       if (s.contains('tensdaq')) return true;
       if (s.contains('openai')) return true;
       if (s.contains('gemini') || s.contains('google')) return true;
-      if (s.contains('silicon')) return true;
       if (s.contains('openrouter')) return true;
       if (s.contains('kelivoin')) return true;
       return false; // others disabled by default
@@ -7415,6 +7457,61 @@ class ProviderConfig {
                 'abilities': ['tool', 'reasoning'],
                 'reasoning': {'dialect': 'openaiReasoningEffort'},
               },
+            },
+            proxyEnabled: false,
+            proxyHost: '',
+            proxyPort: '8080',
+            proxyUsername: '',
+            proxyPassword: '',
+            multiKeyEnabled: false,
+            apiKeys: const [],
+            keyManagement: const KeyManagementConfig(),
+            aihubmixAppCodeEnabled: false,
+            balanceEnabled: false,
+            balanceApiPath: _defaultBalanceApiPath(key),
+            balanceResultPath: _defaultBalanceResultPath(key),
+            claudePromptCachingEnabled: false,
+          );
+        }
+        // OpenQuest free model sources (Zhipu BigModel, SiliconFlow,
+        // ModelScope): seeded with their free-tier models so the models
+        // are selectable before any catalog fetch. All three stay
+        // disabled until the user adds a key and enables the provider.
+        if (lowerKey.contains('zhipu') ||
+            lowerKey.contains('silicon') ||
+            lowerKey.contains('modelscope')) {
+          final freeModels = lowerKey.contains('zhipu')
+              ? const ['glm-4.5-flash', 'glm-4-flash']
+              : lowerKey.contains('silicon')
+              ? const [
+                  'Qwen/Qwen3-8B',
+                  'Qwen/Qwen2.5-7B-Instruct',
+                  'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
+                ]
+              : const [
+                  'Qwen/Qwen3-8B',
+                  'Qwen/Qwen3-30B-A3B-Instruct-2507',
+                  'Qwen/Qwen2.5-Coder-32B-Instruct',
+                  'deepseek-ai/DeepSeek-V3.1',
+                ];
+          return ProviderConfig(
+            id: key,
+            enabled: defaultEnabled(key),
+            name: displayName ?? key,
+            apiKey: '',
+            baseUrl: _defaultBase(key),
+            providerType: ProviderKind.openai,
+            chatPath: '/chat/completions',
+            useResponseApi: false,
+            models: freeModels,
+            modelOverrides: {
+              for (final model in freeModels)
+                model: const {
+                  'type': 'chat',
+                  'input': ['text'],
+                  'output': ['text'],
+                  'abilities': ['tool'],
+                },
             },
             proxyEnabled: false,
             proxyHost: '',

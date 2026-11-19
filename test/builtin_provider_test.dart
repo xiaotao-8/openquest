@@ -107,11 +107,14 @@ void main() {
     expect(effectiveApiKey(multiKey), 'next-key');
   });
 
-  test('SiliconFlow has no built-in models or fallback credentials', () {
+  test('SiliconFlow seeds free models but no fallback credentials', () {
     final config = ProviderConfig.defaultsFor('SiliconFlow');
     expect(config.baseUrl, 'https://api.siliconflow.cn/v1');
-    expect(config.models, isEmpty);
-    expect(config.modelOverrides, isEmpty);
+    expect(config.enabled, isFalse);
+    expect(
+      config.models,
+      containsAll(['Qwen/Qwen3-8B', 'Qwen/Qwen2.5-7B-Instruct']),
+    );
     for (final id in ['THUDM/GLM-4-9B-0414', 'Qwen/Qwen3-8B']) {
       expect(apiKeyForRequest(config, id), isEmpty);
       expect(
@@ -119,6 +122,21 @@ void main() {
         'user-key',
       );
     }
+  });
+
+  test('Zhipu AI seeds the free GLM-Flash models, disabled by default', () {
+    final config = ProviderConfig.defaultsFor('Zhipu AI');
+    expect(config.baseUrl, 'https://open.bigmodel.cn/api/paas/v4');
+    expect(config.enabled, isFalse);
+    expect(config.models, ['glm-4.5-flash', 'glm-4-flash']);
+  });
+
+  test('ModelScope is a built-in OpenAI-compatible provider', () {
+    expect(SettingsProvider.isBuiltInProvider('ModelScope'), isTrue);
+    final config = ProviderConfig.defaultsFor('ModelScope');
+    expect(config.baseUrl, 'https://api-inference.modelscope.cn/v1');
+    expect(config.enabled, isFalse);
+    expect(config.models, contains('Qwen/Qwen3-8B'));
   });
 
   test(

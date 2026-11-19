@@ -582,14 +582,14 @@
   "museNavNoSideChats": "No side chats yet.",
   "museNavNewSpace": "New Space",
   "museNavNewSideChat": "New Side Chat",
-  "museFeedEmpty": "Nothing here yet. Activity from your chats and Bots will appear here.",
+  "museFeedEmpty": "Nothing here yet. Activity from your chats and Agents will appear here.",
   "museIdeasEmpty": "No ideas yet.",
   "museGoalsEmpty": "No goals yet.",
   "museLibraryEmpty": "Your library is empty.",
   "groupCreateTitle": "New Group",
   "groupNameHint": "Group name",
-  "groupSelectMembers": "Members (Bots)",
-  "groupNoBots": "No Bots yet — create one first.",
+  "groupSelectMembers": "Members (Agents)",
+  "groupNoBots": "No Agents yet — create one first.",
   "groupNewBot": "New Agent",
   "groupCreateButton": "Create",
   "groupNameRequired": "Enter a group name",
@@ -1376,6 +1376,15 @@
     },
     "description": "Tool-call title for fetching a web page; {target} is the URL host or full URL."
   },
+  "chatMessageWidgetAppSettings": "Change setting: {key}",
+  "@chatMessageWidgetAppSettings": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    },
+    "description": "Tool-call title for the app_settings tool; {key} is the setting key being read or changed."
+  },
   "chatMessageWidgetBuiltinSearch": "Built-in Search",
   "chatMessageWidgetReadClipboard": "Read Clipboard",
   "chatMessageWidgetWriteClipboard": "Write Clipboard",
@@ -1640,6 +1649,46 @@
       }
     },
     "description": "Update notice title including a build number; {version} is the version string and {build} the build integer."
+  },
+  "cloudUpdateDownloadButton": "Download Update",
+  "@cloudUpdateDownloadButton": {
+    "description": "Primary button in the cloud update dialog; starts downloading the new version package."
+  },
+  "cloudUpdateLaterButton": "Later",
+  "@cloudUpdateLaterButton": {
+    "description": "Dismiss button in the cloud update dialog; postpones the update."
+  },
+  "cloudUpdateIosHint": "After the download finishes, open the package with your signing tool to complete the installation.",
+  "@cloudUpdateIosHint": {
+    "description": "Note in the cloud update dialog shown only on iOS explaining that the signing tool performs the actual install."
+  },
+  "cloudUpdateFeedUrlTitle": "Update Feed URL",
+  "@cloudUpdateFeedUrlTitle": {
+    "description": "Settings row title for the cloud update feed address."
+  },
+  "cloudUpdateFeedUrlEditTitle": "Set Update Feed URL",
+  "@cloudUpdateFeedUrlEditTitle": {
+    "description": "Title of the dialog that edits the cloud update feed address."
+  },
+  "cloudUpdateFeedUrlHint": "Full URL of the version feed file",
+  "@cloudUpdateFeedUrlHint": {
+    "description": "Helper text under the cloud update feed address input."
+  },
+  "cloudUpdateFeedUrlSave": "Save",
+  "@cloudUpdateFeedUrlSave": {
+    "description": "Save button in the cloud update feed address dialog."
+  },
+  "cloudUpdateFeedUrlCancel": "Cancel",
+  "@cloudUpdateFeedUrlCancel": {
+    "description": "Cancel button in the cloud update feed address dialog."
+  },
+  "displaySettingsPageAiSettingsControlTitle": "AI Settings Control",
+  "@displaySettingsPageAiSettingsControlTitle": {
+    "description": "Master switch title for letting the AI change app settings from chat."
+  },
+  "displaySettingsPageAiSettingsControlSubtitle": "When on, the assistant can change settings you ask for in chat; sensitive changes still ask for your approval first.",
+  "@displaySettingsPageAiSettingsControlSubtitle": {
+    "description": "Explanation under the AI settings control master switch."
   },
   "sideDrawerLinkCopied": "Link copied",
   "sideDrawerPinnedLabel": "Pinned",
@@ -2467,7 +2516,7 @@
   "searchServicesPageWebFetchProviderSubtitle": "Uses this service's API key and quota",
   "searchServicesPageWebFetchOff": "Off",
   "searchServicesPageWebFetchOffSubtitle": "Search only, without reading pages",
-  "searchServicesPageWebFetchFooter": "With web search on, the model can also read full pages. When the search service can't read pages, local reading is used, which can't handle pages that need JavaScript or block bots.\n\nIf you use the page reader configured here, disable the built-in @openquest/fetch in Settings → MCP to avoid overlapping tools. The page reader configured here will still work.",
+  "searchServicesPageWebFetchFooter": "With web search on, the model can also read full pages. When the search service can't read pages, local reading is used, which can't handle pages that need JavaScript or block automated readers.\n\nIf you use the page reader configured here, disable the built-in @openquest/fetch in Settings → MCP to avoid overlapping tools. The page reader configured here will still work.",
   "searchServicesPageWebFetchSupported": "Can read web pages",
   "searchServicesPageMaxResults": "Max Results",
   "searchServicesPageTimeoutSeconds": "Timeout (seconds)",
@@ -2810,7 +2859,7 @@
   "displaySettingsPageKeepSidebarOpenOnAssistantTapTitle": "Keep sidebar open when selecting assistant",
   "displaySettingsPageKeepSidebarOpenOnTopicTapTitle": "Keep sidebar open when selecting topic",
   "displaySettingsPageKeepAssistantListExpandedOnSidebarCloseTitle": "Don't collapse assistant list when closing sidebar",
-  "displaySettingsPageShowUpdatesTitle": "Show Updates",
+  "displaySettingsPageShowUpdatesTitle": "Cloud Update",
   "displaySettingsPageShowUpdatesSubtitle": "Show app update notifications",
   "displaySettingsPageKeepScreenOnDuringGenerationTitle": "Keep Screen On While Generating",
   "displaySettingsPageKeepScreenOnDuringGenerationSubtitle": "Prevents the lock screen from interrupting generation. Increases battery use.",
@@ -7698,6 +7747,22 @@
     "description": "Progress label during context compression showing completed and total segments, with {done} and {total} as integer placeholders."
   },
   "toolPermissionFullAccess": "Full access",
+  "toolPermissionFullAccessConfirmTitle": "Turn on full access?",
+  "@toolPermissionFullAccessConfirmTitle": {
+    "description": "Title of the risk confirmation shown before full access is enabled."
+  },
+  "toolPermissionFullAccessConfirmBody": "In this conversation the assistant will run tools, access files and apply settings changes it is allowed to make without asking you each time. Only turn this on if you trust what it will do. You can turn it off here at any time.",
+  "@toolPermissionFullAccessConfirmBody": {
+    "description": "Risk explanation in the full-access confirmation dialog."
+  },
+  "toolPermissionFullAccessConfirmEnable": "Turn on",
+  "@toolPermissionFullAccessConfirmEnable": {
+    "description": "Confirm button in the full-access risk dialog."
+  },
+  "toolPermissionFullAccessConfirmCancel": "Cancel",
+  "@toolPermissionFullAccessConfirmCancel": {
+    "description": "Cancel button in the full-access risk dialog."
+  },
   "chatInputBarQueuedCompressionCancelled": "Compression was cancelled, so this message won’t send automatically.",
   "toolPermissionResetSnack": "Workspace changed · permission reset to Ask for approval",
   "@contextRangeInfo": {
@@ -22937,6 +23002,49 @@
   "@botActionUsingTool": {
     "description": "Small live status: the Bot is using a tool."
   },
+  "botActionRunningCommandDetail": "Running command: {command}",
+  "@botActionRunningCommandDetail": {
+    "description": "Live status in the working panel: the Bot is running this exact terminal command.",
+    "placeholders": {
+      "command": {
+        "type": "String"
+      }
+    }
+  },
+  "botActionReadingFileDetail": "Reading file: {path}",
+  "@botActionReadingFileDetail": {
+    "description": "Live status in the working panel: the Bot is reading this exact file.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "botActionWritingFileDetail": "Writing file: {path}",
+  "@botActionWritingFileDetail": {
+    "description": "Live status in the working panel: the Bot is writing or editing this exact file.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "botActionServerTool": "Server tool: {tool} ({server})",
+  "@botActionServerTool": {
+    "description": "Live status in the working panel: the Bot is calling this tool on this connected server.",
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      },
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "workingListAllDone": "All done — no agent is working right now.",
+  "@workingListAllDone": {
+    "description": "Shown in the working panel when every Bot finished while the panel was open."
+  },
   "settingsButtonTooltip": "Settings",
   "@settingsButtonTooltip": {
     "description": "Tooltip/semantic label for the settings gear button at the chat header's top-right."
@@ -22953,7 +23061,7 @@
   "@groupModelModeIndividual": {
     "description": "Group model mode option: each Bot's model is set individually."
   },
-  "groupModelModeUnified": "One model for all Bots",
+  "groupModelModeUnified": "One model for all Agents",
   "@groupModelModeUnified": {
     "description": "Group model mode option: all Bots in the group use one single model."
   },
