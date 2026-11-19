@@ -191,18 +191,23 @@ struct ChatView: View {
                             .padding(5)
                         }
                         HStack(spacing: 5) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 5, height: 5)
+                                .symbolEffect(.pulse, options: .repeating)
                             Image(systemName: "globe").font(.caption2)
                             Text(liveCaption).font(.caption2).lineLimit(1)
                             Spacer(minLength: 2)
                             Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
                     }
                     .frame(width: 138)
-                    .background(Color(white: 0.11), in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.16), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+                    .background(Color(white: 0.11), in: RoundedRectangle(cornerRadius: 16))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.22), lineWidth: 0.7))
+                    .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
                     .onTapGesture { showingBrowserFull = true }
                 }
                 if !working.isEmpty {
