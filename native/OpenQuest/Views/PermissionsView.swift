@@ -142,7 +142,7 @@ struct PermissionsView: View {
                 Text("打开后，智能体调用工具（执行服务器命令、抓网页、读写日历 / 提醒事项 / 剪贴板 / 位置 / 通讯录等）不再逐项弹审批卡，出了问题你只能事后在日志里查。提问卡照常弹，敏感改动也照常弹审批卡。")
             }
 
-            Section("逐项权限") {
+            Section {
                 ForEach(PermissionsStore.items) { item in
                     Picker(selection: Binding(
                         get: { permissions.level(for: item.id) },
@@ -159,6 +159,8 @@ struct PermissionsView: View {
                     }
                     .pickerStyle(.menu)
                 }
+            } header: {
+                Text("逐项权限")
             } footer: {
                 Text("“禁止”= 智能体连调都调不了这个工具；“每次询问”= 每次调都弹审批卡；“跳过审批”= 直接执行。")
             }

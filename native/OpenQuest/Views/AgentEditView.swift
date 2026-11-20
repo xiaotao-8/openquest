@@ -167,8 +167,10 @@ struct AgentEditView: View {
                         AvatarDisc(text: a.initial, hue: a.tintHue, size: 34)
                     }
                 }
-                Section("复制 / 导入 / 分享") {
+                Section {
                     AgentShareButtons(agentId: a.id)
+                } header: {
+                    Text("复制 / 导入 / 分享")
                 } footer: {
                     Text("复制是改名另存一份；导出/分享是 JSON（不含 Key）；导入从剪贴板或文件读助手 JSON 新建一个。")
                 }
