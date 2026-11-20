@@ -31,15 +31,7 @@ final class AppStore: ObservableObject {
     }()
 
     init() {
-        let hadStore = FileManager.default.fileExists(atPath: fileURL.path)
         load()
-        // 免费 Agnes 模型（用户 2026-11-20 让加）：全新安装时直接备好，
-        // agnes-2.5-flash / pro 就在供应商列表里，用户只剩填一次 Key 就能聊；
-        // 用户自己删了就不再补。
-        if !hadStore && providers.isEmpty {
-            addPresetProvider(name: "Agnes", baseURL: "https://api.agnes-ai.cn/v1",
-                              modelIds: ["agnes-2.5-flash", "agnes-2.5-pro"])
-        }
         // 仅供模拟器截图预览：启动参数带 -PreviewSeed 时临时填演示数据（不落盘，
         // 正常启动永远是空的——什么都不预置）。
         if ProcessInfo.processInfo.arguments.contains("-PreviewSeed") {
@@ -49,6 +41,12 @@ final class AppStore: ObservableObject {
         // 不进仓库、不落盘到正式数据（中继只在验收期间开着，平时不存在）。
         if ProcessInfo.processInfo.arguments.contains("-PreviewLiveChat") {
             seedLiveChat()
+        }
+        // 仅模拟器验收：-PreviewProviders 时走一遍免费源“点一下添加”的真路径，
+        // 把免费 Agnes 加进来，截图落在供应商页验添加本身（用户 2026-11-20：添加由助手测）。
+        if ProcessInfo.processInfo.arguments.contains("-PreviewProviders") {
+            addPresetProvider(name: "Agnes", baseURL: "https://api.agnes-ai.cn/v1",
+                              modelIds: ["agnes-2.5-flash", "agnes-2.5-pro"])
         }
     }
 

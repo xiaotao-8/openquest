@@ -115,7 +115,11 @@ workflows:
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewLiveChat
           sleep 25
           xcrun simctl io "$SIM_UDID" screenshot preview-livechat.png
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewProviders
+          sleep 3
+          xcrun simctl io "$SIM_UDID" screenshot preview-providers.png
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -134,4 +138,5 @@ workflows:
       - native/preview-settings.png
       - native/preview-dns.png
       - native/preview-livechat.png
+      - native/preview-providers.png
       - native/OpenQuestNative-unsigned.ipa

@@ -12,6 +12,9 @@ struct RootView: View {
         // 预览专用：-PreviewDNS 直接落在 DNS 页截图。
         if ProcessInfo.processInfo.arguments.contains("-PreviewDNS") {
             NavigationStack { DNSSettingsView() }
+        } else if ProcessInfo.processInfo.arguments.contains("-PreviewProviders") {
+            // 预览专用：-PreviewProviders 直接落在供应商页截图，验免费 Agnes 添加。
+            NavigationStack { ProvidersView() }
         } else {
             ZStack(alignment: .bottom) {
                 Group {
