@@ -24,6 +24,7 @@ struct ChatView: View {
     @State private var pendingFileText: String?
     @State private var photoItem: PhotosPickerItem?
     @State private var showingFileImporter = false
+    @State private var liveChatSent = false
 
     private var conversation: Conversation? {
         store.conversations.first { $0.id == conversationId }
@@ -306,6 +307,13 @@ struct ChatView: View {
                 liveShot = Data(base64Encoded: PreviewBrowserFrame.jpegBase64)
                 liveCaption = "浏览器 · 维基百科，自由的百科全书"
                 working = [("小评", "正在用服务器浏览器看维基百科…")]
+            }
+            // 仅模拟器真聊验收（-PreviewLiveChat）：进会话就走真实 send() 发一句，
+            // 回复是真模型流式回来的，不是写死的假数据。
+            if ProcessInfo.processInfo.arguments.contains("-PreviewLiveChat"),
+               conversation?.messages.isEmpty == true, !liveChatSent {
+                liveChatSent = true
+                Task { await send("你好，请用一句话介绍你自己") }
             }
         }
         .sheet(isPresented: $showingBrowserFull) {

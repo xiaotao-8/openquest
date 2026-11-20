@@ -38,7 +38,7 @@ struct RootView: View {
                 let args = ProcessInfo.processInfo.arguments
                 if args.contains("-PreviewSettings") { tab = 3 }
                 // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
-                if args.contains("-PreviewChat"),
+                if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")),
                    let first = store.conversations.first, path.isEmpty {
                     path = [first.id]
                 }

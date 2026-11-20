@@ -26,6 +26,11 @@ final class AppStore: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("-PreviewSeed") {
             seedPreview()
         }
+        // 仅供模拟器真聊验收：-PreviewLiveChat 时备好一个走实测中继的供应商，
+        // 不进仓库、不落盘到正式数据（中继只在验收期间开着，平时不存在）。
+        if ProcessInfo.processInfo.arguments.contains("-PreviewLiveChat") {
+            seedLiveChat()
+        }
     }
 
     private func seedPreview() {
@@ -47,6 +52,19 @@ final class AppStore: ObservableObject {
         var c3 = Conversation(title: "翻译官", memberIds: [a3.id])
         c3.messages = [Message(senderId: a3.id.uuidString, text: "插件说明翻好了，是中文版")]
         conversations = [team, c1, c2, c3]
+    }
+
+    private func seedLiveChat() {
+        var p = ModelProvider(name: "实测中继",
+                              baseURL: "http://47.238.160.204:8080/liveproof/v1",
+                              models: [AIModel(id: "agnes-2.5-flash")])
+        providers = [p]
+        KeychainHelper.setKey("oq-liveproof-2026", ref: p.keyRef)
+        var a = Agent(name: "助手", tintHue: 0.62)
+        a.providerKey = p.id.uuidString
+        a.modelId = "agnes-2.5-flash"
+        agents = [a]
+        conversations = [Conversation(title: "直接聊", memberIds: [a.id])]
     }
 
     func agent(id: UUID) -> Agent? { agents.first { $0.id == id } }
