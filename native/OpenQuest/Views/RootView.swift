@@ -103,18 +103,23 @@ struct RootView: View {
             .onAppear {
                 let args = ProcessInfo.processInfo.arguments
                 if args.contains("-PreviewSettings") {
-                    showSettings = true
+                    // sheet/cover 在首现 onAppear 里同步置位会被 SwiftUI 丢掉，
+                    // 必须异步抛到下一轮 runloop 才能正常弹出（实测 #25 两张图因此没出）。
+                    DispatchQueue.main.async { showSettings = true }
                 } else if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")),
                           let first = store.conversations.first, chatPath.isEmpty {
                     // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
                     chatPath = [ChatDestination(id: first.id)]
                 } else if args.contains("-PreviewSeed") {
                     // 仅模拟器预览截图用：-PreviewSeed 单独出现 = 打开会话列表。
-                    showSessions = true
+                    DispatchQueue.main.async { showSessions = true }
                 }
             }
             .task {
                 // 云更新：每次打开 App 查一次版本源，有新版弹窗提示下载。
+                // 模拟器预览截图（-Preview*）不查，不然弹窗会盖住截图。
+                let args = ProcessInfo.processInfo.arguments
+                guard !args.contains(where: { $0.hasPrefix("-Preview") }) else { return }
                 if case .available(let feed) = await UpdateChecker.check() {
                     updateFeed = feed
                 }
