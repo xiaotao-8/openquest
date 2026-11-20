@@ -67,9 +67,6 @@ struct RootView: View {
         } else if ProcessInfo.processInfo.arguments.contains("-PreviewProviders") {
             // 预览专用：-PreviewProviders 直接落在供应商页截图，验用户自己加供应商。
             NavigationStack { ProvidersView() }
-        } else if ProcessInfo.processInfo.arguments.contains("-PreviewCloud") {
-            // 预览专用：-PreviewCloud 直接落在云电脑页截图，验真 /health 回包（在线、运行时长、内存真数）。
-            NavigationStack { CloudComputerView() }
         } else if ProcessInfo.processInfo.arguments.contains("-PreviewLog") {
             // 预览专用：-PreviewLog 直接落在日志页截图，验日志真记了启动记录。
             NavigationStack { LogView() }

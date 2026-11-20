@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 探索页（FishPocket 探索 Tab 同款位置）：云电脑入口 + 插件商店、定时任务、技能、小工具。
+/// 探索页（FishPocket 探索 Tab 同款位置）：插件商店、定时任务、技能、小工具。
+/// 云电脑是内置的（服务器直连写死在 App 里），不单独显示入口页。
 struct ExploreView: View {
     @EnvironmentObject var store: AppStore
 
@@ -9,13 +10,6 @@ struct ExploreView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    NavigationLink { CloudComputerView() } label: {
-                        ExploreRow(icon: "server.rack",
-                                   title: L("cloud_computer"),
-                                   subtitle: "ECS 常驻主机：终端、文件、服务器浏览器")
-                    }
-                }
                 Section("发现") {
                     NavigationLink { PluginStoreView() } label: {
                         ExploreRow(icon: "puzzlepiece",
