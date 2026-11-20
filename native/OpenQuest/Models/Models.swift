@@ -78,6 +78,21 @@ struct ModelProvider: Identifiable, Codable, Equatable {
     var name: String                 // 如 Agnes、智谱、DeepSeek，或用户自填
     var baseURL: String              // 如 https://api.agnes-ai.cn/v1
     var models: [AIModel] = []
+    // 自定义请求头（DDchat）：每行一个 "Key: Value"，该供应商的每次请求都带上。
+    var customHeaders: String = ""
+    /// 解析 customHeaders：每行 "Key: Value"，没冒号、键或值为空的行直接忽略。
+    var parsedCustomHeaders: [String: String] {
+        var out: [String: String] = [:]
+        for line in customHeaders.components(separatedBy: .newlines) {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let k = parts[0].trimmingCharacters(in: .whitespaces)
+            let v = parts[1].trimmingCharacters(in: .whitespaces)
+            guard !k.isEmpty, !v.isEmpty else { continue }
+            out[k] = v
+        }
+        return out
+    }
     // Key 不进 JSON 快照，单独存 Keychain（见 KeychainHelper），这里只留引用 id。
     var keyRef: String { id.uuidString }
 }
@@ -87,6 +102,10 @@ struct AIModel: Identifiable, Codable, Equatable {
     var id: String                   // 模型 id，如 agnes-2.5-flash
     var displayName: String = ""     // 显示名，空则用 id
     var name: String { displayName.isEmpty ? id : displayName }
+    // 能力自动检测（DDchat）：从模型 id/名字推断，只作提示，不拦着用。
+    // nil=没检测出（按支持处理，控件照常显示）；true/false=检测有/没有。
+    var supportsReasoning: Bool? = nil  // 深度思考（思考档位）
+    var supportsVision: Bool? = nil     // 视觉理解（发图片）
 }
 
 /// 一个连接工具（连接器）：只装国内服务——飞书、钉钉、语雀、Gitee、

@@ -102,6 +102,13 @@ struct AgentRunner {
             req.timeoutInterval = 120
             req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // 自定义请求头（DDchat）：供应商页里每行一个 "Key: Value"；
+            // Authorization 和 Content-Type 归 App 管，自定义头不覆盖。
+            for (k, v) in provider.parsedCustomHeaders {
+                let lower = k.lowercased()
+                guard lower != "authorization", lower != "content-type" else { continue }
+                req.setValue(v, forHTTPHeaderField: k)
+            }
             var body: [String: Any] = [
                 "model": agent.modelId,
                 "messages": messages,

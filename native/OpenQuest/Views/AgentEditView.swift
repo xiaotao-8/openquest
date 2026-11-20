@@ -3,9 +3,26 @@ import SwiftUI
 /// 智能体管理：设置里列出所有智能体，点进去改名字、人设（Soul）、供应商和模型。
 struct AgentsView: View {
     @EnvironmentObject var store: AppStore
+    @State private var quickSentence = ""
+    @State private var quickCreatedId: UUID?
 
     var body: some View {
         List {
+            // 一句话创建（DDchat）：说清要什么样的智能体，本地按规则提名字和人设，
+            // 不调模型、不用 Key，离线也能用；建好直接进编辑页接着调。
+            Section {
+                TextField("一句话说清，如：一个会写诗的助手", text: $quickSentence, axis: .vertical)
+                    .lineLimit(1...3)
+                Button("一句话创建") {
+                    quickCreatedId = store.createAgentFromSentence(quickSentence)
+                    quickSentence = ""
+                }
+                .disabled(quickSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } header: {
+                Text("一句话创建")
+            } footer: {
+                Text("名字和人设按这句话本地生成，不联网；创建后进编辑页，模型和细节自己再调。")
+            }
             if store.agents.isEmpty {
                 Text("还没有智能体。在聊天列表右上角新建里建。")
                     .foregroundStyle(.secondary)
@@ -29,6 +46,9 @@ struct AgentsView: View {
             }
         }
         .navigationTitle("智能体")
+        .navigationDestination(item: $quickCreatedId) { id in
+            AgentEditView(agentId: id)
+        }
     }
 
     private func modelSummary(_ a: Agent) -> String {
@@ -78,16 +98,21 @@ struct AgentEditView: View {
                     }
                 }
                 Section("思考档位") {
-                    Picker("思考档位", selection: binding(\.effort)) {
-                        Text("跟模型默认").tag("")
-                        Text("关").tag("off")
-                        Text("低").tag("low")
-                        Text("中").tag("medium")
-                        Text("高").tag("high")
+                    if store.agentSupportsReasoning(a) {
+                        Picker("思考档位", selection: binding(\.effort)) {
+                            Text("跟模型默认").tag("")
+                            Text("关").tag("off")
+                            Text("低").tag("low")
+                            Text("中").tag("medium")
+                            Text("高").tag("high")
+                        }
+                        .pickerStyle(.segmented)
+                        Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("这个模型未检测到深度思考能力，思考档位先收起来了（换个模型就有）。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    .pickerStyle(.segmented)
-                    Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("生成参数") {
                     TextField("前置词（每条用户消息前面加）", text: binding(\.prefix))

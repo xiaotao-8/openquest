@@ -179,8 +179,11 @@ struct ChatView: View {
             }
             HStack(alignment: .bottom, spacing: 6) {
             Menu {
-                PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label("发图片", systemImage: "photo")
+                // 发图片只在当前模型支持视觉理解时显示（能力自动检测；没检测出按支持处理）。
+                if store.agentSupportsVision(currentAgent) {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label("发图片", systemImage: "photo")
+                    }
                 }
                 Button { showingFileImporter = true } label: {
                     Label("发文件", systemImage: "doc")

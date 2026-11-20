@@ -52,6 +52,7 @@ struct ProvidersView: View {
             ForEach(store.providers) { p in
                 Section {
                     KeyRow(provider: p)
+                    HeadersRow(provider: p)
                     FetchModelsRow(providerId: p.id)
                     ForEach(p.models) { m in
                         Text(m.name)
@@ -108,6 +109,55 @@ private struct FetchModelsRow: View {
             }
         }
         .disabled(busy)
+    }
+}
+
+/// 自定义请求头行（DDchat）：每行一个 "Key: Value"，该供应商的每次请求都带上；
+/// 没冒号、键或值为空的行直接忽略。Authorization 和 Content-Type 归 App 管，不让改。
+private struct HeadersRow: View {
+    @EnvironmentObject var store: AppStore
+    let provider: ModelProvider
+    @State private var showingEdit = false
+    @State private var headersText = ""
+
+    var body: some View {
+        Button {
+            headersText = provider.customHeaders
+            showingEdit = true
+        } label: {
+            HStack {
+                Text("自定义请求头").foregroundStyle(.primary)
+                Spacer()
+                let n = provider.parsedCustomHeaders.count
+                Text(n == 0 ? "未填" : "\(n) 个")
+                    .foregroundStyle(n == 0 ? .secondary : .green)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .sheet(isPresented: $showingEdit) {
+            NavigationStack {
+                Form {
+                    TextEditor(text: $headersText)
+                        .frame(minHeight: 160)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    Text("每行一个请求头，格式「Key: Value」，例如：\nX-Custom-Header: abc123\n没冒号、键或值为空的行直接忽略；Authorization 和 Content-Type 不用填，App 自己带。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .navigationTitle("\(provider.name) 的请求头")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { showingEdit = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("保存") {
+                            store.setProviderHeaders(id: provider.id, headers: headersText)
+                            showingEdit = false
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

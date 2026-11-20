@@ -137,6 +137,45 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    /// 一句话创建智能体（DDchat）：本地按规则从一句话里提名字和人设，
+    /// 不调模型、不用 Key，离线也能用。返回新智能体 id，界面跳进编辑页让用户接着调。
+    func createAgentFromSentence(_ sentence: String) -> UUID {
+        let s = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        var core = s
+        // 先去前后缀：帮我做一个/一个/一名……一个会写诗的助手 → 会写诗的助手。
+        for prefix in ["帮我做一个", "帮我创建一个", "请帮我做一个", "做一个", "创建一个",
+                       "一个", "一名", "一位", "帮我", "请"] {
+            if core.hasPrefix(prefix) { core = String(core.dropFirst(prefix.count)); break }
+        }
+        for suffix in ["的助手", "的智能体", "助手", "智能体"] {
+            if core.hasSuffix(suffix) { core = String(core.dropLast(suffix.count)); break }
+        }
+        core = core.trimmingCharacters(in: .whitespacesAndNewlines)
+        if core.hasPrefix("帮我") { core = String(core.dropFirst(2)) }
+        if core.hasPrefix("会") || core.hasPrefix("能") { core = String(core.dropFirst()) }
+        core = core.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 名字：核心描述 ≤6 字直接用，太长只取前 4 字；已有助手/官/师等结尾就不再加“助手”。
+        var nameCore = core
+        if nameCore.count > 6 { nameCore = String(nameCore.prefix(4)) }
+        let keepEndings = ["助手", "官", "师", "员", "手", "生", "家", "者"]
+        let name: String
+        if nameCore.isEmpty {
+            name = "新智能体"
+        } else if keepEndings.contains(where: { nameCore.hasSuffix($0) }) {
+            name = nameCore
+        } else {
+            name = nameCore + "助手"
+        }
+        // 人设就是这句话本身（DDchat 的一句话创建），头像底色按句子稳定取一个。
+        var agent = Agent(name: name, tintHue: 0.6)
+        agent.soul = "你的身份和任务：\(s)\n\n始终按以上身份和要求行事。"
+        let hue = Double(s.unicodeScalars.reduce(0) { ($0 + Int($1.value)) % 100 }) / 100.0
+        agent.tintHue = hue
+        agents.append(agent)
+        save()
+        return agent.id
+    }
+
     func deleteAgent(id: UUID) {
         agents.removeAll { $0.id == id }
         for i in conversations.indices {
@@ -197,12 +236,13 @@ final class AppStore: ObservableObject {
     func addPresetProvider(name: String, baseURL: String, modelIds: [String]) {
         guard !providers.contains(where: { $0.baseURL == baseURL }) else { return }
         var p = ModelProvider(name: name, baseURL: baseURL)
-        p.models = modelIds.map { AIModel(id: $0) }
+        p.models = modelIds.map { ModelCapabilities.applying(to: AIModel(id: $0)) }
         providers.append(p)
         save()
     }
 
-    /// 从供应商接口自动拉模型列表（GET /models），本地没有的补进来。
+    /// 从供应商接口自动拉模型列表（GET /models），本地没有的补进来；
+    /// 拉到的每个模型都跑一次能力自动检测（DDchat），写进模型的能力 flag。
     func fetchModels(providerId: UUID) async -> String {
         guard let p = providers.first(where: { $0.id == providerId }) else { return "供应商不见了" }
         guard let key = KeychainHelper.key(ref: p.keyRef), !key.isEmpty else { return "先填 Key 才能拉" }
@@ -212,6 +252,11 @@ final class AppStore: ObservableObject {
         var req = URLRequest(url: url)
         req.timeoutInterval = 30
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        for (k, v) in p.parsedCustomHeaders {
+            let lower = k.lowercased()
+            guard lower != "authorization", lower != "content-type" else { continue }
+            req.setValue(v, forHTTPHeaderField: k)
+        }
         do {
             let (data, resp) = try await Net.session.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -221,9 +266,15 @@ final class AppStore: ObservableObject {
             let ids = list.compactMap { $0["id"] as? String }
             guard let i = providers.firstIndex(where: { $0.id == providerId }) else { return "供应商不见了" }
             var added = 0
-            for id in ids where !providers[i].models.contains(where: { $0.id == id }) {
-                providers[i].models.append(AIModel(id: id))
-                added += 1
+            for id in ids {
+                let detected = ModelCapabilities.applying(to: AIModel(id: id))
+                if let j = providers[i].models.firstIndex(where: { $0.id == id }) {
+                    providers[i].models[j].supportsReasoning = detected.supportsReasoning
+                    providers[i].models[j].supportsVision = detected.supportsVision
+                } else {
+                    providers[i].models.append(detected)
+                    added += 1
+                }
             }
             save()
             return added > 0 ? "新拉到 \(added) 个" : "共 \(ids.count) 个，已都在"
@@ -236,6 +287,29 @@ final class AppStore: ObservableObject {
         guard let p = providers.first(where: { $0.id == id }) else { return }
         if apiKey.isEmpty { KeychainHelper.deleteKey(ref: p.keyRef) }
         else { KeychainHelper.setKey(apiKey, ref: p.keyRef) }
+    }
+
+    /// 自定义请求头（DDchat）：每行一个 "Key: Value"，存进供应商快照。
+    func setProviderHeaders(id: UUID, headers: String) {
+        guard let i = providers.firstIndex(where: { $0.id == id }) else { return }
+        providers[i].customHeaders = headers
+        save()
+    }
+
+    /// 某个智能体当前用的模型（没选就是 nil）。
+    func modelForAgent(_ agent: Agent?) -> AIModel? {
+        guard let agent else { return nil }
+        return providers.first { $0.id.uuidString == agent.providerKey }?
+            .models.first { $0.id == agent.modelId }
+    }
+
+    /// 能力 flag 是提示：没检测出（nil）按支持处理，控件照常显示；只有明确标 false 才收起来。
+    func agentSupportsReasoning(_ agent: Agent?) -> Bool {
+        modelForAgent(agent)?.supportsReasoning ?? true
+    }
+
+    func agentSupportsVision(_ agent: Agent?) -> Bool {
+        modelForAgent(agent)?.supportsVision ?? true
     }
 
     func providerHasKey(_ p: ModelProvider) -> Bool {
@@ -252,7 +326,8 @@ final class AppStore: ObservableObject {
 
     func addModel(providerId: UUID, modelId: String, displayName: String = "") {
         guard let i = providers.firstIndex(where: { $0.id == providerId }) else { return }
-        providers[i].models.append(AIModel(id: modelId, displayName: displayName))
+        providers[i].models.append(
+            ModelCapabilities.applying(to: AIModel(id: modelId, displayName: displayName)))
         save()
     }
 
@@ -345,6 +420,11 @@ final class AppStore: ObservableObject {
         req.timeoutInterval = 30
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (k, v) in p.parsedCustomHeaders {
+            let lower = k.lowercased()
+            guard lower != "authorization", lower != "content-type" else { continue }
+            req.setValue(v, forHTTPHeaderField: k)
+        }
         let prompt = "把下面这个软件插件的名字和说明译成简体中文，只输出两行：第一行译名，第二行译后的说明，不要任何多余文字。\n名字：\(name)\n说明：\(summary)"
         let payload: [String: Any] = ["model": model,
                                       "messages": [["role": "user", "content": prompt]],

@@ -13,20 +13,23 @@ struct ModelPickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("思考档位") {
-                    Picker("思考档位", selection: Binding(
-                        get: { effort },
-                        set: { store.setAgentEffort(agentId: agent.id, effort: $0) }
-                    )) {
-                        Text("跟模型默认").tag("")
-                        Text("关").tag("off")
-                        Text("低").tag("low")
-                        Text("中").tag("medium")
-                        Text("高").tag("high")
+                // 思考档位只在模型支持深度思考时显示（能力自动检测；没检测出按支持处理）。
+                if store.agentSupportsReasoning(agent) {
+                    Section("思考档位") {
+                        Picker("思考档位", selection: Binding(
+                            get: { effort },
+                            set: { store.setAgentEffort(agentId: agent.id, effort: $0) }
+                        )) {
+                            Text("跟模型默认").tag("")
+                            Text("关").tag("off")
+                            Text("低").tag("low")
+                            Text("中").tag("medium")
+                            Text("高").tag("high")
+                        }
+                        .pickerStyle(.segmented)
+                        Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    .pickerStyle(.segmented)
-                    Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(store.providers) { p in
                     Section(p.name) {
