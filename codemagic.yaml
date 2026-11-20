@@ -93,23 +93,23 @@ workflows:
           APP=$(find build-sim/Build/Products -name "OpenQuest.app" -maxdepth 3 | head -1)
           xcrun simctl install "$SIM_UDID" "$APP"
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest
-          sleep 3
+          sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-empty.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed
-          sleep 3
+          sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-list.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewChat
-          sleep 3
+          sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-chat.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewSettings
-          sleep 3
+          sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-settings.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewDNS
-          sleep 3
+          sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-dns.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewLiveChat
@@ -117,7 +117,7 @@ workflows:
           xcrun simctl io "$SIM_UDID" screenshot preview-livechat.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewProviders
-          sleep 3
+          sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-providers.png
           ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png
       - name: 设备版未签名 IPA
