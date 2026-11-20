@@ -15,4 +15,11 @@
 <key>CFBundleURLSchemes</key><array><string>openquest</string></array>
 </dict></array>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+<key>NSAppTransportSecurity</key><dict>
+<key>NSExceptionDomains</key><dict>
+<key>47.238.160.204</key><dict>
+<key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+</dict>
+</dict>
+</dict>
 </dict></plist>
