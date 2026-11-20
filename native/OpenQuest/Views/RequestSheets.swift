@@ -33,11 +33,13 @@ struct AskSheetView: View {
 
     /// 本页的推荐项：模型给的 default（recommendedId）优先，没有就第一个
     /// （Minis timeoutSuggestion 也是 default 优先、否则首选）。
-    private var recommendedId: String {
-        let rid = current.recommendedId
-        if !rid.isEmpty, current.options.contains(where: { $0.id == rid }) { return rid }
-        return current.options.first?.id ?? ""
+    private func recommendedIdForPage(_ p: Int) -> String {
+        let q = pages[p]
+        if !q.recommendedId.isEmpty, q.options.contains(where: { $0.id == q.recommendedId }) { return q.recommendedId }
+        return q.options.first?.id ?? ""
     }
+
+    private var recommendedId: String { recommendedIdForPage(page) }
 
     private func isRecommended(_ opt: CardOption) -> Bool {
         !recommendedId.isEmpty && opt.id == recommendedId
@@ -270,6 +272,17 @@ struct AskSheetView: View {
         .padding(.top, 8)
         .padding(.bottom, 28)
         .fittedSheet()
+        .onAppear {
+            // 原版 FP question.png：首选（Recommended）打开就是选中态（实心黑圆），
+            // 提交直接可用；单选卡每题默认选中推荐项，多选/开放式不动。
+            // 点“你来定”会清掉本页选择（已有逻辑），不影响默认选中。
+            for p in pages.indices {
+                let q = pages[p]
+                guard !q.options.isEmpty, !q.multiSelect, (pagePicked[p] ?? []).isEmpty else { continue }
+                let r = recommendedIdForPage(p)
+                if !r.isEmpty { pagePicked[p] = [r] }
+            }
+        }
     }
 }
 

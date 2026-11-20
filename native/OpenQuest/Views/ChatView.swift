@@ -29,6 +29,8 @@ struct ChatView: View {
     @State private var pendingConfigApproval: AgentTools.ToolApprovalEvent.Config?
     /// -PreviewAsk 种子只注一次（onAppear 会重进）。
     @State private var askPreviewSeeded = false
+    /// -PreviewApproval 种子只注一次（onAppear 会重进）。
+    @State private var approvalPreviewSeeded = false
     @State private var showingWorkingPanel = false
     @State private var liveShot: Data? = nil
     @State private var liveCaption = ""
@@ -502,6 +504,17 @@ struct ChatView: View {
                 liveCaption = "浏览器 · 维基百科，自由的百科全书"
                 working = [("小评", "正在用服务器浏览器看维基百科…")]
             }
+            // 仅模拟器验收（-PreviewChat）：给种子会话第一条智能体回复挂一条已完成的
+            // 工具调用行（真 label 写法“打开网页 + 域名”+ 绿勾 + 实测耗时），验 B1–B2；
+            // 调用行只活在当前会话内存里，不进消息存盘（ToolCallRecord 的既有规矩）。
+            // 赋值是幂等的，onAppear 重进也不会重复挂。
+            if ProcessInfo.processInfo.arguments.contains("-PreviewChat"),
+               let conv = conversation,
+               let firstReply = conv.messages.first(where: { $0.senderId != "user" && $0.eventKind == nil }) {
+                toolCalls[firstReply.id] = [ToolCallRecord(id: "preview-browse-1",
+                                                           label: "打开网页 zh.wikipedia.org",
+                                                           finished: true, seconds: 3.2)]
+            }
             // 仅模拟器真聊验收（-PreviewLiveChat）：进会话就走真实 send() 发一句，
             // 回复是真模型流式回来的，不是写死的假数据。
             if ProcessInfo.processInfo.arguments.contains("-PreviewLiveChat"),
@@ -525,6 +538,28 @@ struct ChatView: View {
                         CardOption(id: "start-ask", label: "先问清楚", detail: "把细节问完再开始"),
                     ])
                 card.header = "演示"
+                card.timeoutMinutes = 5
+                card.deadline = Date().addingTimeInterval(5 * 60)
+                store.conversations[i].pendingCard = card
+                store.save()
+            }
+            // 仅模拟器验收（-PreviewApproval）：进聊天页直接注入一张待回答的审批卡，
+            // 不依赖真模型发起审批；批准/拒绝/跳过都走正常结算路（超时只建议、不执行）。
+            // 卡片照 minis-config 真审批的样子：oq_config_set + 影响行 + 中等风险。
+            if ProcessInfo.processInfo.arguments.contains("-PreviewApproval"), !approvalPreviewSeeded,
+               let i = store.conversations.firstIndex(where: { $0.id == conversationId }),
+               store.conversations[i].pendingCard == nil {
+                approvalPreviewSeeded = true
+                var card = CardPayload(
+                    kind: .approval,
+                    question: "小评想把 DNS 改成阿里云，测完再改回来。",
+                    options: [
+                        CardOption(id: "approve", label: "批准", detail: "改这个设置"),
+                        CardOption(id: "reject", label: "拒绝", detail: "不改"),
+                    ])
+                card.actionText = "oq_config_set dnsMode = aliyun"
+                card.impact = "把 dnsMode 从 system 改成 aliyun。可再改回来。"
+                card.risk = "medium"
                 card.timeoutMinutes = 5
                 card.deadline = Date().addingTimeInterval(5 * 60)
                 store.conversations[i].pendingCard = card

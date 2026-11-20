@@ -132,6 +132,10 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-ask.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewApproval
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-approval.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewLog
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-log.png
@@ -191,7 +195,7 @@ workflows:
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=devicecaps
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-page-devicecaps.png
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png preview-cloud.png preview-permissions.png preview-ask.png preview-log.png preview-page-agents.png preview-page-skills.png preview-page-plugins.png preview-page-connectors.png preview-page-browser.png preview-page-schedules.png preview-page-miniapps.png preview-page-language.png preview-page-usage.png preview-page-soul.png preview-page-memory.png preview-page-envvars.png preview-page-update.png preview-page-devicecaps.png
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png preview-cloud.png preview-permissions.png preview-ask.png preview-approval.png preview-log.png preview-page-agents.png preview-page-skills.png preview-page-plugins.png preview-page-connectors.png preview-page-browser.png preview-page-schedules.png preview-page-miniapps.png preview-page-language.png preview-page-usage.png preview-page-soul.png preview-page-memory.png preview-page-envvars.png preview-page-update.png preview-page-devicecaps.png
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -214,6 +218,7 @@ workflows:
       - native/preview-cloud.png
       - native/preview-permissions.png
       - native/preview-ask.png
+      - native/preview-approval.png
       - native/preview-log.png
       - native/preview-page-agents.png
       - native/preview-page-skills.png

@@ -141,10 +141,11 @@ struct RootView: View {
                     // 必须异步抛到下一轮 runloop 才能正常弹出（实测 #25 两张图因此没出）。
                     DispatchQueue.main.async { showSettings = true }
                 } else if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")
-                           || args.contains("-PreviewAsk")),
+                           || args.contains("-PreviewAsk") || args.contains("-PreviewApproval")),
                           let first = store.conversations.first, chatPath.isEmpty {
                     // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
                     // -PreviewAsk 也走这里：进聊天页后 ChatView.onAppear 再注提问卡种子。
+                    // -PreviewApproval 同理：进聊天页后 ChatView.onAppear 再注审批卡种子。
                     chatPath = [ChatDestination(id: first.id)]
                 } else if args.contains("-PreviewSeed") {
                     // 仅模拟器预览截图用：-PreviewSeed 单独出现 = 打开会话列表。

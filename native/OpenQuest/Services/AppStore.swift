@@ -64,10 +64,17 @@ final class AppStore: ObservableObject {
         let a3 = Agent(name: "翻译官", tintHue: 0.58)
         agents = [a1, a2, a3]
         var team = Conversation(title: "我的团队", memberIds: [a1.id, a2.id])
+        // 验收种子：这条回复带用量快照（与真聊回包一致：输入 2,855 · 输出 14，
+        // 供应商“实测中继”/模型 agnes-2.5-flash），用量页截图单次启动就能看到非零。
+        var seedReply = Message(senderId: a1.id.uuidString, text: "我去服务器浏览器上查一下，马上回你。",
+                                reasoning: "先确认是哪个版本，再去电商页面比价……")
+        seedReply.usagePrompt = 2855
+        seedReply.usageCompletion = 14
+        seedReply.usageProvider = "实测中继"
+        seedReply.usageModel = "agnes-2.5-flash"
         team.messages = [
             Message(senderId: "user", text: "帮我查下这个产品在国内卖多少钱"),
-            Message(senderId: a1.id.uuidString, text: "我去服务器浏览器上查一下，马上回你。",
-                    reasoning: "先确认是哪个版本，再去电商页面比价……"),
+            seedReply,
             // 验收种子：一条含 LaTeX 公式、一条含 Mermaid 流程图的消息，
             // 让 preview-chat.png 能同时验 LaTeX 渲染与图表卡片点开。
             Message(senderId: a2.id.uuidString,
