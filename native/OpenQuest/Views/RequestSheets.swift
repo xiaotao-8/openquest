@@ -415,6 +415,8 @@ struct ApprovalSheetView: View {
 /// 倒计时小标签：m:ss（无“剩余”二字），≤30 秒变琥珀；到期不抢结算，等聊天页处理。
 struct SheetCountdown: View {
     let deadline: Date?
+    @EnvironmentObject var store: AppStore
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
     @State private var now = Date()
 
     var body: some View {
