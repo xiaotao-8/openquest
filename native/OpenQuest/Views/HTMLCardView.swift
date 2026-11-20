@@ -86,7 +86,7 @@ struct HTMLCardView: View {
             <style>body{margin:0;padding:8px;background:transparent;color:#fff;font-family:-apple-system,sans-serif}
             .mermaid{display:flex;justify-content:center}</style>
             <script src="mermaid.min.js"></script>
-            </head><body><pre class="mermaid">\(escape(code)</pre>
+            </head><body><pre class="mermaid">\(escape(code))</pre>
             <script>mermaid.initialize({startOnLoad:true,theme:'dark'});</script>
             </body></html>
             """
