@@ -402,7 +402,7 @@ struct MinisConfigView: View {
                      ? "开着：智能体能通过设置接口读写下面这些设置，写操作会弹审批卡给你批。"
                      : "关着（默认）：智能体完全不能改设置，调工具会直接收到拒绝；开关本身只能你在这里改。")
             }
-            Section("智能体能改的设置") {
+            Section {
                 ForEach(MinisConfig.fields, id: \.path) { f in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
@@ -419,6 +419,8 @@ struct MinisConfigView: View {
                     }
                     .padding(.vertical, 2)
                 }
+            } header: {
+                Text("智能体能改的设置")
             } footer: {
                 Text("集合项按实际 id 展开，如 agent.<智能体 id>.temperature；完整列表智能体调 oq_config_list 自己查。")
             }
