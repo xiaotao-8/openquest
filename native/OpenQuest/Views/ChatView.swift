@@ -177,7 +177,7 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
             }
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 6) {
             Menu {
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     Label("发图片", systemImage: "photo")
@@ -188,12 +188,13 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .medium))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 38, height: 38)
                     .background(Color.white.opacity(0.08), in: Circle())
+                    .frame(minWidth: 44, minHeight: 44)
             }
             TextField(L10n.t("send_placeholder", lang: store.language), text: $input, axis: .vertical)
                 .lineLimit(1...5)
-                .padding(.vertical, 8)
+                .padding(.vertical, 11)
             Button {
                 let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty || pendingImage != nil || pendingFileName != nil, !running else { return }
@@ -201,17 +202,17 @@ struct ChatView: View {
                 Task { await send(text) }
             } label: {
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(canSend ? .black : .secondary)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 38, height: 38)
                     .background(canSend ? Color.white : Color.white.opacity(0.12), in: Circle())
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .disabled(!canSend || running)
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .liquidGlass(RoundedRectangle(cornerRadius: 27))
+        .padding(5)
+        .liquidGlass(RoundedRectangle(cornerRadius: 28))
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .onChange(of: photoItem) { _, item in
@@ -496,6 +497,8 @@ struct ChatView: View {
                 }
             }
             .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(36)
         }
     }
 
@@ -969,7 +972,26 @@ struct CardView: View {
     @State private var pagePicked: [Int: Set<String>] = [:]
     @State private var otherText = ""
     @State private var noteText = ""
+    @State private var denyReason = ""
     @State private var now = Date()
+    // Minis 提问超 3 行才露“展开更多”：两个隐藏副本量 3 行与全文高度比。
+    @State private var questionExpanded = false
+    @State private var questionClampedHeight: CGFloat = 0
+    @State private var questionFullHeight: CGFloat = 0
+
+    private var questionOverflows: Bool { questionFullHeight > questionClampedHeight + 1 }
+
+    /// 选中态：已作答看 resolved，未作答看本页已点。
+    private func isSelected(_ opt: CardOption) -> Bool {
+        if answered { return card.resolved.contains(opt.id) }
+        return (pagePicked[page] ?? []).contains(opt.id)
+    }
+    /// Minis 选项行左侧单选/复选图标（选中 tint，未选中 tertiary）。
+    private func radioIcon(for opt: CardOption) -> String {
+        let sel = isSelected(opt)
+        if current.multiSelect { return sel ? "checkmark.square.fill" : "square" }
+        return sel ? "largecircle.fill.circle" : "circle"
+    }
 
     private var answered: Bool { !card.resolved.isEmpty }
     private var pages: [CardPayload] { [card] + card.extraQuestions }
@@ -977,34 +999,63 @@ struct CardView: View {
     private var isLastPage: Bool { page >= pages.count - 1 }
 
     private var chipText: String {
-        card.kind == .approval ? "需要批准" : card.kind == .vote ? "投票" : "提问"
+        if card.kind == .approval { return card.risk == "high" ? "高风险操作" : "需要批准" }
+        return card.kind == .vote ? "投票" : "提问"
     }
+    /// Minis UserAskTint：confirm 按风险着色（high 红、其余橙），提问蓝。
     private var chipColor: Color {
-        card.kind == .approval ? .orange : card.kind == .vote ? .purple : .blue
+        switch card.kind {
+        case .approval: return card.risk == "high" ? .red : .orange
+        case .vote: return .purple
+        case .ask: return .blue
+        }
     }
 
-    /// 倒计时文案（有 deadline 才显示）。
-    private var countdownText: String? {
+    /// 倒计时秒数（有 deadline 且未作答才有）。
+    private var countdownLeft: Int? {
         guard let deadline = card.deadline, !answered else { return nil }
-        let left = Int(deadline.timeIntervalSince(now))
-        if left <= 0 { return "已超时" }
-        return "剩余 \(left / 60):\(String(format: "%02d", left % 60))"
+        return Int(deadline.timeIntervalSince(now))
     }
+    /// Minis 倒计时文案：m:ss（无“剩余”二字），配 timer 图标；≤30 秒变橙。
+    private var countdownText: String? {
+        guard let left = countdownLeft else { return nil }
+        if left <= 0 { return "已超时" }
+        return "\(left / 60):\(String(format: "%02d", left % 60))"
+    }
+    private var countdownUrgent: Bool { (countdownLeft ?? Int.max) <= 30 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(chipText)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(chipColor)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(chipColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
-                Spacer()
-                if let cd = countdownText {
-                    Text(cd).font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(chipColor.opacity(0.15)).frame(width: 28, height: 28)
+                    Image(systemName: card.kind == .approval ? "exclamationmark.shield.fill" : "questionmark.bubble.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(chipColor)
                 }
+                Text(chipText)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(chipColor)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(chipColor.opacity(0.15), in: Capsule())
+                if !card.header.isEmpty {
+                    Text(card.header)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(chipColor)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(chipColor.opacity(0.15), in: Capsule())
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
                 if pages.count > 1 {
-                    Text("\(page + 1)/\(pages.count)").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(page + 1)/\(pages.count)")
+                        .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                if let cd = countdownText {
+                    Label(cd, systemImage: "timer")
+                        .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(countdownUrgent ? .orange : .secondary)
                 }
             }
             if card.kind == .approval {
@@ -1024,32 +1075,61 @@ struct CardView: View {
         .background(Color(white: 0.107), in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.05), lineWidth: 1))
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
+        .onChange(of: page) { _, _ in
+            questionExpanded = false
+            questionClampedHeight = 0
+            questionFullHeight = 0
+        }
     }
 
     // MARK: 审批卡（Minis confirm）
     private var approvalBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(card.actionText.isEmpty ? card.question : card.actionText)
-                .font(.system(.body, design: .monospaced))
+                .font(.system(size: 14.5, design: .monospaced))
+                .padding(8)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 .padding(.top, 6)
             if !card.impact.isEmpty {
-                Text(card.impact).font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(chipColor)
+                    Text(card.impact)
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 4)
             }
-            Text(riskText)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(riskColor)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(riskColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
-            HStack {
-                Button("取消") { submit([rejectOption]) }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 20).padding(.vertical, 9)
-                    .liquidGlass(Capsule())
-                Spacer()
+            if !answered {
+                HStack(spacing: 6) {
+                    Image(systemName: denyReason.trimmingCharacters(in: .whitespaces).isEmpty ? "plus" : "arrow.uturn.backward")
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(.secondary)
+                    TextField("取消原因 / 改成怎么做", text: $denyReason)
+                        .font(.system(size: 14.5))
+                }
+                .padding(.vertical, 7)
+                .frame(minHeight: 44)
+            }
+            HStack(spacing: 8) {
+                Button("取消") {
+                    var opts = [rejectOption]
+                    let r = denyReason.trimmingCharacters(in: .whitespaces)
+                    if !r.isEmpty { opts.append(CardOption(id: "__deny_reason__", label: "取消原因：\(r)")) }
+                    submit(opts)
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .padding(.horizontal, 16)
+                .frame(minWidth: 72, minHeight: 44)
+                .liquidGlass(Capsule())
+                Spacer(minLength: 12)
                 Button("允许") { submit([approveOption]) }
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.black)
-                    .padding(.horizontal, 20).padding(.vertical, 9)
+                    .padding(.horizontal, 16)
+                    .frame(minWidth: 72, minHeight: 44)
                     .background(Color.green, in: Capsule())
             }
             .padding(.top, 6)
@@ -1064,29 +1144,52 @@ struct CardView: View {
         card.options.first { $0.id == "reject" } ?? CardOption(id: "reject", label: "拒绝")
     }
 
-    private var riskText: String {
-        switch card.risk {
-        case "high": return "高风险"
-        case "medium": return "中风险"
-        default: return "低风险"
-        }
-    }
-    private var riskColor: Color {
-        switch card.risk {
-        case "high": return .red
-        case "medium": return .orange
-        default: return .secondary
-        }
-    }
-
     // MARK: 提问/投票卡
     private var askBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(current.question)
-                .font(.body.weight(.semibold))
+                .font(.system(size: 16.5, weight: .medium))
+                .lineLimit(questionExpanded ? nil : 3)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(alignment: .topLeading) {
+                    ZStack(alignment: .topLeading) {
+                        Text(current.question)
+                            .font(.system(size: 16.5, weight: .medium))
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .background(GeometryReader { g in
+                                Color.clear.preference(key: QuestionClampedHeightKey.self, value: g.size.height)
+                            })
+                        Text(current.question)
+                            .font(.system(size: 16.5, weight: .medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .background(GeometryReader { g in
+                                Color.clear.preference(key: QuestionFullHeightKey.self, value: g.size.height)
+                            })
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                }
+                .onPreferenceChange(QuestionClampedHeightKey.self) { h in
+                    if abs(h - questionClampedHeight) > 0.5 { questionClampedHeight = h }
+                }
+                .onPreferenceChange(QuestionFullHeightKey.self) { h in
+                    if abs(h - questionFullHeight) > 0.5 { questionFullHeight = h }
+                }
                 .padding(.top, 6)
                 .padding(.bottom, 4)
-            ForEach(current.options) { opt in
+            if questionOverflows && !answered {
+                Button { questionExpanded.toggle() } label: {
+                    Text(questionExpanded ? "收起" : "展开更多")
+                        .font(.system(size: 14.5, weight: .medium))
+                        .foregroundStyle(chipColor)
+                        .padding(.trailing, 16)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            ForEach(Array(current.options.enumerated()), id: \.element.id) { idx, opt in
                 Divider().background(Color.white.opacity(0.07))
                 Button {
                     if answered { return }
@@ -1102,30 +1205,34 @@ struct CardView: View {
                         submit([opt])
                     }
                 } label: {
-                    HStack {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: radioIcon(for: opt))
+                            .font(.system(size: 17))
+                            .foregroundStyle(isSelected(opt) ? chipColor : .tertiary)
+                            .frame(width: 21)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
-                                Text(opt.label).font(.body)
-                                if opt.id == current.recommendedId {
+                                Text(opt.label)
+                                    .font(.system(size: 16, weight: isSelected(opt) ? .semibold : .regular))
+                                if idx == 0 {
                                     Text("推荐")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(.green)
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 5))
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(chipColor)
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(chipColor.opacity(0.14), in: Capsule())
                                 }
                             }
                             if !opt.detail.isEmpty {
-                                Text(opt.detail).font(.caption).foregroundStyle(.secondary)
+                                Text(opt.detail)
+                                    .font(.system(size: 13.5))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-                        Spacer()
-                        if answered && card.resolved.contains(opt.id) {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        } else if (pagePicked[page] ?? []).contains(opt.id) {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
-                        }
+                        Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 7)
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1134,52 +1241,66 @@ struct CardView: View {
             if card.kind == .ask && pages.count == 1 && !answered {
                 Divider().background(Color.white.opacity(0.07))
                 Button { submit([CardOption(id: "__youdecide__", label: "你来定")]) } label: {
-                    HStack {
-                        Text("你来定").font(.body)
-                        Text("让智能体自己定").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
+                    HStack(spacing: 10) {
+                        Image(systemName: "circle")
+                            .font(.system(size: 17))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 21)
+                        Text("你来定").font(.system(size: 16))
+                        Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 7)
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 Divider().background(Color.white.opacity(0.07))
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: "circle")
+                        .font(.system(size: 17))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 21)
                     TextField("其他：自己写答案", text: $otherText)
-                        .font(.body)
+                        .font(.system(size: 16))
                     Button("发送") {
                         let v = otherText.trimmingCharacters(in: .whitespaces)
                         guard !v.isEmpty else { return }
                         submit([CardOption(id: "__other__", label: v)])
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .disabled(otherText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                .padding(.vertical, 6)
-                HStack(spacing: 8) {
+                .padding(.vertical, 7)
+                .frame(minHeight: 44)
+                HStack(spacing: 6) {
+                    Image(systemName: noteText.trimmingCharacters(in: .whitespaces).isEmpty ? "plus" : "note.text")
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(.secondary)
                     TextField("补充说明（随答案一起发）", text: $noteText)
-                        .font(.caption)
+                        .font(.system(size: 14.5))
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 7)
+                .frame(minHeight: 44)
             }
             // 多选确认 / 向导翻页。
             if !answered && (current.multiSelect || pages.count > 1) {
-                HStack {
+                HStack(spacing: 10) {
                     if page > 0 {
                         Button("上一题") { page -= 1 }
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 18).padding(.vertical, 8)
+                            .font(.system(size: 16, weight: .semibold))
+                            .padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                             .liquidGlass(Capsule())
                     }
-                    Spacer()
                     Button(isLastPage ? "提交" : "下一题") {
                         if isLastPage { submit(allPickedOptions()) }
                         else { page += 1 }
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 18).padding(.vertical, 8)
+                    .font(.system(size: 16, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .liquidGlassInteractive(Capsule())
-                    .disabled(current.multiSelect && (pagePicked[page] ?? []).isEmpty)
+                    .disabled((pagePicked[page] ?? []).isEmpty)
                 }
                 .padding(.top, 8)
             }
@@ -1213,6 +1334,16 @@ struct CardView: View {
         }
         onAnswer(all)
     }
+}
+
+private struct QuestionClampedHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct QuestionFullHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 private struct MessageBubble: View {
@@ -1413,11 +1544,14 @@ private struct MessageBubble: View {
                 }
             }
             if let p = message.usagePrompt, let c = message.usageCompletion {
-                Text("输入 \(p) · 输出 \(c)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color.white.opacity(0.06), in: Capsule())
+                HStack(spacing: 4) {
+                    Image(systemName: "speedometer").font(.system(size: 9))
+                    Text("输入 \(p) · 输出 \(c)")
+                        .font(.system(size: 10, design: .monospaced))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color.white.opacity(0.06), in: Capsule())
             }
         }
         .padding(.horizontal, 15)

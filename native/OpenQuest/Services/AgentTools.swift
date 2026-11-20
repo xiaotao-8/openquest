@@ -53,19 +53,19 @@ enum AgentTools {
                 "type": "function",
                 "function": [
                     "name": askUserName,
-                    "description": "需要用户做选择、或需要用户拍板确认时，必须调用本工具弹提问卡（问题+2到4个选项），不要在正文里罗列选项让用户打字回答。等用户点选后答案会给你。开放式问题（没有明确选项）才直接在回复里问。问题和每个选项的 label 都要短，各不超过 12 个字。timeoutMinutes 是倒计时（1/2/5/10/30/60，0=不限，默认 5），超时只给建议、不自动执行；recommendedId 填你最推荐的那个选项 id；一次问多个问题时把后面的题放 questions 里。",
+                    "description": "需要用户做选择、或需要用户拍板确认时，必须调用本工具弹提问卡（问题+2到4个选项），不要在正文里罗列选项让用户打字回答。等用户点选后答案会给你。开放式问题（没有明确选项）才直接在回复里问。问题是一句话；每个选项的 label 都要短，不超过 12 个字；header 是问题旁边的小标签，不超过 12 个字。选项按推荐程度从好到差排，最好的放第一个，卡片会自动给第一个打推荐角标。timeoutMinutes 是倒计时（1/2/5/10/30/60，0=不限，默认 5），超时只给建议、不自动执行；一次问多个问题时把后面的题放 questions 里。",
                     "parameters": [
                         "type": "object",
                         "properties": [
-                            "question": ["type": "string", "description": "要问用户的问题，一句话，不超过 12 个字"],
+                            "question": ["type": "string", "description": "要问用户的问题，一句话"],
+                            "header": ["type": "string", "description": "问题旁边的小标签，不超过 12 个字，可不填"],
                             "options": [
                                 "type": "array",
-                                "description": "2到4个选项，每个含 id、label（短标签，不超过 12 个字）、detail（一行说明）",
+                                "description": "2到4个选项，按推荐程度从好到差排，每个含 id、label（短标签，不超过 12 个字）、detail（一行说明）",
                                 "items": ["type": "object"],
                             ],
                             "multiSelect": ["type": "boolean", "description": "是否可多选，默认 false"],
                             "timeoutMinutes": ["type": "integer", "description": "倒计时分钟数：1/2/5/10/30/60，0=不限，默认 5"],
-                            "recommendedId": ["type": "string", "description": "最推荐的选项 id，卡片上打推荐角标"],
                             "questions": ["type": "array", "description": "后面的问题（同结构），卡片上可翻页作答"],
                         ],
                         "required": ["question", "options"],

@@ -67,6 +67,8 @@ struct ModelPickerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(36)
         .sheet(isPresented: $showingProviders) {
             NavigationStack { ProvidersView() }
         }

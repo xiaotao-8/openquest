@@ -222,15 +222,16 @@ struct AgentRunner {
                               detail: (o["detail"] as? String) ?? "")
         }
         guard !options.isEmpty else { return nil }
-        var card = CardPayload(kind: .ask, question: short(q), options: options,
+        var card = CardPayload(kind: .ask, question: q, options: options,
                                multiSelect: (obj["multiSelect"] as? Bool) ?? false)
+        // header 是问题旁边的小标签（Minis，≤12 字）；推荐角标卡片自动打在第一个选项上。
+        card.header = short((obj["header"] as? String) ?? "")
         // 倒计时：模型可指定 1/2/5/10/30/60 分钟，0=不限；默认 5 分钟。
         let t = (obj["timeoutMinutes"] as? Int) ?? 5
         card.timeoutMinutes = [0, 1, 2, 5, 10, 30, 60].contains(t) ? t : 5
         if card.timeoutMinutes > 0 {
             card.deadline = Date().addingTimeInterval(TimeInterval(card.timeoutMinutes * 60))
         }
-        card.recommendedId = (obj["recommendedId"] as? String) ?? ""
         // 多题向导：questions 里是后面的题（同结构），卡片上 Previous/Next/Submit。
         if let qs = obj["questions"] as? [[String: Any]] {
             for qobj in qs {
@@ -243,9 +244,9 @@ struct AgentRunner {
                                       detail: (o["detail"] as? String) ?? "")
                 }
                 guard !qopts.isEmpty else { continue }
-                var sub = CardPayload(kind: .ask, question: short(qq), options: qopts,
+                var sub = CardPayload(kind: .ask, question: qq, options: qopts,
                                       multiSelect: (qobj["multiSelect"] as? Bool) ?? false)
-                sub.recommendedId = (qobj["recommendedId"] as? String) ?? ""
+                sub.header = short((qobj["header"] as? String) ?? "")
                 card.extraQuestions.append(sub)
             }
         }

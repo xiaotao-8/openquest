@@ -34,11 +34,12 @@ struct CardPayload: Codable, Equatable {
     var options: [CardOption] = []
     var multiSelect: Bool = false
     var resolved: [String] = []      // 用户已选的 option id；非空 = 已作答
-    // 提问卡补全（Minis）：倒计时（分钟，0=不限）、作答截止时间、最佳选项角标、
-    // 多题向导（后面的题）。label/问题各 ≤12 字，解析时截断。
+    // 提问卡补全（Minis）：倒计时（分钟，0=不限）、作答截止时间、问题旁小标签、
+    // 多题向导（后面的题）。label/header 各 ≤12 字，解析时截断；问题是一整句，不截断。
     var timeoutMinutes: Int = 5
     var deadline: Date? = nil
-    var recommendedId: String = ""
+    var header: String = ""
+    var recommendedId: String = ""     // 旧卡片兼容：角标现在按 Minis 打在第一个选项上；超时建议仍优先用它（旧卡片），没有就取第一个
     var extraQuestions: [CardPayload] = []
     // 审批卡补全（Minis confirm）：等宽字体的精确动作、影响行、风险等级。
     var actionText: String = ""
