@@ -81,11 +81,13 @@ enum MinisConfig {
 
     /// 读一个键。读也要求总开关开着（Minis：关了读也返回 permission_denied）。
     /// 未知键返回 nil。
+    @MainActor
     static func read(store: AppStore, path: String) -> String? {
         guard isEnabled else { return nil }
         return readRaw(store: store, path: path)
     }
 
+    @MainActor
     private static func readRaw(store: AppStore, path: String) -> String? {
         let parts = path.split(separator: ".").map(String.init)
         switch parts.first {
@@ -141,6 +143,7 @@ enum MinisConfig {
 
     /// 智能体写设置的主入口。调用方拿到 `.needsApproval` 就弹审批卡（现有 ApprovalSheetView），
     /// 用户批准后调 `applyApproved`，拒绝调 `recordRejection`；两种结果都进审计。
+    @MainActor
     static func requestWrite(store: AppStore, path: String, value: String,
                              actor: String, caption: String? = nil) -> WriteOutcome {
         guard isEnabled else {
@@ -168,6 +171,7 @@ enum MinisConfig {
 
     /// 审批卡上用户点了批准后调这个，真正落盘并记审计。返回 false = 键已不在（目标被删了）。
     @discardableResult
+    @MainActor
     static func applyApproved(store: AppStore, pending: PendingChange, actor: String) -> Bool {
         guard readRaw(store: store, path: pending.key) != nil else { return false }
         apply(store: store, pending: pending)
@@ -213,6 +217,7 @@ enum MinisConfig {
     }
 
     /// 真正写值（已通过审批或全部跳过审批才到这里）。写完立刻落盘。
+    @MainActor
     private static func apply(store: AppStore, pending: PendingChange) {
         let parts = pending.key.split(separator: ".").map(String.init)
         switch parts.first {
@@ -295,6 +300,7 @@ enum MinisConfig {
     /// 工具调用入口（AgentTools.execute 转调）。读与 list 直接回文本；
     /// 写在需要审批时返回以 `NEEDS_APPROVAL:` 开头的标记串，调用方据此弹审批卡——
     /// 卡上批了再调 applyApproved，拒绝调 recordRejection。标记串里只放键与新值，不放敏感内容。
+    @MainActor
     static func handleToolCall(name: String, argumentsJSON: String,
                                store: AppStore, agentName: String) -> String {
         guard let data = argumentsJSON.data(using: .utf8),

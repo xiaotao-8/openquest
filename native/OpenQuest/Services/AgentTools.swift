@@ -450,12 +450,12 @@ enum AgentTools {
         let label = toolLabel(name: name, argumentsJSON: argumentsJSON)
         let started = Date()
         onEvent?(ToolCallEvent.encodeStart(callId: callId, name: name, label: label), nil)
-        let result = MinisConfig.handleToolCall(
+        let result = await MinisConfig.handleToolCall(
             name: name, argumentsJSON: argumentsJSON, store: store,
             agentName: sharedAgentName.isEmpty ? agentId : sharedAgentName)
         let seconds = Date().timeIntervalSince(started)
         if result.hasPrefix("NEEDS_APPROVAL:") {
-            guard let pending = configPending(from: argumentsJSON, store: store) else {
+            guard let pending = await configPending(from: argumentsJSON, store: store) else {
                 onEvent?(ToolCallEvent.encodeDone(callId: callId, name: name, label: label,
                                                   seconds: seconds, ok: false), nil)
                 return "（这个改动对应的设置项找不到了，没弹卡，也没改。）"
@@ -474,12 +474,12 @@ enum AgentTools {
     /// 从 set 调用的参数 + 当前存储拼出 PendingChange（给审批事件用；
     /// handleToolCall 的 NEEDS_APPROVAL 串里只有 key=value，旧值/敏感/说明要这里补）。
     private static func configPending(from argumentsJSON: String,
-                                      store: AppStore) -> MinisConfig.PendingChange? {
+                                      store: AppStore) async -> MinisConfig.PendingChange? {
         guard let data = argumentsJSON.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let path = obj["path"] as? String,
               let value = obj["value"] as? String,
-              let old = MinisConfig.read(store: store, path: path)
+              let old = await MinisConfig.read(store: store, path: path)
         else { return nil }
         return MinisConfig.PendingChange(key: path, value: value, oldValue: old,
                                          sensitive: MinisConfig.isSensitive(path: path),
