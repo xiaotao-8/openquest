@@ -98,12 +98,17 @@ enum AgentShare {
         return true
     }
 
+    /// 导入失败原因（带给用户看的文案）。
+    struct AgentShareError: Error {
+        let message: String
+    }
+
     /// 从剪贴板导入：剪贴板里是助手 JSON 就新建一个智能体；不是则返回失败原因。
-    static func importFromClipboard(store: AppStore) -> Result<Agent, String> {
+    static func importFromClipboard(store: AppStore) -> Result<Agent, AgentShareError> {
         guard let s = UIPasteboard.general.string,
               let data = s.data(using: .utf8),
               let e = decode(data)
-        else { return .failure("剪贴板里没有助手 JSON：先在别的助手上点“导出 JSON 到剪贴板”再来。") }
+        else { return .failure(AgentShareError(message: "剪贴板里没有助手 JSON：先在别的助手上点“导出 JSON 到剪贴板”再来。")) }
         let a = agent(from: e)
         store.agents.append(a)
         store.save()
@@ -111,9 +116,9 @@ enum AgentShare {
     }
 
     /// 从文件数据导入（.fileImporter 读到的 Data 走这里）。
-    static func importFromData(_ data: Data, store: AppStore) -> Result<Agent, String> {
+    static func importFromData(_ data: Data, store: AppStore) -> Result<Agent, AgentShareError> {
         guard let e = decode(data) else {
-            return .failure("这个文件不是助手 JSON：确认是从 OpenQuest 导出的助手文件。")
+            return .failure(AgentShareError(message: "这个文件不是助手 JSON：确认是从 OpenQuest 导出的助手文件。"))
         }
         let a = agent(from: e)
         store.agents.append(a)
@@ -170,8 +175,8 @@ struct AgentShareButtons: View {
                     switch AgentShare.importFromClipboard(store: store) {
                     case .success(let imported):
                         status = "已导入助手「\(imported.name)」"
-                    case .failure(let msg):
-                        status = msg
+                    case .failure(let err):
+                        status = err.message
                     }
                 }
                 Button("从文件导入助手 JSON") {
@@ -200,8 +205,8 @@ struct AgentShareButtons: View {
                 switch AgentShare.importFromData(data, store: store) {
                 case .success(let imported):
                     status = "已导入助手「\(imported.name)」"
-                case .failure(let msg):
-                    status = msg
+                case .failure(let err):
+                    status = err.message
                 }
             case .failure:
                 status = "没选到文件。"
