@@ -9,7 +9,6 @@ struct OpenQuestApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
-                .preferredColorScheme(.dark)
                 .onOpenURL { url in
                     // 锁屏审批点允许/拒绝：openquest://approval?conv=<id>&choice=allow|deny
                     guard url.scheme == "openquest", url.host == "approval",

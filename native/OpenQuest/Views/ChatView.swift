@@ -9,6 +9,12 @@ struct ChatView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) var dismiss
     let conversationId: UUID
+    /// 首页发来的首条消息（带附件）：进页就走真实 send() 发出去。
+    var initialMessage: String? = nil
+    var initialImage: Data? = nil
+    var initialFileName: String? = nil
+    var initialFileText: String? = nil
+    @State private var initialSent = false
     @State private var input = ""
     @State private var running = false
     @State private var working: [(name: String, action: String)] = []
@@ -34,7 +40,7 @@ struct ChatView: View {
         store.conversations.first { $0.id == conversationId }
     }
 
-    // MARK: 顶部状态胶囊（跟 Muse App 一样：头像 + 名字 + 正在干什么）
+    // MARK: 顶栏（FishPocket 同款：返回 chevron 白圆 + 居中模型 pill + 右上角设置）
 
     private var headerAgent: Agent? {
         if let w = working.first, let a = store.agents.first(where: { $0.name == w.name }) { return a }
@@ -66,60 +72,113 @@ struct ChatView: View {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
                         .frame(width: 40, height: 40)
-                        .liquidGlassInteractive(Circle())
+                        .background(Palette.background, in: Circle())
+                        .overlay(Circle().stroke(Palette.stroke, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("返回")
                 Spacer()
-                if let conv = conversation, conv.memberIds.count == 1,
-                   let agent = store.agent(id: conv.memberIds[0]) {
-                    Button { showingModelSheet = true } label: {
-                        Image(systemName: "cpu")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(width: 40, height: 40)
-                            .liquidGlassInteractive(Circle())
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Button { showingGroupSettings = true } label: {
-                        Image(systemName: "person.2")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(width: 40, height: 40)
-                            .liquidGlassInteractive(Circle())
-                    }
-                    .buttonStyle(.plain)
+                Button { openChatSettings() } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 40, height: 40)
+                        .background(Palette.background, in: Circle())
+                        .overlay(Circle().stroke(Palette.stroke, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("聊天设置")
             }
-            Button {
-                if !working.isEmpty { showingWorkingPanel = true }
-            } label: {
-                HStack(spacing: 8) {
-                    if let a = headerAgent {
-                        AvatarDisc(text: a.initial, hue: a.tintHue, size: 32)
-                    } else {
-                        AvatarDisc(text: String(headerName.prefix(1)), hue: 0.62, size: 32)
+            if !working.isEmpty {
+                // 干活中：中间变干活胶囊（点一下展开“几人在干活”大面板）。
+                Button { showingWorkingPanel = true } label: {
+                    HStack(spacing: 8) {
+                        if let a = headerAgent {
+                            AvatarDisc(text: a.initial, hue: a.tintHue, size: 32)
+                        } else {
+                            AvatarDisc(text: String(headerName.prefix(1)), hue: 0.62, size: 32)
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(headerName)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Palette.ink)
+                                .lineLimit(1)
+                            Text(headerStatus)
+                                .font(.caption2)
+                                .foregroundStyle(Palette.secondary)
+                                .lineLimit(1)
+                        }
                     }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(headerName)
+                    .padding(.leading, 7)
+                    .padding(.trailing, 13)
+                    .padding(.vertical, 6)
+                    .barTitleGlass()
+                    .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                }
+                .buttonStyle(.plain)
+            } else if let conv = conversation, conv.memberIds.count == 1 {
+                // 单聊：中间是模型 pill，点开换模型。
+                Button { showingModelSheet = true } label: {
+                    HStack(spacing: 6) {
+                        Text(currentModelName)
                             .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Palette.ink)
                             .lineLimit(1)
-                        Text(headerStatus)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        if let a = currentAgent, !effortLabel(a.effort).isEmpty {
+                            Text(effortLabel(a.effort))
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(Palette.secondary)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(Palette.control, in: Capsule())
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Palette.secondary)
                     }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .barTitleGlass()
+                    .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
-                .padding(.leading, 7)
-                .padding(.trailing, 13)
-                .padding(.vertical, 6)
-                .liquidGlass(Capsule())
-                .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+                .buttonStyle(.plain)
+                .disabled(currentAgent == nil)
+                .accessibilityLabel("模型：\(currentModelName)")
+            } else {
+                // 群聊：中间是群名 pill，点开群设置。
+                Button { showingGroupSettings = true } label: {
+                    HStack(spacing: 6) {
+                        Text(conversation?.title ?? "群聊")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Palette.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .barTitleGlass()
+                    .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 8)
+    }
+
+    /// 右上角设置：单聊换模型，群聊进群设置。
+    private func openChatSettings() {
+        if conversation?.memberIds.count == 1 {
+            showingModelSheet = true
+        } else {
+            showingGroupSettings = true
+        }
     }
 
     private var currentAgent: Agent? {
@@ -156,11 +215,11 @@ struct ChatView: View {
                             Text(effortLabel(a.effort))
                                 .font(.caption2)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(Color.white.opacity(0.12), in: Capsule())
+                                .background(Palette.control, in: Capsule())
                         }
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .background(Palette.control, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .disabled(currentAgent == nil)
@@ -171,9 +230,9 @@ struct ChatView: View {
                         Text("联网").font(.caption)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(webSearchOn ? Color.blue.opacity(0.4) : Color.white.opacity(0.08),
+                    .background(webSearchOn ? Palette.ink : Palette.control,
                                 in: Capsule())
-                    .foregroundStyle(webSearchOn ? .white : .secondary)
+                    .foregroundStyle(webSearchOn ? Palette.onInk : .secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -191,8 +250,9 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(Palette.ink)
                     .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.08), in: Circle())
+                    .background(Palette.control, in: Circle())
                     .frame(minWidth: 44, minHeight: 44)
             }
             TextField(L10n.t("send_placeholder", lang: store.language), text: $input, axis: .vertical)
@@ -206,16 +266,16 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(canSend ? .black : .secondary)
+                    .foregroundStyle(canSend ? Palette.onInk : Palette.faint)
                     .frame(width: 38, height: 38)
-                    .background(canSend ? Color.white : Color.white.opacity(0.12), in: Circle())
+                    .background(canSend ? Palette.ink : Palette.control, in: Circle())
                     .frame(minWidth: 44, minHeight: 44)
             }
             .disabled(!canSend || running)
             }
         }
         .padding(5)
-        .liquidGlass(RoundedRectangle(cornerRadius: 28))
+        .composerSurface()
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .onChange(of: photoItem) { _, item in
@@ -242,45 +302,21 @@ struct ChatView: View {
         !input.trimmingCharacters(in: .whitespaces).isEmpty || pendingImage != nil || pendingFileName != nil
     }
 
-    // MARK: 浏览器小窗（服务器浏览器实时画面）
+    // MARK: 浏览器小窗（服务器浏览器实时画面）——MiniWindow：默认 80%×45%，可拖到全屏。
 
     @ViewBuilder
     private var browserWindow: some View {
         if let shot = liveShot, let ui = UIImage(data: shot) {
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: ui)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 138, height: 184)
-                        .clipped()
-                    Button { liveShot = nil } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(5)
-                            .background(.black.opacity(0.55), in: Circle())
-                            .foregroundStyle(.white)
-                    }
-                    .padding(5)
-                }
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 5, height: 5)
-                        .symbolEffect(.pulse, options: .repeating)
-                    Image(systemName: "globe").font(.caption2)
-                    Text(liveCaption).font(.caption2).lineLimit(1)
-                    Spacer(minLength: 2)
-                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
+            MiniWindow(title: liveCaption.isEmpty ? "服务器浏览器" : liveCaption,
+                       onClose: { liveShot = nil }) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .contentShape(Rectangle())
+                    .onTapGesture { showingBrowserFull = true }
             }
-            .frame(width: 138)
-            .liquidGlass(RoundedRectangle(cornerRadius: 16))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
-            .onTapGesture { showingBrowserFull = true }
         }
     }
 
@@ -324,9 +360,7 @@ struct ChatView: View {
                                 }
                             }
                         }
-                        if let pending = conversation?.pendingCard {
-                            CardView(card: pending) { chosen in answerPendingCard(chosen) }
-                        }
+                        // 等用户作答的卡片（提问/审批）不再嵌在消息流里，改走底部的 sheet。
                     }
                     .padding(.horizontal, 14)
                     .padding(.top, 8)
@@ -353,7 +387,7 @@ struct ChatView: View {
                             }
                         }
                         .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.06), in: Capsule())
+                        .background(Palette.control, in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 14)
@@ -366,7 +400,7 @@ struct ChatView: View {
                                 Text("@\(a.name)")
                                     .font(.caption)
                                     .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(Color.white.opacity(0.08), in: Capsule())
+                                    .background(Palette.control, in: Capsule())
                             }
                             .buttonStyle(.plain)
                         }
@@ -387,7 +421,7 @@ struct ChatView: View {
                         Label(name, systemImage: "doc.fill")
                             .font(.caption).lineLimit(1)
                             .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Color(white: 0.15), in: Capsule())
+                            .background(Palette.control, in: Capsule())
                     }
                     Button {
                         pendingImage = nil; pendingFileName = nil; pendingFileText = nil
@@ -401,20 +435,36 @@ struct ChatView: View {
             inputBar
             Color.clear.frame(height: 94)
         }
-        .background(Color.black)
+        .background(Palette.background)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showingModelSheet) {
             if let a = currentAgent {
                 ModelPickerSheet(agent: a)
             }
         }
+        // 提问/审批卡：FishPocket 式 bottom sheet（Minis 的规矩：倒计时、推荐、超时只给建议）。
+        // 划掉 sheet = 跳过，走 skipPendingCard；答完清卡，sheet 自己收掉。
+        .sheet(isPresented: Binding(
+            get: { conversation?.pendingCard != nil },
+            set: { if !$0 { skipPendingCard() } }
+        )) {
+            if let card = conversation?.pendingCard {
+                if card.kind == .approval {
+                    ApprovalSheetView(card: card,
+                                      onAnswer: { answerPendingCard($0) },
+                                      onSkip: { skipPendingCard() })
+                } else {
+                    AskSheetView(card: card,
+                                 onAnswer: { answerPendingCard($0) },
+                                 onSkip: { skipPendingCard() })
+                }
+            }
+        }
         .sheet(isPresented: $showingGroupSettings) {
             GroupSettingsView(conversationId: conversationId)
         }
-        .overlay(alignment: .bottomTrailing) {
+        .overlay {
             browserWindow
-                .padding(.trailing, 14)
-                .padding(.bottom, 176)
                 .animation(.easeInOut(duration: 0.25), value: liveShot != nil)
         }
         .onAppear {
@@ -431,6 +481,15 @@ struct ChatView: View {
                conversation?.messages.isEmpty == true, !liveChatSent {
                 liveChatSent = true
                 Task { await send("你好，请用一句话介绍你自己") }
+            }
+            // 首页发来的首条消息：进页就走真实 send() 发出去（跟 -PreviewLiveChat 同一条路）。
+            if let initial = initialMessage,
+               conversation?.messages.isEmpty == true, !initialSent, !liveChatSent {
+                initialSent = true
+                pendingImage = initialImage
+                pendingFileName = initialFileName
+                pendingFileText = initialFileText
+                Task { await send(initial) }
             }
             maybeAutoReply()
         }
@@ -491,7 +550,7 @@ struct ChatView: View {
                     }
                     .padding(16)
                 }
-                .background(Color.black)
+                .background(Palette.background)
                 .navigationTitle("正在干活")
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -544,6 +603,30 @@ struct ChatView: View {
             answer = chosen.map(\.label).joined(separator: "、")
         }
         Task { await send(answer) }
+    }
+
+    /// 提问/审批卡被跳过（点跳过或划掉 sheet）：只给建议，不自动执行；
+    /// 建议写成一条消息，等用户自己定。跟 checkCardExpiry 同一条路，只是立刻结算。
+    private func skipPendingCard() {
+        guard let conv = conversation, let card = conv.pendingCard else { return }
+        if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
+            store.conversations[i].pendingCard = nil
+            store.save()
+        }
+        Task { @MainActor in LiveApproval.end() }
+        let suggestion = card.recommendedId.isEmpty
+            ? (card.options.first?.label ?? "")
+            : (card.options.first { $0.id == card.recommendedId }?.label
+               ?? card.options.first?.label ?? "")
+        guard !suggestion.isEmpty else { return }
+        let who = conv.memberIds.first.flatMap { store.agent(id: $0) }
+        var m = Message(senderId: who?.id.uuidString ?? "system",
+                        text: "跳过了提问，只给个建议，不自动执行：建议选「\(suggestion)」，你定。")
+        if who == nil { m.eventKind = "paused" }
+        if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
+            store.conversations[i].messages.append(m)
+            store.save()
+        }
     }
 
     private func answerCard(_ chosen: [CardOption], messageId: UUID) {
@@ -1075,8 +1158,9 @@ struct CardView: View {
         .padding(.horizontal, 15)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.107), in: RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.05), lineWidth: 1))
+        .background(Palette.background, in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Palette.stroke, lineWidth: 1))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
         .onChange(of: page) { _, _ in
             questionExpanded = false
@@ -1091,7 +1175,7 @@ struct CardView: View {
             Text(card.actionText.isEmpty ? card.question : card.actionText)
                 .font(.system(size: 14.5, design: .monospaced))
                 .padding(8)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .background(Palette.field, in: RoundedRectangle(cornerRadius: 8))
                 .padding(.top, 6)
             if !card.impact.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
@@ -1126,7 +1210,7 @@ struct CardView: View {
                 .font(.system(size: 16, weight: .semibold))
                 .padding(.horizontal, 16)
                 .frame(minWidth: 72, minHeight: 44)
-                .liquidGlass(Capsule())
+                .background(Palette.control, in: Capsule())
                 Spacer(minLength: 12)
                 Button("允许") { submit([approveOption]) }
                     .font(.system(size: 16, weight: .semibold))
@@ -1193,7 +1277,7 @@ struct CardView: View {
                 .buttonStyle(.plain)
             }
             ForEach(Array(current.options.enumerated()), id: \.element.id) { idx, opt in
-                Divider().background(Color.white.opacity(0.07))
+                Divider().background(Palette.stroke)
                 Button {
                     if answered { return }
                     if current.multiSelect {
@@ -1242,7 +1326,7 @@ struct CardView: View {
             }
             // 提问卡专属行（单题时）：你来定 / 其他 / 补充说明。
             if card.kind == .ask && pages.count == 1 && !answered {
-                Divider().background(Color.white.opacity(0.07))
+                Divider().background(Palette.stroke)
                 Button { submit([CardOption(id: "__youdecide__", label: "你来定")]) } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "circle")
@@ -1257,7 +1341,7 @@ struct CardView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Divider().background(Color.white.opacity(0.07))
+                Divider().background(Palette.stroke)
                 HStack(spacing: 10) {
                     Image(systemName: "circle")
                         .font(.system(size: 17))
@@ -1293,16 +1377,17 @@ struct CardView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .padding(.horizontal, 16)
                             .frame(maxWidth: .infinity, minHeight: 44)
-                            .liquidGlass(Capsule())
+                            .background(Palette.control, in: Capsule())
                     }
                     Button(isLastPage ? "提交" : "下一题") {
                         if isLastPage { submit(allPickedOptions()) }
                         else { page += 1 }
                     }
                     .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Palette.onInk)
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .liquidGlassInteractive(Capsule())
+                    .background(Palette.ink, in: Capsule())
                     .disabled((pagePicked[page] ?? []).isEmpty)
                 }
                 .padding(.top, 8)
@@ -1449,23 +1534,23 @@ private struct MessageBubble: View {
                         Text(name).lineLimit(1)
                     }
                     .font(.subheadline)
-                    .foregroundStyle(.black.opacity(0.75))
+                    .foregroundStyle(Palette.ink.opacity(0.75))
                 }
                 if !message.text.isEmpty {
                     Text(rendered)
                         .font(.body)
                         .lineSpacing(3)
-                        .foregroundStyle(.black)
+                        .foregroundStyle(Palette.ink)
                         .textSelection(.enabled)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color(white: 0.96), in: RoundedRectangle(cornerRadius: 22))
+            .background(Palette.bubble, in: RoundedRectangle(cornerRadius: 22))
         }
     }
 
-    /// 智能体的回复：整张深色大卡。深度思考收在卡顶一行里，点开才看。
+    /// 智能体的回复：FishPocket 同款——裸文本，不套大卡。深度思考收在回复上方一行里，点开才看。
     private var agentCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             if conversation?.isGroup == true, let s = sender {
@@ -1502,7 +1587,7 @@ private struct MessageBubble: View {
                             .padding(.leading, 9)
                             .overlay(alignment: .leading) {
                                 RoundedRectangle(cornerRadius: 1)
-                                    .fill(Color.white.opacity(0.14))
+                                    .fill(Palette.stroke)
                                     .frame(width: 2)
                             }
                     }
@@ -1514,7 +1599,7 @@ private struct MessageBubble: View {
                     .frame(maxWidth: 220, maxHeight: 260)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1))
+                        .stroke(Palette.stroke, lineWidth: 1))
             }
             if let name = message.fileName {
                 HStack(spacing: 8) {
@@ -1522,7 +1607,7 @@ private struct MessageBubble: View {
                     Text(name).font(.subheadline).lineLimit(1)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .background(Palette.field, in: RoundedRectangle(cornerRadius: 10))
             }
             if message.text.isEmpty {
                 HStack(spacing: 8) {
@@ -1554,14 +1639,12 @@ private struct MessageBubble: View {
                 }
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(Color.white.opacity(0.06), in: Capsule())
+                .background(Palette.control, in: Capsule())
             }
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.107), in: RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.05), lineWidth: 1))
     }
 }
 
@@ -1656,7 +1739,7 @@ private struct WorkingPanelRow: View {
             ProgressView().controlSize(.small)
         }
         .padding(12)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.07), lineWidth: 1))
+        .background(Palette.field, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.stroke, lineWidth: 1))
     }
 }

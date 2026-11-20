@@ -1,12 +1,39 @@
 import SwiftUI
 
-/// 根视图：聊天为主页，底部悬浮玻璃标签栏（聊天 / 技能 / 浏览器 / 设置），
-/// 跟 Muse App 一样的壳。进聊天后标签栏还在，点标签回主页切页。
+/// 聊天跳转目标：会话 id + 首页带来的首条消息（带附件）。
+struct ChatDestination: Hashable {
+    let id: UUID
+    let firstMessage: String?
+    let image: Data?
+    let fileName: String?
+    let fileText: String?
+    init(id: UUID, firstMessage: String? = nil, image: Data? = nil,
+         fileName: String? = nil, fileText: String? = nil) {
+        self.id = id
+        self.firstMessage = firstMessage
+        self.image = image
+        self.fileName = fileName
+        self.fileText = fileText
+    }
+}
+
+/// 根视图：FishPocket 式壳——底部悬浮四图标 Tab（会话 / 智能体 / 我的应用 / 探索），
+/// 图标-only、无文字；会话 Tab 里是首页（新会话）与聊天页，聊天时 Tab 栏收起。
+/// 会话列表与设置走首页左上角 chevron 打开的抽屉式列表。
 struct RootView: View {
     @EnvironmentObject var store: AppStore
-    @State private var path: [UUID] = []
     @State private var tab = 0
+    @State private var chatPath: [ChatDestination] = []
+    @State private var showSessions = false
+    @State private var showSettings = false
     @State private var updateFeed: UpdateChecker.Feed?
+
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
+
+    /// 智能体 Tab 上的红点：正在干活的会话数。
+    private var workingBadge: Int {
+        store.conversations.filter { $0.workingNote != nil }.count
+    }
 
     var body: some View {
         // 预览专用：-PreviewDNS 直接落在 DNS 页截图。
@@ -20,31 +47,70 @@ struct RootView: View {
                 Group {
                     switch tab {
                     case 1:
-                        NavigationStack { SkillsView() }
+                        NavigationStack { AgentsView() }
                     case 2:
-                        NavigationStack { BrowserView() }
+                        NavigationStack { MiniAppsView() }
                     case 3:
-                        SettingsView()
+                        ExploreView()
                     default:
-                        NavigationStack(path: $path) {
-                            ChatListView(path: $path)
-                                .navigationDestination(for: UUID.self) { id in
-                                    ChatView(conversationId: id)
-                                }
+                        NavigationStack(path: $chatPath) {
+                            HomeView(
+                                onOpenSessions: { showSessions = true },
+                                onOpenConversation: { chatPath.append($0) }
+                            )
+                            .navigationDestination(for: ChatDestination.self) { dest in
+                                ChatView(conversationId: dest.id,
+                                         initialMessage: dest.firstMessage,
+                                         initialImage: dest.image,
+                                         initialFileName: dest.fileName,
+                                         initialFileText: dest.fileText)
+                            }
                         }
                     }
                 }
-                tabBar
-                    .padding(.bottom, 26)
+                if !(tab == 0 && !chatPath.isEmpty) {
+                    tabBar
+                        .padding(.bottom, 26)
+                }
             }
-            .background(Color.black)
+            .background(Palette.background)
+            .sheet(isPresented: $showSessions) {
+                NavigationStack {
+                    ChatListView(
+                        onOpen: { id in
+                            showSessions = false
+                            chatPath.append(ChatDestination(id: id))
+                        },
+                        onOpenSettings: {
+                            showSessions = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                showSettings = true
+                            }
+                        }
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showSessions = false }
+                        }
+                    }
+                }
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(36)
+            }
+            .fullScreenCover(isPresented: $showSettings) {
+                SettingsCover()
+            }
             .onAppear {
                 let args = ProcessInfo.processInfo.arguments
-                if args.contains("-PreviewSettings") { tab = 3 }
-                // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
-                if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")),
-                   let first = store.conversations.first, path.isEmpty {
-                    path = [first.id]
+                if args.contains("-PreviewSettings") {
+                    showSettings = true
+                } else if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")),
+                          let first = store.conversations.first, chatPath.isEmpty {
+                    // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
+                    chatPath = [ChatDestination(id: first.id)]
+                } else if args.contains("-PreviewSeed") {
+                    // 仅模拟器预览截图用：-PreviewSeed 单独出现 = 打开会话列表。
+                    showSessions = true
                 }
             }
             .task {
@@ -72,31 +138,70 @@ struct RootView: View {
 
     private var tabBar: some View {
         HStack(spacing: 4) {
-            tabButton(0, icon: "message.fill", label: L10n.t("tab_chat", lang: store.language))
-            tabButton(1, icon: "wand.and.stars", label: L10n.t("tab_skills", lang: store.language))
-            tabButton(2, icon: "globe", label: L10n.t("tab_browser", lang: store.language))
-            tabButton(3, icon: "gearshape.fill", label: L10n.t("tab_settings", lang: store.language))
+            tabButton(0, icon: "message", label: L("tab_chat"))
+            tabButton(1, ghost: true, label: L("tab_agents"), badge: workingBadge)
+            tabButton(2, icon: "square.on.square", label: L("tab_apps"))
+            tabButton(3, icon: "square.grid.2x2", label: L("tab_explore"))
         }
         .padding(5)
-        .liquidGlass(Capsule())
-        .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
+        .floatingGlass()
+        .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
     }
 
-    private func tabButton(_ index: Int, icon: String, label: String) -> some View {
+    private func tabButton(_ index: Int, icon: String? = nil, ghost: Bool = false,
+                           label: String, badge: Int = 0) -> some View {
         Button {
-            if index == 0 { path = [] }
+            if index == 0 { chatPath = [] }
             tab = index
         } label: {
-            VStack(spacing: 2) {
-                Image(systemName: icon).font(.system(size: 19))
-                Text(label).font(.system(size: 9.5))
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if ghost {
+                        GhostIcon()
+                    } else if let icon {
+                        Image(systemName: tab == index ? icon + ".fill" : icon)
+                            .font(.system(size: 21))
+                            .foregroundStyle(Palette.ink)
+                    }
+                }
+                .frame(width: 56, height: 48)
+                .background(tab == index ? Palette.control : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 16))
+                if badge > 0 {
+                    Text("\(min(badge, 99))")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.red, in: Capsule())
+                        .offset(x: 6, y: -4)
+                }
             }
-            .frame(width: 62, height: 44)
-            .background(tab == index ? Color.white.opacity(0.13) : Color.clear,
-                        in: Capsule())
-            .foregroundStyle(tab == index ? .white : .secondary)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// 设置全屏页（FishPocket 设置 sheet 同款：右上角白圆 X 关闭）。
+private struct SettingsCover: View {
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            SettingsView()
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 40, height: 40)
+                    .background(Palette.background, in: Circle())
+                    .overlay(Circle().stroke(Palette.stroke, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 54)
+            .padding(.trailing, 16)
+        }
     }
 }
 
@@ -376,3 +481,4 @@ private struct AddMCPRow: View {
         }
     }
 }
+

@@ -2,9 +2,11 @@ import SwiftUI
 
 /// 聊天列表：群和单聊混排。自定义行（没有系统列表的箭头），
 /// 头像颜色按智能体区分；空的时候是专门设计的空状态，不是白板。
+/// 底座抽屉式入口：点行打开会话，底部有设置行。
 struct ChatListView: View {
     @EnvironmentObject var store: AppStore
-    @Binding var path: [UUID]
+    let onOpen: (UUID) -> Void
+    let onOpenSettings: () -> Void
     @State private var showingNewChat = false
     @State private var searchText = ""
     @State private var showingImport = false
@@ -21,20 +23,21 @@ struct ChatListView: View {
         Group {
             if store.conversations.isEmpty {
                 EmptyHomeView(
-                    onDirect: { path.append(store.ensureDirectChat()) },
+                    onDirect: { onOpen(store.ensureDirectChat()) },
                     onCreate: { showingNewChat = true }
                 )
             } else {
                 VStack(spacing: 0) {
                     if !store.conversations.contains(where: { $0.title == "直接聊" }) {
                         Button {
-                            path.append(store.ensureDirectChat())
+                            onOpen(store.ensureDirectChat())
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "bubble.left.and.bubble.right.fill")
                                     .font(.system(size: 20))
+                                    .foregroundStyle(Palette.ink)
                                     .frame(width: 50, height: 50)
-                                    .liquidGlass(Circle())
+                                    .background(Palette.control, in: Circle())
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(L("direct_chat")).font(.body.weight(.semibold))
                                     Text(L("direct_hint"))
@@ -46,7 +49,7 @@ struct ChatListView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        Divider().padding(.leading, 78)
+                        Divider().background(Palette.stroke).padding(.leading, 78)
                     }
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -57,12 +60,13 @@ struct ChatListView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .liquidGlass(RoundedRectangle(cornerRadius: 18))
+                        .background(Palette.field, in: RoundedRectangle(cornerRadius: 18))
+                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.stroke, lineWidth: 1))
                         .padding(.horizontal, 16)
                         .padding(.top, 4)
                         .padding(.bottom, 6)
                         ForEach(filtered) { conv in
-                            Button { path.append(conv.id) } label: {
+                            Button { onOpen(conv.id) } label: {
                                 ConversationRow(conversation: conv)
                             }
                             .buttonStyle(.plain)
@@ -73,15 +77,33 @@ struct ChatListView: View {
                                     Label("删除会话", systemImage: "trash")
                                 }
                             }
-                            Divider().padding(.leading, 76)
+                            Divider().background(Palette.stroke).padding(.leading, 76)
                         }
-                        Color.clear.frame(height: 96)
+                        Color.clear.frame(height: 16)
                     }
                 }
+                    Divider().background(Palette.stroke)
+                    Button(action: onOpenSettings) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Palette.ink)
+                                .frame(width: 50, height: 50)
+                                .background(Palette.control, in: Circle())
+                            Text(L("settings")).font(.body.weight(.semibold))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(Palette.faint)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
-        .background(Color.black)
+        .background(Palette.background)
         .navigationTitle(L("nav_chat"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -101,7 +123,7 @@ struct ChatListView: View {
             guard let id,
                   store.conversations.contains(where: { $0.id == id }) else { return }
             store.openConversationId = nil
-            if !path.contains(id) { path.append(id) }
+            onOpen(id)
         }
         .sheet(isPresented: $showingNewChat) { NewChatView() }
         .fileImporter(isPresented: $showingImport, allowedContentTypes: [.json]) { result in
@@ -144,9 +166,9 @@ private struct EmptyHomeView: View {
             Spacer()
             Image(systemName: "sparkles")
                 .font(.system(size: 34))
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.ink)
                 .frame(width: 84, height: 84)
-                .liquidGlass(Circle())
+                .background(Palette.control, in: Circle())
             Text(L("empty_title"))
                 .font(.title3.weight(.semibold))
             Text(L("empty_hint"))
@@ -156,16 +178,18 @@ private struct EmptyHomeView: View {
             Button(action: onDirect) {
                 Label(L("direct_chat"), systemImage: "bubble.left.and.bubble.right.fill")
                     .font(.body.weight(.semibold))
+                    .foregroundStyle(Palette.onInk)
                     .padding(.horizontal, 26).padding(.vertical, 12)
+                    .background(Palette.ink, in: Capsule())
             }
-            .liquidGlassInteractive(Capsule())
+            .buttonStyle(.plain)
             Button(L("new_chat"), action: onCreate)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .background(Color.black)
+        .background(Palette.background)
     }
 }
 
@@ -205,7 +229,7 @@ private struct ConversationRow: View {
                 if let note = conversation.workingNote {
                     Text(note)
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Palette.running)
                         .lineLimit(1)
                 }
             }

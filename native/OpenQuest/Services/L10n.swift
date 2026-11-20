@@ -20,6 +20,8 @@ enum L10n {
     private static let table: [String: [String: String]] = [
         "zh-Hans": [
             "tab_chat": "聊天", "tab_skills": "技能", "tab_browser": "浏览器", "tab_settings": "设置",
+            "tab_agents": "智能体", "tab_apps": "我的应用", "tab_explore": "探索",
+            "cloud_computer": "云电脑", "explore": "探索",
             "nav_chat": "聊天", "direct_chat": "直接聊", "direct_hint": "不用建智能体，点开就能聊",
             "new_chat": "新建", "search": "搜索", "settings": "设置",
             "agents": "智能体", "providers": "供应商与模型", "skills": "技能", "plugins": "插件",
@@ -46,6 +48,8 @@ enum L10n {
         ],
         "en": [
             "tab_chat": "Chat", "tab_skills": "Skills", "tab_browser": "Browser", "tab_settings": "Settings",
+            "tab_agents": "Agents", "tab_apps": "My Apps", "tab_explore": "Explore",
+            "cloud_computer": "Cloud Computer", "explore": "Explore",
             "nav_chat": "Chat", "direct_chat": "Chat now", "direct_hint": "No setup needed, just start chatting",
             "new_chat": "New", "search": "Search", "settings": "Settings",
             "agents": "Agents", "providers": "Providers & Models", "skills": "Skills", "plugins": "Plugins",
