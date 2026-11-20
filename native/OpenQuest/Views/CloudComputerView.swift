@@ -70,7 +70,7 @@ struct CloudComputerView: View {
                     .disabled(healthBusy)
             }
             if let h = health {
-                Text("openquest-bot-host · 版本 \(h.version) · 已运行 \(uptimeText)")
+                Text("版本 \(h.version) · 已运行 \(uptimeText)")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("主机 \(store.server.host):\(store.server.port) · 常驻智能体 \(h.bots.count) 个")
                     .font(.caption).foregroundStyle(.secondary)
@@ -97,9 +97,13 @@ struct CloudComputerView: View {
         do {
             health = try await ServerClient(config: store.server).health()
             healthError = nil
+            if let h = health {
+                LogStore.append("云电脑", "在线：版本 \(h.version)，已运行 \(uptimeText)，常驻智能体 \(h.bots.count) 个")
+            }
         } catch {
             health = nil
             healthError = error.localizedDescription
+            LogStore.append("云电脑", "连不上：\(error.localizedDescription)")
         }
     }
 

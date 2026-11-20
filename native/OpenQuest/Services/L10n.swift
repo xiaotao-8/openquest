@@ -30,7 +30,7 @@ enum L10n {
             "usage": "用量统计", "update": "检查更新", "device_caps": "本机能力",
             "cancel": "取消", "save": "保存", "close": "关闭", "delete": "删除",
             "send_placeholder": "发消息", "thinking": "思考中…",
-            "empty_title": "想聊就聊", "empty_hint": "点下面直接开聊，第一次会让你选个免费源填 Key。\n想组智能体团队，再点新建。",
+            "empty_title": "想聊就聊", "empty_hint": "点下面直接开聊，第一次会让你先添加供应商、填 Key。\n想组智能体团队，再点新建。",
             "no_agents": "还没有智能体。在聊天列表右上角新建里建。",
         ],
         "zh-Hant": [
@@ -43,7 +43,7 @@ enum L10n {
             "usage": "用量統計", "update": "檢查更新", "device_caps": "本機能力",
             "cancel": "取消", "save": "儲存", "close": "關閉", "delete": "刪除",
             "send_placeholder": "發訊息", "thinking": "思考中…",
-            "empty_title": "想聊就聊", "empty_hint": "點下面直接開聊，第一次會讓你選個免費來源填 Key。\n想組智能體團隊，再點新建。",
+            "empty_title": "想聊就聊", "empty_hint": "點下面直接開聊，第一次會讓你先添加供應商、填 Key。\n想組智能體團隊，再點新建。",
             "no_agents": "還沒有智能體。在聊天列表右上角新建裡建。",
         ],
         "en": [
@@ -58,7 +58,7 @@ enum L10n {
             "usage": "Usage", "update": "Check for Updates", "device_caps": "Device Capabilities",
             "cancel": "Cancel", "save": "Save", "close": "Close", "delete": "Delete",
             "send_placeholder": "Message", "thinking": "Thinking…",
-            "empty_title": "Just start chatting", "empty_hint": "Tap below to chat right away. First time, pick a free provider and enter its key.\nTo build an agent team, tap New.",
+            "empty_title": "Just start chatting", "empty_hint": "Tap below to chat right away. First time, add a provider and enter its key.\nTo build an agent team, tap New.",
             "no_agents": "No agents yet. Create one from New at the top right of the chat list.",
         ],
         "es": [
@@ -71,7 +71,7 @@ enum L10n {
             "usage": "Uso", "update": "Buscar actualizaciones", "device_caps": "Capacidades del dispositivo",
             "cancel": "Cancelar", "save": "Guardar", "close": "Cerrar", "delete": "Eliminar",
             "send_placeholder": "Mensaje", "thinking": "Pensando…",
-            "empty_title": "Empieza a chatear", "empty_hint": "Toca abajo para chatear. La primera vez elige un proveedor gratuito y pon su clave.\nPara crear un equipo de agentes, toca Nuevo.",
+            "empty_title": "Empieza a chatear", "empty_hint": "Toca abajo para chatear. La primera vez añade un proveedor y pon su clave.\nPara crear un equipo de agentes, toca Nuevo.",
             "no_agents": "Aún no hay agentes. Crea uno desde Nuevo, arriba a la derecha de la lista.",
         ],
         "ja": [
@@ -84,7 +84,7 @@ enum L10n {
             "usage": "使用量", "update": "更新を確認", "device_caps": "デバイス機能",
             "cancel": "キャンセル", "save": "保存", "close": "閉じる", "delete": "削除",
             "send_placeholder": "メッセージ", "thinking": "考え中…",
-            "empty_title": "すぐ話そう", "empty_hint": "下をタップしてすぐ話せます。最初は無料プロバイダを選んでキーを入力してください。\nエージェントチームを作るには「新規」をタップ。",
+            "empty_title": "すぐ話そう", "empty_hint": "下をタップしてすぐ話せます。最初はプロバイダを追加してキーを入力してください。\nエージェントチームを作るには「新規」をタップ。",
             "no_agents": "エージェントはまだありません。チャット一覧右上の「新規」から作ってください。",
         ],
         "ko": [
@@ -97,7 +97,7 @@ enum L10n {
             "usage": "사용량", "update": "업데이트 확인", "device_caps": "기기 기능",
             "cancel": "취소", "save": "저장", "close": "닫기", "delete": "삭제",
             "send_placeholder": "메시지", "thinking": "생각 중…",
-            "empty_title": "바로 채팅하기", "empty_hint": "아래를 눌러 바로 채팅하세요. 처음에는 무료 공급자를 선택하고 키를 입력하세요.\n에이전트 팀을 만들려면 새로 만들기를 누르세요.",
+            "empty_title": "바로 채팅하기", "empty_hint": "아래를 눌러 바로 채팅하세요. 처음에는 공급자를 추가하고 키를 입력하세요.\n에이전트 팀을 만들려면 새로 만들기를 누르세요.",
             "no_agents": "에이전트가 아직 없습니다. 채팅 목록 오른쪽 위의 새로 만들기에서 만드세요.",
         ],
     ]

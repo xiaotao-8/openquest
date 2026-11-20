@@ -11,29 +11,29 @@ struct ExploreView: View {
             List {
                 Section {
                     NavigationLink { CloudComputerView() } label: {
-                        ExploreRow(icon: "server.rack", color: .teal,
+                        ExploreRow(icon: "server.rack",
                                    title: L("cloud_computer"),
                                    subtitle: "ECS 常驻主机：终端、文件、服务器浏览器")
                     }
                 }
                 Section("发现") {
                     NavigationLink { PluginStoreView() } label: {
-                        ExploreRow(icon: "puzzlepiece.fill", color: .indigo,
+                        ExploreRow(icon: "puzzlepiece",
                                    title: L("plugins"), subtitle: "在 App 内安装、配置和使用")
                     }
                     NavigationLink { SchedulesView() } label: {
-                        ExploreRow(icon: "alarm.fill", color: .red,
+                        ExploreRow(icon: "alarm",
                                    title: L("schedules"),
                                    value: store.scheduledTasks.isEmpty
                                        ? nil : "\(store.scheduledTasks.count)")
                     }
                     NavigationLink { SkillsView() } label: {
-                        ExploreRow(icon: "wand.and.stars", color: .pink,
+                        ExploreRow(icon: "wand.and.stars",
                                    title: L("skills"),
                                    value: store.skills.isEmpty ? nil : "\(store.skills.count)")
                     }
                     NavigationLink { MiniAppsView() } label: {
-                        ExploreRow(icon: "square.on.circle", color: .mint,
+                        ExploreRow(icon: "square.on.circle",
                                    title: L("mini_apps"),
                                    value: store.miniApps.isEmpty ? nil : "\(store.miniApps.count)")
                     }
@@ -46,7 +46,6 @@ struct ExploreView: View {
 
 private struct ExploreRow: View {
     let icon: String
-    let color: Color
     var title: String
     var subtitle: String? = nil
     var value: String? = nil
@@ -55,9 +54,8 @@ private struct ExploreRow: View {
         HStack(spacing: 11) {
             Image(systemName: icon)
                 .font(.system(size: 15))
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.ink)
                 .frame(width: 29, height: 29)
-                .background(color, in: RoundedRectangle(cornerRadius: 7))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 if let subtitle {

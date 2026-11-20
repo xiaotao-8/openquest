@@ -30,6 +30,28 @@ struct RootView: View {
 
     private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
+    /// 设置页逐项验收截图：-PreviewPage=<key> 落到的页面（无参构造，全部取 store）。
+    @ViewBuilder
+    private func previewPageView(_ page: String) -> some View {
+        switch page {
+        case "agents": AgentsView()
+        case "skills": SkillsView()
+        case "plugins": PluginsView()
+        case "connectors": ConnectorsView()
+        case "browser": BrowserView()
+        case "schedules": SchedulesView()
+        case "miniapps": MiniAppsView()
+        case "language": LanguageSettingsView()
+        case "usage": UsageView()
+        case "soul": SoulView()
+        case "memory": GlobalMemoryView()
+        case "envvars": EnvVarsView()
+        case "update": UpdateView()
+        case "devicecaps": DeviceCapabilitiesView()
+        default: HomeView(onOpenSessions: {}, onOpenConversation: { _ in })
+        }
+    }
+
     /// 智能体 Tab 上的红点：正在干活的会话数。
     private var workingBadge: Int {
         store.conversations.filter { $0.workingNote != nil }.count
@@ -39,9 +61,21 @@ struct RootView: View {
         // 预览专用：-PreviewDNS 直接落在 DNS 页截图。
         if ProcessInfo.processInfo.arguments.contains("-PreviewDNS") {
             NavigationStack { DNSSettingsView() }
+        } else if ProcessInfo.processInfo.arguments.contains("-PreviewPermissions") {
+            // 预览专用：-PreviewPermissions 直接落在权限页截图，不用多步点按。
+            NavigationStack { PermissionsView() }
         } else if ProcessInfo.processInfo.arguments.contains("-PreviewProviders") {
-            // 预览专用：-PreviewProviders 直接落在供应商页截图，验免费 Agnes 添加。
+            // 预览专用：-PreviewProviders 直接落在供应商页截图，验用户自己加供应商。
             NavigationStack { ProvidersView() }
+        } else if ProcessInfo.processInfo.arguments.contains("-PreviewCloud") {
+            // 预览专用：-PreviewCloud 直接落在云电脑页截图，验真 /health 回包（在线、运行时长、内存真数）。
+            NavigationStack { CloudComputerView() }
+        } else if ProcessInfo.processInfo.arguments.contains("-PreviewLog") {
+            // 预览专用：-PreviewLog 直接落在日志页截图，验日志真记了启动记录。
+            NavigationStack { LogView() }
+        } else if let page = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("-PreviewPage=") })?.dropFirst("-PreviewPage=".count) {
+            // 预览专用：-PreviewPage=<key> 直接落到设置页里某一项的页面，一项一张截图。
+            NavigationStack { previewPageView(String(page)) }
         } else {
             ZStack(alignment: .bottom) {
                 Group {
@@ -106,9 +140,11 @@ struct RootView: View {
                     // sheet/cover 在首现 onAppear 里同步置位会被 SwiftUI 丢掉，
                     // 必须异步抛到下一轮 runloop 才能正常弹出（实测 #25 两张图因此没出）。
                     DispatchQueue.main.async { showSettings = true }
-                } else if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")),
+                } else if (args.contains("-PreviewChat") || args.contains("-PreviewLiveChat")
+                           || args.contains("-PreviewAsk")),
                           let first = store.conversations.first, chatPath.isEmpty {
                     // 仅模拟器预览截图用：直接进第一个会话（演示数据里的团队群）。
+                    // -PreviewAsk 也走这里：进聊天页后 ChatView.onAppear 再注提问卡种子。
                     chatPath = [ChatDestination(id: first.id)]
                 } else if args.contains("-PreviewSeed") {
                     // 仅模拟器预览截图用：-PreviewSeed 单独出现 = 打开会话列表。
@@ -210,114 +246,239 @@ private struct SettingsCover: View {
     }
 }
 
-/// 设置页：iOS 设置同款排法——彩色方图标 + 名字 + 值/箭头。
+/// 设置页（FishPocket 设置页结构：灰底 + 白底大圆角分组卡片 + 大号粗体标题；
+/// 只学结构，内容是我们自己的中文。图标一律细线黑白线形、无彩色方块底——
+/// 原版就是极简黑白线形图标，彩色方块是廉价感的来源）。
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var store: AppStore
+    @ObservedObject private var permissions = PermissionsStore.shared
 
     private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    SettingRow(icon: "person.2.fill", color: .purple, title: L("agents"),
-                               value: store.agents.isEmpty ? nil : "\(store.agents.count)") {
-                        AgentsView()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(L("settings"))
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.top, 96)
+                        .padding(.leading, 20)
+                        .padding(.bottom, 20)
+
+                    // 第一张卡：智能体 / 供应商与模型 / 默认访问模式 / 技能 / 插件 / DNS / 连接工具 / 服务器浏览器。
+                    SettingsCard {
+                        SettingRow(icon: "person.2", title: L("agents"),
+                                   value: store.agents.isEmpty ? nil : "\(store.agents.count)") {
+                            AgentsView()
+                        }
+                        SettingRow(icon: "cube", title: L("providers"),
+                                   value: store.providers.isEmpty ? nil : "\(store.providers.count)") {
+                            ProvidersView()
+                        }
+                        SettingRow(icon: "lock.shield", title: "默认访问模式",
+                                   value: permissions.accessModeDescription,
+                                   accessory: .upDownChevrons) {
+                            PermissionsView()
+                        }
+                        SettingRow(icon: "lock.shield.fill", title: "权限") {
+                            PermissionsView()
+                        }
+                        SettingRow(icon: "wand.and.stars", title: L("skills"),
+                                   value: store.skills.isEmpty ? nil : "\(store.skills.count)") {
+                            SkillsView()
+                        }
+                        SettingRow(icon: "puzzlepiece", title: L("plugins"),
+                                   value: store.plugins.isEmpty ? nil : "\(store.plugins.count)") {
+                            PluginsView()
+                        }
+                        SettingRow(icon: "network", title: L("dns"),
+                                   value: store.dnsMode == "system" ? "跟随系统" : nil) {
+                            DNSSettingsView()
+                        }
+                        SettingRow(icon: "link", title: L("connectors"),
+                                   value: store.connectors.contains { $0.enabled } ? nil : "全部关") {
+                            ConnectorsView()
+                        }
+                        SettingRow(icon: "safari", title: L("server_browser"), showsDivider: false) {
+                            BrowserView()
+                        }
                     }
-                    SettingRow(icon: "cube.fill", color: .blue, title: L("providers"),
-                               value: store.providers.isEmpty ? nil : "\(store.providers.count)") {
-                        ProvidersView()
+                    Text("每个供应商都能独立用，配好一个、填上 Key 就能开始聊天。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .padding(.leading, 36).padding(.top, 8)
+
+                    // 第二张卡：定时任务 / 小工具 / 语言 / 用量统计。
+                    SettingsCard {
+                        SettingRow(icon: "alarm", title: L("schedules"),
+                                   value: store.scheduledTasks.isEmpty ? nil : "\(store.scheduledTasks.count)") {
+                            SchedulesView()
+                        }
+                        SettingRow(icon: "square.on.square", title: L("mini_apps"),
+                                   value: store.miniApps.isEmpty ? nil : "\(store.miniApps.count)") {
+                            MiniAppsView()
+                        }
+                        SettingRow(icon: "globe", title: L("language"),
+                                   value: L10n.languages.first { $0.code == store.language }?.name) {
+                            LanguageSettingsView()
+                        }
+                        SettingRow(icon: "chart.bar", title: L("usage"),
+                                   value: "\(store.totalUsage.prompt + store.totalUsage.completion)", showsDivider: false) {
+                            UsageView()
+                        }
                     }
-                    SettingRow(icon: "wand.and.stars", color: .pink, title: L("skills"),
-                               value: store.skills.isEmpty ? nil : "\(store.skills.count)") {
-                        SkillsView()
+                    .padding(.top, 24)
+
+                    // 智能体运行时分组：Soul / 记忆 / 环境变量（技能只在第一张卡出现，不重复）。
+                    Text("智能体运行时")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 36).padding(.top, 28).padding(.bottom, 8)
+                    SettingsCard {
+                        SettingRow(icon: "heart.text.square", title: "Soul",
+                                   value: store.soulText.isEmpty ? "未写" : "已写") {
+                            SoulView()
+                        }
+                        SettingRow(icon: "brain", title: "记忆",
+                                   value: store.dailyLogs.isEmpty ? nil : "\(store.dailyLogs.count)") {
+                            GlobalMemoryView()
+                        }
+                        SettingRow(icon: "terminal", title: "环境变量",
+                                   value: store.envVars.isEmpty ? nil : "\(store.envVars.count)", showsDivider: false) {
+                            EnvVarsView()
+                        }
                     }
-                    SettingRow(icon: "puzzlepiece.fill", color: .indigo, title: L("plugins"),
-                               value: store.plugins.isEmpty ? nil : "\(store.plugins.count)") {
-                        PluginsView()
+
+                    // 其余：检查更新 / 本机能力 / 日志。
+                    SettingsCard {
+                        SettingRow(icon: "arrow.down.circle", title: L("update")) {
+                            UpdateView()
+                        }
+                        SettingRow(icon: "iphone", title: L("device_caps"),
+                                   value: store.deviceCapabilities.contains { $0.enabled } ? nil : "全部关") {
+                            DeviceCapabilitiesView()
+                        }
+                        SettingRow(icon: "doc.text", title: L("log"), showsDivider: false) {
+                            LogView()
+                        }
                     }
-                    SettingRow(icon: "network", color: .teal, title: L("dns"),
-                               value: store.dnsMode == "system" ? "跟随系统" : nil) {
-                        DNSSettingsView()
-                    }
-                    SettingRow(icon: "link", color: .orange, title: L("connectors"),
-                               value: store.connectors.contains { $0.enabled } ? nil : "全部关") {
-                        ConnectorsView()
-                    }
-                    SettingRow(icon: "safari.fill", color: .cyan, title: L("server_browser")) {
-                        BrowserView()
-                    }
+                    .padding(.top, 24)
+                    .padding(.bottom, 40)
                 }
-                Section {
-                    SettingRow(icon: "alarm.fill", color: .red, title: L("schedules"),
-                               value: store.scheduledTasks.isEmpty ? nil : "\(store.scheduledTasks.count)") {
-                        SchedulesView()
-                    }
-                    SettingRow(icon: "square.on.circle", color: .mint, title: L("mini_apps"),
-                               value: store.miniApps.isEmpty ? nil : "\(store.miniApps.count)") {
-                        MiniAppsView()
-                    }
-                    SettingRow(icon: "globe", color: .brown, title: L("language"),
-                               value: L10n.languages.first { $0.code == store.language }?.name) {
-                        LanguageSettingsView()
-                    }
-                    SettingRow(icon: "chart.bar.fill", color: .green, title: L("usage"),
-                               value: "\(store.totalUsage.prompt + store.totalUsage.completion)") {
-                        UsageStatsView()
-                    }
-                    SettingRow(icon: "arrow.down.circle.fill", color: .blue, title: L("update")) {
-                        UpdateView()
-                    }
-                    SettingRow(icon: "iphone", color: .gray, title: L("device_caps"),
-                               value: store.deviceCapabilities.contains { $0.enabled } ? nil : "全部关") {
-                        DeviceCapabilitiesView()
-                    }
-                }
-                Section {
-                    SettingRow(icon: "doc.text.fill", color: .gray, title: L("log")) {
-                        LogView()
-                    }
-                }
+                .padding(.horizontal, 16)
             }
-            .navigationTitle(L("settings"))
+            .background(Palette.grouped)
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
 
+/// 白底大圆角分组卡片（r28，原版设置页的卡片样式）：行之间细分隔线，
+/// 分隔线从标题 x 处起（不穿过图标）。
+private struct SettingsCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .background(.white, in: RoundedRectangle(cornerRadius: 28))
+    }
+}
+
 private struct SettingRow<Destination: View>: View {
+    enum Accessory { case chevron, upDownChevrons }
+
     let icon: String
-    let color: Color
     let title: String
+    var subtitle: String? = nil
     var value: String? = nil
+    var accessory: Accessory = .chevron
+    var showsDivider: Bool = true
     @ViewBuilder var destination: () -> Destination
 
     var body: some View {
         NavigationLink {
             destination()
         } label: {
-            HStack(spacing: 11) {
-                Image(systemName: icon)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .frame(width: 29, height: 29)
-                    .background(color, in: RoundedRectangle(cornerRadius: 7))
-                Text(title)
-                Spacer()
-                if let value {
-                    Text(value).foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon)
+                        .font(.system(size: 22))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 28, height: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 17))
+                            .foregroundStyle(Palette.ink)
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    if let value {
+                        Text(value)
+                            .font(.system(size: 17))
+                            .foregroundStyle(.secondary)
+                    }
+                    Group {
+                        switch accessory {
+                        case .chevron:
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                        case .upDownChevrons:
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
+                if showsDivider {
+                    Divider().padding(.leading, 56)
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 }
 
-/// 日志页（关于只留日志，用户定的）。
+/// 日志页（关于只留日志，用户定的）：读 LogStore 的真实记录。
 struct LogView: View {
+    @State private var entries: [LogStore.Entry] = []
+
     var body: some View {
-        ContentUnavailableView("暂无日志", systemImage: "doc.text",
-                               description: Text("应用运行日志会记在这里。"))
-            .navigationTitle("日志")
+        Group {
+            if entries.isEmpty {
+                ContentUnavailableView("暂无日志", systemImage: "doc.text",
+                                       description: Text("应用运行日志会记在这里。"))
+            } else {
+                List(entries) { e in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(e.tag).font(.caption.weight(.semibold))
+                            Spacer()
+                            Text(e.time, format: .dateTime.hour().minute().second())
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Text(e.message).font(.subheadline)
+                    }
+                }
+            }
+        }
+        .navigationTitle("日志")
+        .toolbar {
+            if !entries.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("清空") { LogStore.clear(); entries = [] }
+                }
+            }
+        }
+        .task { entries = LogStore.entries() }
     }
 }
 
@@ -368,11 +529,7 @@ private struct ConnectorRow: View {
                     Text(connector.summary).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if connector.id == "aliyun" {
-                Text("阿里云暂只留开关：调用要 AK/SK 签名，App 内还没接。")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                Button(showCred ? "收起 Key" : (hasCred ? "改 Key（已填）" : "填 Key / Token")) {
+            Button(showCred ? "收起 Key" : (hasCred ? "改 Key（已填）" : "填 Key / Token")) {
                     showCred.toggle()
                     if showCred {
                         credText = KeychainHelper.key(ref: "connector-\(connector.id)") ?? ""
@@ -401,7 +558,6 @@ private struct ConnectorRow: View {
                 if let status {
                     Text(status).font(.caption).foregroundStyle(.secondary)
                 }
-            }
         }
         .padding(.vertical, 4)
     }

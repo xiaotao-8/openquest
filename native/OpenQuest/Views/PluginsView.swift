@@ -78,10 +78,10 @@ struct PluginsView: View {
                     PluginStoreView()
                 } label: {
                     HStack {
-                        Image(systemName: "bag.fill")
+                        Image(systemName: "bag")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Palette.ink)
                             .frame(width: 29, height: 29)
-                            .background(Color.indigo, in: RoundedRectangle(cornerRadius: 7))
-                            .foregroundStyle(.white)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("插件商店").foregroundStyle(.primary)
                             Text(store.pluginStoreIndex.isEmpty ? "索引源没开" : "正在用 \(store.pluginStoreIndex)")

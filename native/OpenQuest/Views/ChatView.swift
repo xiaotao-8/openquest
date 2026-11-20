@@ -18,6 +18,17 @@ struct ChatView: View {
     @State private var input = ""
     @State private var running = false
     @State private var working: [(name: String, action: String)] = []
+    /// 每轮工具调用行（Minis 式）：按占位消息 id 挂，一条一调用，顺序即调用顺序；
+    /// 只在当前会话内存里，不进消息存盘（重进会话不复现旧调用行）。
+    @State private var toolCalls: [UUID: [ToolCallRecord]] = [:]
+    /// 本轮实际跑通的模型（供应商名/模型 id，按占位消息 id 挂）：兜底重试成功时
+    /// 是兜底的那个模型，用量快照按它写，不按智能体当前绑定估算。
+    @State private var usedModelByMessage: [UUID: (provider: String, model: String)] = [:]
+    /// 待批的工具调用 / minis-config 写操作（审批卡弹着的时候存着，卡上批了/拒了再结算）。
+    @State private var pendingToolApproval: AgentTools.ToolApprovalEvent.Tool?
+    @State private var pendingConfigApproval: AgentTools.ToolApprovalEvent.Config?
+    /// -PreviewAsk 种子只注一次（onAppear 会重进）。
+    @State private var askPreviewSeeded = false
     @State private var showingWorkingPanel = false
     @State private var liveShot: Data? = nil
     @State private var liveCaption = ""
@@ -198,6 +209,8 @@ struct ChatView: View {
         case "low": return "浅想"
         case "medium": return "深想"
         case "high": return "极深"
+        case "xhigh": return "超高"
+        case "max": return "最高"
         default: return ""
         }
     }
@@ -336,6 +349,16 @@ struct ChatView: View {
                                                   Task { await regenerate(msg) }
                                               })
                                     .id(m.id)
+                                // 工具调用行（Minis 式）：挂在出这轮调用的那条智能体回复下，
+                                // 一条一调用，按顺序排；进行中是等待态，完事变绿勾 + 真实耗时。
+                                if let calls = toolCalls[m.id], !calls.isEmpty,
+                                   m.senderId != "user", m.eventKind == nil {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        ForEach(calls) { ToolCallRow(record: $0) }
+                                    }
+                                    .padding(.leading, 4)
+                                    .padding(.top, -6)
+                                }
                                 if let group = variantGroup(of: m), group.count > 1 {
                                     let sel = conversation?.variantSelection[m.variantOf?.uuidString ?? ""]
                                         ?? (group.count - 1)
@@ -456,7 +479,8 @@ struct ChatView: View {
                 } else {
                     AskSheetView(card: card,
                                  onAnswer: { answerPendingCard($0) },
-                                 onSkip: { skipPendingCard() })
+                                 onSkip: { skipPendingCard() },
+                                 onInteract: { restartCardCountdown() })
                 }
             }
         }
@@ -468,6 +492,9 @@ struct ChatView: View {
                 .animation(.easeInOut(duration: 0.25), value: liveShot != nil)
         }
         .onAppear {
+            // minis-config 读写要 AppStore：AgentTools 没有共享单例，聊天页把自己的
+            // store 搭过去（weak 桥，见 AgentTools.sharedStore）；每轮开始前还会再搭一次。
+            AgentTools.sharedStore = store
             // 仅模拟器预览（-PreviewChat）：把浏览器小窗摆出来截图验收，
             // 画面是服务器浏览器实拍帧；正式使用时画面全部实时回传。
             if ProcessInfo.processInfo.arguments.contains("-PreviewChat"), liveShot == nil {
@@ -481,6 +508,27 @@ struct ChatView: View {
                conversation?.messages.isEmpty == true, !liveChatSent {
                 liveChatSent = true
                 Task { await send("你好，请用一句话介绍你自己") }
+            }
+            // 仅模拟器验收（-PreviewAsk）：进聊天页直接注入一张待回答的提问卡，
+            // 不依赖真模型提问；点选项/倒计时/提交/跳过都走正常结算路。
+            // （-PreviewLiveChat 的实测中继种子在 AppStore 里，不动。）
+            if ProcessInfo.processInfo.arguments.contains("-PreviewAsk"), !askPreviewSeeded,
+               let i = store.conversations.firstIndex(where: { $0.id == conversationId }),
+               store.conversations[i].pendingCard == nil {
+                askPreviewSeeded = true
+                var card = CardPayload(
+                    kind: .ask,
+                    question: "演示提问：这次先从哪一步开始？",
+                    options: [
+                        CardOption(id: "start-plan", label: "先出方案", detail: "列好步骤再动手"),
+                        CardOption(id: "start-now", label: "直接动手", detail: "边做边调整"),
+                        CardOption(id: "start-ask", label: "先问清楚", detail: "把细节问完再开始"),
+                    ])
+                card.header = "演示"
+                card.timeoutMinutes = 5
+                card.deadline = Date().addingTimeInterval(5 * 60)
+                store.conversations[i].pendingCard = card
+                store.save()
             }
             // 首页发来的首条消息：进页就走真实 send() 发出去（跟 -PreviewLiveChat 同一条路）。
             if let initial = initialMessage,
@@ -590,12 +638,134 @@ struct ChatView: View {
 
     // MARK: 卡片作答
 
+    /// 审批请求事件：工具档位“每次询问”或 minis-config 写操作要批。
+    /// 已有卡片在等（pendingCard 非空）就丢掉这一个——一次只弹一张卡，
+    /// 模型那头已拿到“等批复”的回执，不会死等；下一轮可再调。
+    /// 工具审批不走提问卡那套（bypass-all 只覆盖工具审批）；minis-config
+    /// 的敏感改动永远要批，全部跳过审批也盖不住（MinisConfig 里已定）。
+    private func handleToolApprovalEvent(_ approval: (kind: AgentTools.ToolApprovalEvent.Kind, data: Data)) {
+        guard let conv = conversation, conv.pendingCard == nil else { return }
+        guard let i = store.conversations.firstIndex(where: { $0.id == conversationId }) else { return }
+        switch approval.kind {
+        case .tool:
+            guard let req = try? JSONDecoder().decode(
+                AgentTools.ToolApprovalEvent.Tool.self, from: approval.data) else { return }
+            pendingToolApproval = req
+            var card = CardPayload(
+                kind: .approval,
+                question: "允许智能体调用这个工具吗？",
+                options: [
+                    CardOption(id: "approve", label: "批准", detail: "执行这次调用"),
+                    CardOption(id: "reject", label: "拒绝", detail: "不执行这个操作"),
+                ])
+            card.actionText = req.label
+            card.impact = "工具：\(req.name)。批了就执行这一次，下次调用还要再批。"
+            card.risk = "medium"
+            card.timeoutMinutes = 5
+            card.deadline = Date().addingTimeInterval(5 * 60)
+            store.conversations[i].pendingCard = card
+            store.save()
+        case .config:
+            guard let req = try? JSONDecoder().decode(
+                AgentTools.ToolApprovalEvent.Config.self, from: approval.data) else { return }
+            pendingConfigApproval = req
+            let old = req.oldValue.isEmpty ? "（空）" : req.oldValue
+            var card = CardPayload(
+                kind: .approval,
+                question: req.caption.isEmpty ? "智能体想改一个设置" : req.caption,
+                options: [
+                    CardOption(id: "approve", label: "批准", detail: "改这个设置"),
+                    CardOption(id: "reject", label: "拒绝", detail: "不改"),
+                ])
+            card.actionText = "oq_config_set \(req.key) = \(req.value)"
+            card.impact = "把 \(req.key) 从 \(old) 改成 \(req.value)。\(req.sensitive ? "敏感改动，改完立即生效。" : "可再改回来。")"
+            card.risk = req.sensitive ? "high" : "medium"
+            card.timeoutMinutes = 5
+            card.deadline = Date().addingTimeInterval(5 * 60)
+            store.conversations[i].pendingCard = card
+            store.save()
+        }
+    }
+
+    /// 工具审批卡结算：批了就用 preApproved 重跑这一次（不再弹卡），把结果当新消息续轮；
+    /// 拒了就只发一句“拒了”，不执行。等当前轮跑完再发，避免两轮并行。
+    private func settleToolApproval(_ req: AgentTools.ToolApprovalEvent.Tool, approved: Bool) async {
+        await waitTurnDone()
+        if !approved {
+            await send("用户拒绝了工具调用「\(req.label)」，不执行。")
+            return
+        }
+        let result = await AgentTools.execute(
+            name: req.name, argumentsJSON: req.argumentsJSON,
+            agentId: req.agentId, server: store.server,
+            workDir: req.workDir, onEvent: nil, preApproved: true)
+        await send("工具调用「\(req.label)」已批准，执行结果：\n\(String(result.prefix(6000)))")
+    }
+
+    /// minis-config 审批卡结算：批了调 applyApproved 落盘，拒了调 recordRejection 只记审计；
+    /// 结果都当新消息续轮，让智能体知道批复。
+    private func settleConfigApproval(_ req: AgentTools.ToolApprovalEvent.Config, approved: Bool) {
+        let pending = MinisConfig.PendingChange(key: req.key, value: req.value,
+                                                oldValue: req.oldValue, sensitive: req.sensitive,
+                                                caption: req.caption)
+        let actor = "智能体 \(configActorName(req.agentId))"
+        if approved {
+            _ = MinisConfig.applyApproved(store: store, pending: pending, actor: actor)
+        } else {
+            MinisConfig.recordRejection(pending: pending, actor: actor)
+        }
+        let verdict = approved
+            ? "批准：将 \(req.key) 改成 \(req.value)（已生效）。"
+            : "拒绝：将 \(req.key) 改成 \(req.value)（没改）。"
+        Task { await sendAfterTurn(verdict) }
+    }
+
+    private func configActorName(_ agentId: String) -> String {
+        if let uuid = UUID(uuidString: agentId), let a = store.agent(id: uuid) { return a.name }
+        return agentId
+    }
+
+    /// 等当前轮跑完再发消息（审批结算走 send 会开新轮；直接发会和还在跑的旧轮并行）。
+    /// 最多等 60 秒——旧轮最多 6 轮工具调用，到点还没完就照常发。
+    private func waitTurnDone() async {
+        for _ in 0..<200 {
+            if !running { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+    }
+
+    private func sendAfterTurn(_ text: String) async {
+        await waitTurnDone()
+        await send(text)
+    }
+
     private func answerPendingCard(_ chosen: [CardOption]) {
         guard let i = store.conversations.firstIndex(where: { $0.id == conversationId }),
               let card = store.conversations[i].pendingCard else { return }
         store.conversations[i].pendingCard = nil
         store.save()
+        // 已回答折叠成摘要卡（Minis：卡片留在消息流里，显示已选 + 已作答），
+        // 再把答案当用户消息发给智能体续轮。摘要卡 senderId 用 system：
+        // 它不是一次发言，不进群聊轮换、不进下轮历史（replyFrom 会滤掉带卡消息）。
+        var summary = card
+        summary.resolved = chosen.map(\.id)
+        var summaryMsg = Message(senderId: "system", text: "")
+        summaryMsg.card = summary
+        append(summaryMsg)
         Task { @MainActor in LiveApproval.end() }
+        // 待批的工具调用 / minis-config 写操作：卡上批了/拒了在这里结算，
+        // 不走普通“批准/拒绝”消息（结算结果自己当新消息续轮）。
+        if let req = pendingToolApproval {
+            pendingToolApproval = nil
+            let approved = chosen.first?.id == "approve"
+            Task { await settleToolApproval(req, approved: approved) }
+            return
+        }
+        if let req = pendingConfigApproval {
+            pendingConfigApproval = nil
+            settleConfigApproval(req, approved: chosen.first?.id == "approve")
+            return
+        }
         let answer: String
         if card.kind == .approval {
             answer = chosen.first?.id == "approve" ? "批准" : "拒绝"
@@ -605,28 +775,58 @@ struct ChatView: View {
         Task { await send(answer) }
     }
 
-    /// 提问/审批卡被跳过（点跳过或划掉 sheet）：只给建议，不自动执行；
-    /// 建议写成一条消息，等用户自己定。跟 checkCardExpiry 同一条路，只是立刻结算。
-    private func skipPendingCard() {
-        guard let conv = conversation, let card = conv.pendingCard else { return }
+    /// 卡片没答成（超时或跳过）：只给建议，不执行、不批准。
+    /// 审批卡没有“建议批准”这一说：超时/跳过 = 什么都没批准，只说一声；
+    /// 提问卡有选项才给建议（模型给的 default，没有就第一个）；
+    /// 开放式问题没选项可建议，只说没采纳任何答案。
+    private func settleUnansweredCard(_ card: CardPayload, timedOut: Bool) {
+        // 超时/跳过的审批卡若是工具或 minis-config 的待批：什么都不执行；
+        // minis-config 的记一笔拒绝审计，工具的直接丢弃。
+        if let req = pendingConfigApproval {
+            pendingConfigApproval = nil
+            MinisConfig.recordRejection(
+                pending: MinisConfig.PendingChange(key: req.key, value: req.value,
+                                                   oldValue: req.oldValue, sensitive: req.sensitive,
+                                                   caption: req.caption),
+                actor: "智能体 \(configActorName(req.agentId))")
+        }
+        pendingToolApproval = nil
+        guard conversation != nil else { return }
         if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
             store.conversations[i].pendingCard = nil
             store.save()
         }
         Task { @MainActor in LiveApproval.end() }
-        let suggestion = card.recommendedId.isEmpty
-            ? (card.options.first?.label ?? "")
-            : (card.options.first { $0.id == card.recommendedId }?.label
-               ?? card.options.first?.label ?? "")
-        guard !suggestion.isEmpty else { return }
-        let who = conv.memberIds.first.flatMap { store.agent(id: $0) }
-        var m = Message(senderId: who?.id.uuidString ?? "system",
-                        text: "跳过了提问，只给个建议，不自动执行：建议选「\(suggestion)」，你定。")
+        let text: String
+        if card.kind == .approval {
+            text = timedOut ? "审批超时了，没有批准任何操作，你定。"
+                            : "跳过了审批，没有批准任何操作，你定。"
+        } else if card.options.isEmpty {
+            text = timedOut ? "提问超时了，没有采纳任何答案，你定。"
+                            : "跳过了提问，没有采纳任何答案，你定。"
+        } else {
+            let suggestion = card.recommendedId.isEmpty
+                ? (card.options.first?.label ?? "")
+                : (card.options.first { $0.id == card.recommendedId }?.label
+                   ?? card.options.first?.label ?? "")
+            text = timedOut
+                ? "提问超时了，只给个建议，不自动执行：建议选「\(suggestion)」，你定。"
+                : "跳过了提问，只给个建议，不自动执行：建议选「\(suggestion)」，你定。"
+        }
+        let who = conversation?.memberIds.first.flatMap { store.agent(id: $0) }
+        var m = Message(senderId: who?.id.uuidString ?? "system", text: text)
         if who == nil { m.eventKind = "paused" }
         if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
             store.conversations[i].messages.append(m)
             store.save()
         }
+    }
+
+    /// 提问/审批卡被跳过（点跳过或划掉 sheet）：只给建议，不自动执行；
+    /// 建议写成一条消息，等用户自己定。跟 checkCardExpiry 同一条路，只是立刻结算。
+    private func skipPendingCard() {
+        guard let card = conversation?.pendingCard else { return }
+        settleUnansweredCard(card, timedOut: false)
     }
 
     private func answerCard(_ chosen: [CardOption], messageId: UUID) {
@@ -746,29 +946,24 @@ struct ChatView: View {
     }
 
     /// 提问卡超时：只给建议，不自动执行；建议写成一条消息，等用户自己定。
+    /// 审批卡超时不建议批准（见 settleUnansweredCard）。
     private func checkCardExpiry() {
         guard let conv = conversation,
               let card = conv.pendingCard,
               let deadline = card.deadline,
               Date() > deadline else { return }
-        if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
-            store.conversations[i].pendingCard = nil
-            store.save()
-        }
-        Task { @MainActor in LiveApproval.end() }
-        let suggestion = card.recommendedId.isEmpty
-            ? (card.options.first?.label ?? "")
-            : (card.options.first { $0.id == card.recommendedId }?.label
-               ?? card.options.first?.label ?? "")
-        guard !suggestion.isEmpty else { return }
-        let who = conv.memberIds.first.flatMap { store.agent(id: $0) }
-        var m = Message(senderId: who?.id.uuidString ?? "system",
-                        text: "提问超时了，只给个建议，不自动执行：建议选「\(suggestion)」，你定。")
-        if who == nil { m.eventKind = "paused" }
-        if let i = store.conversations.firstIndex(where: { $0.id == conversationId }) {
-            store.conversations[i].messages.append(m)
-            store.save()
-        }
+        settleUnansweredCard(card, timedOut: true)
+    }
+
+    /// 用户在提问卡上点了一下：倒计时重开（Minis noteInteraction：人在就重算）。
+    /// 只动 deadline，不动卡片内容；卡清了或不限时（timeoutMinutes 0）不做。
+    private func restartCardCountdown() {
+        guard let i = store.conversations.firstIndex(where: { $0.id == conversationId }),
+              var card = store.conversations[i].pendingCard,
+              card.timeoutMinutes > 0 else { return }
+        card.deadline = Date().addingTimeInterval(TimeInterval(card.timeoutMinutes * 60))
+        store.conversations[i].pendingCard = card
+        store.save()
     }
 
     private func updateMessage(id: UUID, text: String, reasoning: String?,
@@ -782,9 +977,27 @@ struct ChatView: View {
         if let usage {
             store.conversations[ci].messages[mi].usagePrompt = usage.prompt
             store.conversations[ci].messages[mi].usageCompletion = usage.completion
+            // 用量快照：同时写供应商/模型（setMessageUsage），否则按供应商/
+            // 按模型汇总只能按当前模型估算。优先用本轮实际跑通的模型
+            // （兜底重试成功时是兜底的那个），没有就按发消息的智能体当前绑定。
+            let used = usedModelByMessage[id]
+                ?? agentBinding(for: store.conversations[ci].messages[mi].senderId)
+            if let used {
+                store.setMessageUsage(conversationId: conversationId, messageId: id,
+                                      providerName: used.provider, modelId: used.model,
+                                      prompt: usage.prompt, completion: usage.completion)
+            }
         }
         store.conversations[ci].lastActivity = Date()
         if save { store.save() }
+    }
+
+    /// 消息发送者智能体当前绑定的供应商名/模型（用量快照没拿到实际用模型时兜底用）。
+    private func agentBinding(for senderId: String) -> (provider: String, model: String)? {
+        guard let uuid = UUID(uuidString: senderId), let a = store.agent(id: uuid),
+              let p = store.providers.first(where: { $0.id.uuidString == a.providerKey })
+        else { return nil }
+        return (p.name, a.modelId)
     }
 
     private func removeMessage(id: UUID) {
@@ -833,6 +1046,8 @@ struct ChatView: View {
         // 历史不带最后那条空占位；重新生成时也不带正在重生成的那组旧版本。
         // 文件内容拼进对应消息；图片带在最后一条用户消息上。
         let msgs = Array(conv.messages.dropLast()).filter { m in
+            // 带卡的消息是 UI 摘要（已回答折叠卡），不是对话内容，不进历史。
+            guard m.card == nil else { return false }
             guard let g = excludeVariantOf else { return true }
             return m.variantOf != g && m.id != g
         }
@@ -851,13 +1066,61 @@ struct ChatView: View {
             let name = store.agent(id: UUID(uuidString: m.senderId) ?? UUID())?.name ?? "成员"
             return (role: "user", content: "[\(name)] \(m.text)")
         }
+        // minis-config 读写要 store：每轮开始前把当前会话的 store / 智能体名搭到桥上。
+        AgentTools.sharedStore = store
+        AgentTools.sharedAgentName = agent.name
         let runner = AgentRunner(provider: provider, server: store.server)
         let groupNote = (conv.isGroup && !conv.notice.isEmpty) ? "【群公告】\(conv.notice)" : ""
         let skills = [groupNote, store.skillsContext(for: agent.id), store.pluginsContext()]
             .filter { !$0.isEmpty }.joined(separator: "\n\n")
+        // 提示词片段与兜底列表（AppStore 已备好）：Soul/全局记忆/每日日志拼进系统提示，
+        // 思考档位用 effectiveEffort，失败时按组顺序逐个重试；实际跑通的模型记下来写用量快照。
+        let soulCtx = store.soulContext
+        let memCtx = store.globalMemoryContext
+        let logsCtx = store.recentDailyLogsContext
+        let effort = store.effectiveEffort(for: agent)
+        let fallbacks = store.fallbackCandidates(for: agent)
+        let recordUsedModel: (String, String) -> Void = { name, modelId in
+            Task { @MainActor in
+                self.usedModelByMessage[placeholderId] = (name, modelId)
+            }
+        }
         // 工具动态实时回传：干活状态跟着真实调用走；浏览器截图进聊天小窗。
+        // 带控制前缀的是 AgentTools 的工具调用行事件（开始/完成 + 真实耗时）：
+        // 开始在占位消息下添一行等待态，完成后变绿勾（失败变红叉）+ 耗时；
+        // 多轮调用按到达顺序排。普通进度文本照旧进干活状态。
         let toolEvent: (String, Data?) -> Void = { text, shot in
             Task { @MainActor in
+                // 审批请求事件（工具档位“每次询问”/ minis-config 写操作）：弹审批卡，
+                // 不进干活状态、不进调用行。
+                if let approval = AgentTools.ToolApprovalEvent.parse(text) {
+                    handleToolApprovalEvent(approval)
+                    return
+                }
+                if let ev = AgentTools.ToolCallEvent.parse(text) {
+                    var list = toolCalls[placeholderId] ?? []
+                    switch ev.kind {
+                    case .start:
+                        if !list.contains(where: { $0.id == ev.callId }) {
+                            list.append(ToolCallRecord(id: ev.callId, label: ev.label))
+                        }
+                        if let idx = working.firstIndex(where: { $0.0 == agent.name }) {
+                            working[idx] = (agent.name, ev.label)
+                        }
+                    case .done:
+                        if let i = list.firstIndex(where: { $0.id == ev.callId }) {
+                            list[i].finished = true
+                            list[i].seconds = ev.seconds
+                            list[i].failed = !ev.ok
+                        } else {
+                            list.append(ToolCallRecord(id: ev.callId, label: ev.label,
+                                                       finished: true, seconds: ev.seconds,
+                                                       failed: !ev.ok))
+                        }
+                    }
+                    toolCalls[placeholderId] = list
+                    return
+                }
                 if let idx = working.firstIndex(where: { $0.0 == agent.name }) {
                     working[idx] = (agent.name, text)
                 }
@@ -898,8 +1161,14 @@ struct ChatView: View {
                 runner: subRunner, agent: sub,
                 history: [(role: "user", content: task)],
                 skillsContext: store.skillsContext(for: sub.id),
+                onToolEvent: toolEvent,
                 onSpawnSubagent: nil,
-                capabilities: store.enabledDeviceCaps) { _, _ in }
+                capabilities: store.enabledDeviceCaps,
+                fallbacks: store.fallbackCandidates(for: sub),
+                effectiveEffort: store.effectiveEffort(for: sub),
+                soulContext: store.soulContext,
+                globalMemoryContext: store.globalMemoryContext,
+                recentDailyLogsContext: store.recentDailyLogsContext) { _, _ in }
             switch r {
             case .text(let t, _, _):
                 return t.isEmpty ? "（子智能体没回话）" : t
@@ -907,12 +1176,18 @@ struct ChatView: View {
                 return "（子智能体反过来问了个问题：\(card.question)，请去聊天里回答它）"
             }
         }
+        // 派活桥（与 sharedStore 同一位置）：审批卡批了之后重跑走
+        // AgentTools.execute → run()，靠这座桥才能真派活。
+        AgentTools.sharedSpawn = spawnSubagent
         do {
             let first = try await runner.reply(
                 agent: agent, history: history, imageJPEG: lastImage,
                 skillsContext: skills, onToolEvent: toolEvent,
                 onSpawnSubagent: spawnSubagent, capabilities: store.enabledDeviceCaps,
-                webSearch: webSearchOn) { content, reasoning in
+                webSearch: webSearchOn, fallbacks: fallbacks, effectiveEffort: effort,
+                soulContext: soulCtx, globalMemoryContext: memCtx,
+                recentDailyLogsContext: logsCtx,
+                onUsedModel: recordUsedModel) { content, reasoning in
                     flushStream(content, reasoning.isEmpty ? nil : reasoning)
                 }
             // 写死的底层逻辑（与模型无关）：设了人设，模型就没有把「拒绝」
@@ -932,7 +1207,10 @@ struct ChatView: View {
                         agent: agent, history: forced, imageJPEG: lastImage,
                         skillsContext: skills, onToolEvent: toolEvent,
                         onSpawnSubagent: spawnSubagent, capabilities: store.enabledDeviceCaps,
-                        webSearch: webSearchOn) { content, reasoning in
+                        webSearch: webSearchOn, fallbacks: fallbacks, effectiveEffort: effort,
+                        soulContext: soulCtx, globalMemoryContext: memCtx,
+                        recentDailyLogsContext: logsCtx,
+                        onUsedModel: recordUsedModel) { content, reasoning in
                             flushStream(content, reasoning.isEmpty ? nil : reasoning)
                         }
                 }
@@ -943,6 +1221,7 @@ struct ChatView: View {
             }
             return result
         } catch {
+            LogStore.append("聊天", "出错：\(error.localizedDescription)")
             return .text("（出错了：\(error.localizedDescription)）", reasoning: nil)
         }
     }
@@ -1619,11 +1898,7 @@ private struct MessageBubble: View {
                 ForEach(Array(segments(of: message.text).enumerated()), id: \.offset) { _, seg in
                     switch seg {
                     case .text(let t):
-                        Text(attributed(t))
-                            .font(.body)
-                            .lineSpacing(3)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        MessageRichTextView(text: t)
                     case .html(let code):
                         HTMLCardView(code: code, kind: .html)
                     case .mermaid(let code):
@@ -1702,6 +1977,55 @@ private struct BrowserLiveSheet: View {
                 shotData = d
             }
         }
+    }
+}
+
+/// 一轮里的一次工具调用（聊天流里的调用行）：label 是调用文字，
+/// finished=false 是进行中（等待态），true 是完成（绿勾，失败红叉），
+/// seconds 是 AgentTools 实测的耗时。
+private struct ToolCallRecord: Identifiable {
+    var id: String  // AgentTools 每次 execute 生成的 callId，开始/完成靠它配对
+    var label: String
+    var finished: Bool = false
+    var seconds: TimeInterval? = nil
+    var failed: Bool = false
+}
+
+/// 工具调用行（Minis 式）：绿勾 + 调用文字 + 耗时；进行中是等待态。
+/// 浅色 Palette（StatusRunning #12A06A），footnote 级，不抢正文。
+private struct ToolCallRow: View {
+    let record: ToolCallRecord
+
+    /// 耗时文案：60 秒内一位小数（如 9.5s，与任务示例一致），再长按分计。
+    private var durationText: String? {
+        guard let s = record.seconds else { return nil }
+        if s < 60 { return String(format: "%.1fs", s) }
+        return "\(Int(s) / 60)m \(Int(s) % 60)s"
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if record.finished {
+                Image(systemName: record.failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(record.failed ? .red : Palette.running)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(Palette.running)
+            }
+            Text(record.label)
+                .font(.footnote)
+                .foregroundStyle(Palette.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 4)
+            if let d = durationText {
+                Text(d)
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(Palette.faint)
+            }
+        }
+        .padding(.leading, 4)
     }
 }
 

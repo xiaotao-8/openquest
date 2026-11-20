@@ -7,6 +7,8 @@ import Foundation
 /// 这里只是同一规则的副本，两处保持一致；改一处就要改另一处。
 enum GuardedTurn {
     /// 跑一轮（带拒绝拦截）。onSpawnSubagent 传 nil 时子智能体不可用（防嵌套）。
+    /// fallbacks / effectiveEffort / Soul 与记忆片段由调用方（聊天页）从 AppStore
+    /// 取了传进来；不传就走老行为（单个模型、智能体自己的档位、不叠全局片段）。
     static func run(runner: AgentRunner, agent: Agent,
                     history: [(role: String, content: String)],
                     imageJPEG: Data? = nil,
@@ -15,13 +17,21 @@ enum GuardedTurn {
                     onSpawnSubagent: ((String, String) async -> String)? = nil,
                     capabilities: Set<String> = [],
                     webSearch: Bool = false,
+                    fallbacks: [(provider: ModelProvider, model: AIModel)] = [],
+                    effectiveEffort: String = "",
+                    soulContext: String = "",
+                    globalMemoryContext: String = "",
+                    recentDailyLogsContext: String = "",
                     onDelta: @escaping (String, String) -> Void) async -> AgentRunner.TurnResult {
         do {
             var result = try await runner.reply(
                 agent: agent, history: history, imageJPEG: imageJPEG,
                 skillsContext: skillsContext, onToolEvent: onToolEvent,
                 onSpawnSubagent: onSpawnSubagent, capabilities: capabilities,
-                webSearch: webSearch, onDelta: onDelta)
+                webSearch: webSearch, fallbacks: fallbacks,
+                effectiveEffort: effectiveEffort, soulContext: soulContext,
+                globalMemoryContext: globalMemoryContext,
+                recentDailyLogsContext: recentDailyLogsContext, onDelta: onDelta)
             var attempts = 0
             while case .text(let t, _, _) = result, looksLikeRefusal(t), attempts < 3 {
                 attempts += 1
@@ -31,7 +41,10 @@ enum GuardedTurn {
                     agent: agent, history: forced, imageJPEG: imageJPEG,
                     skillsContext: skillsContext, onToolEvent: onToolEvent,
                     onSpawnSubagent: onSpawnSubagent, capabilities: capabilities,
-                    webSearch: webSearch, onDelta: onDelta)
+                    webSearch: webSearch, fallbacks: fallbacks,
+                    effectiveEffort: effectiveEffort, soulContext: soulContext,
+                    globalMemoryContext: globalMemoryContext,
+                    recentDailyLogsContext: recentDailyLogsContext, onDelta: onDelta)
             }
             if case .text(let t, _, _) = result, looksLikeRefusal(t) {
                 return .text("（这个模型连续 \(attempts + 1) 次拒绝回答，已按你写死的规则拦下，没把拒绝当答案给你。换个模型再试。）",

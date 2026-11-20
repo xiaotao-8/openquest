@@ -20,15 +20,40 @@ struct ModelPickerSheet: View {
                             get: { effort },
                             set: { store.setAgentEffort(agentId: agent.id, effort: $0) }
                         )) {
-                            Text("跟模型默认").tag("")
-                            Text("关").tag("off")
-                            Text("低").tag("low")
-                            Text("中").tag("medium")
-                            Text("高").tag("high")
+                            ForEach(ThinkingLevel.allOptions, id: \.self) { opt in
+                                Text(ThinkingLevel.label(for: opt)).tag(opt)
+                            }
                         }
-                        .pickerStyle(.segmented)
-                        Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。")
+                        .pickerStyle(.menu)
+                        Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。档位按六档：低/中/高/超高/最高分别发 low/medium/high/xhigh/max。")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if !store.modelGroups.isEmpty {
+                    Section("模型组（主模型失败时按顺序兜底）") {
+                        ForEach(store.modelGroups) { g in
+                            Button {
+                                store.setAgentModelGroup(agentId: agent.id, group: g)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(g.name).foregroundStyle(.primary)
+                                        Text(g.members(providers: store.providers)
+                                            .map { $0.model.name }.joined(separator: " → "))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if agent.modelGroupId == g.id.uuidString {
+                                        Image(systemName: "checkmark").foregroundStyle(.green)
+                                    }
+                                }
+                            }
+                        }
+                        if let g = store.modelGroup(for: agent) {
+                            Text("当前走组「\(g.name)」：先用组里第一个模型，失败按顺序兜底。点下面单个模型就改回单模型。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 ForEach(store.providers) { p in
@@ -57,7 +82,7 @@ struct ModelPickerSheet: View {
                     Button {
                         showingProviders = true
                     } label: {
-                        Label("添加供应商（免费源）", systemImage: "plus.circle")
+                        Label("添加供应商", systemImage: "plus.circle")
                     }
                 }
             }

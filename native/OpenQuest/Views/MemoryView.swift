@@ -170,3 +170,104 @@ struct MemoryView: View {
         }
     }
 }
+
+/// 全局记忆页（Minis GLOBAL.md + 每日日志，AIChatViewModel+MemoryTools.swift：
+/// GLOBAL.md 是用户自己维护的背景信息，不是 standing 指令；最近 3 条有内容
+/// 的每日日志进系统提示）。存在本地 AppStore 快照里；
+/// 服务器端按智能体的 MEMORY.md 是另一套（上面那个 MemoryView），不冲突。
+struct GlobalMemoryView: View {
+    @EnvironmentObject var store: AppStore
+    @State private var draft = ""
+    @State private var savedNote: String?
+    @State private var showingAddLog = false
+    @State private var logDraft = ""
+    @State private var editingLogId: UUID?
+
+    private var dayFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy 年 M 月 d 日"
+        return f
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Text("全局记忆是背景信息，不是命令：如果和你最新说的话冲突，以最新说的为准。")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Section("全局记忆（GLOBAL.md）") {
+                TextEditor(text: $draft)
+                    .frame(minHeight: 180)
+                    .autocorrectionDisabled()
+                HStack {
+                    Button("保存全局记忆") {
+                        store.setGlobalMemory(draft)
+                        savedNote = "已保存"
+                    }
+                    .disabled(draft == store.globalMemory)
+                    Spacer()
+                    if let savedNote {
+                        Text(savedNote).font(.caption).foregroundStyle(.green)
+                    }
+                }
+            }
+            Section("每日日志") {
+                if store.dailyLogs.isEmpty {
+                    Text("还没有每日日志。每天记一条（今天做了什么、有什么新情况），智能体聊天时会参考最近 3 条。")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(store.dailyLogs) { log in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(dayFormatter.string(from: log.day))
+                            .font(.subheadline.weight(.semibold))
+                        Text(log.content)
+                            .font(.footnote).foregroundStyle(.secondary)
+                            .lineLimit(3)
+                        Button("改这条") {
+                            editingLogId = log.id
+                            logDraft = log.content
+                            showingAddLog = true
+                        }
+                        .font(.subheadline)
+                    }
+                }
+                .onDelete { idx in
+                    for i in idx { store.deleteDailyLog(id: store.dailyLogs[i].id) }
+                }
+                Button("写今日日志") {
+                    editingLogId = nil
+                    logDraft = ""
+                    showingAddLog = true
+                }
+            }
+        }
+        .navigationTitle("记忆")
+        .onAppear { draft = store.globalMemory }
+        .sheet(isPresented: $showingAddLog) {
+            NavigationStack {
+                Form {
+                    TextEditor(text: $logDraft)
+                        .frame(minHeight: 220)
+                        .autocorrectionDisabled()
+                }
+                .navigationTitle(editingLogId == nil ? "今日日志" : "改日志")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { showingAddLog = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("保存") {
+                            let day = editingLogId.flatMap { id in
+                                store.dailyLogs.first { $0.id == id }?.day
+                            } ?? Date()
+                            store.addDailyLog(content: logDraft.trimmingCharacters(in: .whitespaces),
+                                              day: day)
+                            showingAddLog = false
+                        }
+                        .disabled(logDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+        }
+    }
+}

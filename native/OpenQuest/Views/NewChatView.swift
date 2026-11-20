@@ -31,7 +31,7 @@ struct NewChatView: View {
                         Button {
                             showingProviders = true
                         } label: {
-                            Label("先添加供应商和模型（有免费源）", systemImage: "cube")
+                            Label("先添加供应商和模型", systemImage: "cube")
                         }
                     }
                 }

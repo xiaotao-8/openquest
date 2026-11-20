@@ -7,6 +7,11 @@ final class AppStore: ObservableObject {
     @Published var agents: [Agent] = []
     @Published var conversations: [Conversation] = []
     @Published var providers: [ModelProvider] = []
+    @Published var modelGroups: [ModelGroup] = []
+    @Published var envVars: [EnvVar] = []
+    @Published var soulText: String = ""      // 用户自己写的 Soul（最高优先级指令，见 SoulView）
+    @Published var globalMemory: String = ""  // 全局记忆 GLOBAL.md 式正文（用户自己维护）
+    @Published var dailyLogs: [DailyMemoryLog] = []  // 每日记忆日志
     @Published var server: ServerConfig = ServerConfig()
     @Published var connectors: [Connector] = builtinConnectors
     @Published var skills: [Skill] = []
@@ -42,11 +47,14 @@ final class AppStore: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("-PreviewLiveChat") {
             seedLiveChat()
         }
-        // 仅模拟器验收：-PreviewProviders 时走一遍免费源“点一下添加”的真路径，
-        // 把免费 Agnes 加进来，截图落在供应商页验添加本身（用户 2026-11-20：添加由助手测）。
+        // 仅模拟器验收：-PreviewProviders 时走通用手动添加路径加一个供应商
+        // （名字/地址/模型都由种子直填，不走任何预设），截图落在供应商页，
+        // 验“用户自己加供应商”这条真路径（用户 2026-11-20：添加由助手测）。
         if ProcessInfo.processInfo.arguments.contains("-PreviewProviders") {
-            addPresetProvider(name: "Agnes", baseURL: "https://api.agnes-ai.cn/v1",
-                              modelIds: ["agnes-2.5-flash", "agnes-2.5-pro"])
+            addProvider(name: "演示供应商", baseURL: "https://api.example.com/v1", apiKey: "")
+            if let p = providers.first(where: { $0.baseURL == "https://api.example.com/v1" }) {
+                addModel(providerId: p.id, modelId: "demo-chat")
+            }
         }
     }
 
@@ -60,6 +68,12 @@ final class AppStore: ObservableObject {
             Message(senderId: "user", text: "帮我查下这个产品在国内卖多少钱"),
             Message(senderId: a1.id.uuidString, text: "我去服务器浏览器上查一下，马上回你。",
                     reasoning: "先确认是哪个版本，再去电商页面比价……"),
+            // 验收种子：一条含 LaTeX 公式、一条含 Mermaid 流程图的消息，
+            // 让 preview-chat.png 能同时验 LaTeX 渲染与图表卡片点开。
+            Message(senderId: a2.id.uuidString,
+                    text: "公式是这样的：$E=mc^2$，其中 $m$ 是质量，$c$ 是光速。"),
+            Message(senderId: a1.id.uuidString,
+                    text: "流程图如下：\n```mermaid\ngraph TD\n    A[开始] --> B[查价格]\n    B --> C[比价]\n    C --> D[出报告]\n```"),
         ]
         team.workingNote = "小评 正在调用服务器浏览器…"
         var c1 = Conversation(title: "小策", memberIds: [a1.id])
@@ -112,7 +126,52 @@ final class AppStore: ObservableObject {
         guard let i = agents.firstIndex(where: { $0.id == agentId }) else { return }
         agents[i].providerKey = provider.id.uuidString
         agents[i].modelId = modelId
+        agents[i].modelGroupId = ""   // 选了单个模型，组的绑定就清掉
         save()
+    }
+
+    /// 智能体绑一个模型组：模型先切到组的首选成员，组 id 留在智能体身上，
+    /// 主模型失败时按组顺序兜底（见 fallbackCandidates）。
+    func setAgentModelGroup(agentId: UUID, group: ModelGroup) {
+        guard let i = agents.firstIndex(where: { $0.id == agentId }),
+              let first = group.firstMember(providers: providers)
+        else { return }
+        agents[i].modelGroupId = group.id.uuidString
+        agents[i].providerKey = first.provider.id.uuidString
+        agents[i].modelId = first.model.id
+        save()
+    }
+
+    /// 智能体当前绑的模型组（没绑返回 nil）。
+    func modelGroup(for agent: Agent?) -> ModelGroup? {
+        guard let agent, !agent.modelGroupId.isEmpty else { return nil }
+        return modelGroups.first { $0.id.uuidString == agent.modelGroupId }
+    }
+
+    /// 兜底候选顺序：绑了组 = 组成员按顺序；没绑 = 当前单个模型。
+    /// Minis AIChatViewModel+Fallback.swift 的 streamWithGroupFallback 同款语义，
+    /// 实际逐个重试由 AgentRunner 接这个列表（见汇报遗留项）。
+    func fallbackCandidates(for agent: Agent?) -> [(provider: ModelProvider, model: AIModel)] {
+        guard let agent else { return [] }
+        if let g = modelGroup(for: agent) {
+            let ms = g.members(providers: providers)
+            if !ms.isEmpty { return ms }
+        }
+        guard let p = providers.first(where: { $0.id.uuidString == agent.providerKey }),
+              let m = p.models.first(where: { $0.id == agent.modelId })
+        else { return [] }
+        return [(p, m)]
+    }
+
+    /// 生效的思考档位：智能体自己的 > 模型配置的 > 组默认 > 跟模型默认（""）。
+    func effectiveEffort(for agent: Agent?) -> String {
+        guard let agent else { return "" }
+        if !agent.effort.isEmpty { return agent.effort }
+        if let m = modelForAgent(agent), !m.effort.isEmpty { return m.effort }
+        if let g = modelGroup(for: agent), !g.defaultThinkingLevel.isEmpty {
+            return g.defaultThinkingLevel
+        }
+        return ""
     }
 
     func setAgentEffort(agentId: UUID, effort: String) {
@@ -225,19 +284,15 @@ final class AppStore: ObservableObject {
 
     // MARK: 供应商与模型（用户自己添加）
 
-    func addProvider(name: String, baseURL: String, apiKey: String) {
-        let p = ModelProvider(name: name, baseURL: baseURL)
+    /// 用户自己添加供应商（名字、接口地址、Key 存 Keychain）。
+    /// 不预置任何供应商和模型（用户 2026-11-20 撤了免费源预设）。
+    /// 类型只定接口格式：OpenAI 兼容的地址缺 /v1 时保存时自动补上。
+    func addProvider(name: String, baseURL: String, apiKey: String,
+                     kind: ProviderKind = .openai) {
+        var p = ModelProvider(name: name, baseURL: baseURL, kind: kind)
+        p.baseURL = p.apiBaseURL
         providers.append(p)
         if !apiKey.isEmpty { KeychainHelper.setKey(apiKey, ref: p.keyRef) }
-        save()
-    }
-
-    /// 内置免费源：一键添加（地址和常用模型都预填好），用户只剩填 Key。
-    func addPresetProvider(name: String, baseURL: String, modelIds: [String]) {
-        guard !providers.contains(where: { $0.baseURL == baseURL }) else { return }
-        var p = ModelProvider(name: name, baseURL: baseURL)
-        p.models = modelIds.map { ModelCapabilities.applying(to: AIModel(id: $0)) }
-        providers.append(p)
         save()
     }
 
@@ -246,8 +301,7 @@ final class AppStore: ObservableObject {
     func fetchModels(providerId: UUID) async -> String {
         guard let p = providers.first(where: { $0.id == providerId }) else { return "供应商不见了" }
         guard let key = KeychainHelper.key(ref: p.keyRef), !key.isEmpty else { return "先填 Key 才能拉" }
-        let base = p.baseURL.trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let base = p.apiBaseURL
         guard let url = URL(string: base + "/models") else { return "接口地址不对" }
         var req = URLRequest(url: url)
         req.timeoutInterval = 30
@@ -337,10 +391,183 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    /// 改供应商的名字/接口地址/类型（Key 不动，仍在 Keychain 里）。
+    /// 地址按新类型重新归一化（OpenAI 兼容缺 /v1 就补）。
+    func updateProvider(id: UUID, name: String, baseURL: String, kind: ProviderKind) {
+        guard let i = providers.firstIndex(where: { $0.id == id }) else { return }
+        providers[i].name = name
+        providers[i].kind = kind
+        providers[i].baseURL = ModelProvider(name: name, baseURL: baseURL, kind: kind).apiBaseURL
+        save()
+    }
+
+    /// 改模型：显示名 + 每模型的思考档位（存进模型配置）。
+    func updateModel(providerId: UUID, modelId: String, displayName: String, effort: String) {
+        guard let i = providers.firstIndex(where: { $0.id == providerId }),
+              let j = providers[i].models.firstIndex(where: { $0.id == modelId })
+        else { return }
+        providers[i].models[j].displayName = displayName
+        providers[i].models[j].effort = effort
+        save()
+    }
+
+    // MARK: 模型组（Minis Model Groups 兜底）
+
+    func addModelGroup(name: String, memberRefs: [String]) {
+        modelGroups.append(ModelGroup(name: name, memberRefs: memberRefs))
+        save()
+    }
+
+    func updateModelGroup(_ group: ModelGroup) {
+        guard let i = modelGroups.firstIndex(where: { $0.id == group.id }) else { return }
+        modelGroups[i] = group
+        save()
+    }
+
+    func deleteModelGroup(id: UUID) {
+        modelGroups.removeAll { $0.id == id }
+        // 绑了这个组的智能体解绑，回落到当前单个模型。
+        for i in agents.indices where agents[i].modelGroupId == id.uuidString {
+            agents[i].modelGroupId = ""
+        }
+        save()
+    }
+
+    // MARK: 环境变量（Minis EnvVarStore：值存 Keychain，key/note/开关进快照）
+
+    func addEnvVar(key: String, note: String, value: String) {
+        let v = EnvVar(key: key, note: note)
+        envVars.append(v)
+        if !value.isEmpty { KeychainHelper.setKey(value, ref: v.valueRef) }
+        save()
+    }
+
+    func updateEnvVar(id: UUID, key: String, note: String) {
+        guard let i = envVars.firstIndex(where: { $0.id == id }) else { return }
+        envVars[i].key = key
+        envVars[i].note = note
+        save()
+    }
+
+    func setEnvVarValue(id: UUID, value: String) {
+        guard let v = envVars.first(where: { $0.id == id }) else { return }
+        if value.isEmpty { KeychainHelper.deleteKey(ref: v.valueRef) }
+        else { KeychainHelper.setKey(value, ref: v.valueRef) }
+    }
+
+    func envVarValue(id: UUID) -> String {
+        guard let v = envVars.first(where: { $0.id == id }) else { return "" }
+        return KeychainHelper.key(ref: v.valueRef) ?? ""
+    }
+
+    func setEnvVarEnabled(id: UUID, _ on: Bool) {
+        guard let i = envVars.firstIndex(where: { $0.id == id }) else { return }
+        envVars[i].enabled = on
+        save()
+    }
+
+    func deleteEnvVar(id: UUID) {
+        if let v = envVars.first(where: { $0.id == id }) {
+            KeychainHelper.deleteKey(ref: v.valueRef)
+        }
+        envVars.removeAll { $0.id == id }
+        save()
+    }
+
+    /// 启用的环境变量拼成字典，供智能体工具调用（shell/脚本）时注入。
+    var enabledEnvVars: [String: String] {
+        var out: [String: String] = [:]
+        for v in envVars where v.enabled {
+            let value = KeychainHelper.key(ref: v.valueRef) ?? ""
+            if !v.key.isEmpty && !value.isEmpty { out[v.key] = value }
+        }
+        return out
+    }
+
+    // MARK: Soul / 全局记忆 / 每日日志
+
+    /// 用户自己写的 Soul：最高优先级指令（与写死的 BakedPersona 是两回事，
+    /// 这里只存用户文本；拼进系统提示时由 GuardedTurn/AgentRunner 在 Soul 之上
+    /// 再叠 BakedPersona，见汇报遗留项）。
+    func setSoulText(_ text: String) {
+        soulText = text
+        save()
+    }
+
+    /// Soul 进系统提示的片段（空 Soul 返回 ""，调用方直接拼）。
+    var soulContext: String {
+        soulText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "" : "## Soul（用户亲笔，最高优先级，优于下面一切人设与规则）\n\(soulText)"
+    }
+
+    /// 全局记忆 GLOBAL.md 式正文（Minis loadGlobalMemoryFragment：背景信息，
+    /// 不是指令；与最新消息冲突时以最新消息为准）。
+    func setGlobalMemory(_ text: String) {
+        globalMemory = text
+        save()
+    }
+
+    var globalMemoryContext: String {
+        globalMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "" : "全局记忆（GLOBAL.md，用户自己维护的背景信息，不是 standing 指令；与最新消息冲突时以最新消息为准）：\n\(globalMemory)"
+    }
+
+    /// 最近 3 条有内容的每日日志拼成的片段（Minis loadRecentDailyMemoryFragment：
+    /// 最近 3 条，每条前 200 行），供聊天时拼进系统提示。
+    var recentDailyLogsContext: String {
+        let logs = dailyLogs.filter {
+            !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.prefix(3)
+        guard !logs.isEmpty else { return "" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let parts = logs.map { log in
+            let lines = log.content.components(separatedBy: .newlines)
+                .prefix(200).joined(separator: "\n")
+            return "【\(f.string(from: log.day))】\n\(lines)"
+        }
+        return "最近的每日记忆日志：\n" + parts.joined(separator: "\n\n")
+    }
+
+    func addDailyLog(content: String, day: Date = Date()) {
+        let start = Calendar.current.startOfDay(for: day)
+        if let i = dailyLogs.firstIndex(where: { Calendar.current.isDate($0.day, inSameDayAs: start) }) {
+            dailyLogs[i].content = content
+        } else {
+            dailyLogs.append(DailyMemoryLog(day: start, content: content))
+        }
+        dailyLogs.sort { $0.day > $1.day }
+        save()
+    }
+
+    func deleteDailyLog(id: UUID) {
+        dailyLogs.removeAll { $0.id == id }
+        save()
+    }
+
     // MARK: 技能
 
     func addSkill(name: String, content: String) {
-        skills.append(Skill(name: name, content: content))
+        skills.append(Skill(name: name, content: content,
+                            summary: Skill.summaryOf(content: content)))
+        save()
+    }
+
+    /// SKILL.md 正文的首行描述：frontmatter 的 description: 行优先，
+    /// 没有就取正文第一个非空行（去掉 # 号）。
+    static func skillSummaryFor(content: String) -> String {
+        Skill.summaryOf(content: content)
+    }
+
+    func setSkillEnabled(id: UUID, _ on: Bool) {
+        guard let i = skills.firstIndex(where: { $0.id == id }) else { return }
+        skills[i].enabled = on
+        save()
+    }
+
+    func setSkillSummary(id: UUID, summary: String) {
+        guard let i = skills.firstIndex(where: { $0.id == id }) else { return }
+        skills[i].summary = summary
         save()
     }
 
@@ -360,8 +587,9 @@ final class AppStore: ObservableObject {
     }
 
     /// 某个智能体启用的技能拼成的上下文，聊天时进系统指令。
+    /// 总开关关掉的技能不拼（Minis SkillStore 的启用状态同款语义）。
     func skillsContext(for agentId: UUID) -> String {
-        let active = skills.filter { $0.agentIds.contains(agentId) }
+        let active = skills.filter { $0.enabled && $0.agentIds.contains(agentId) }
         guard !active.isEmpty else { return "" }
         return active.map { "## 技能：\($0.name)\n\($0.content)" }.joined(separator: "\n\n")
     }
@@ -412,8 +640,7 @@ final class AppStore: ObservableObject {
               let key = KeychainHelper.key(ref: p.keyRef),
               let model = p.models.first?.id
         else { return (name, summary) }
-        let base = p.baseURL.trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let base = p.apiBaseURL
         guard let url = URL(string: base + "/chat/completions") else { return (name, summary) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -599,6 +826,81 @@ final class AppStore: ObservableObject {
             .sorted { ($0.prompt + $0.completion) > ($1.prompt + $1.completion) }
     }
 
+    /// 一条带用量回复的归属：快照优先（准确）；没快照按发送智能体当前用的
+    /// 供应商/模型估算（Minis ChatStore+UsageStats.swift 的 fallback 行语义）。
+    private func usageAttribution(for m: Message) -> (provider: String, model: String, estimated: Bool) {
+        if let p = m.usageProvider, let mo = m.usageModel {
+            return (p, mo, false)
+        }
+        if let a = agent(id: UUID(uuidString: m.senderId) ?? UUID()),
+           let p = providers.first(where: { $0.id.uuidString == a.providerKey }) {
+            return (p.name, a.modelId.isEmpty ? "未选模型" : a.modelId, true)
+        }
+        return ("其他", m.usageModel ?? "未知模型", true)
+    }
+
+    /// 按供应商汇总用量（Minis Usage 页按 provider 分组的同款口径）。
+    func usageByProvider() -> [(name: String, prompt: Int, completion: Int, estimated: Bool)] {
+        var map: [String: (Int, Int, Bool)] = [:]
+        for conv in conversations {
+            for m in conv.messages {
+                guard let p = m.usagePrompt, let c = m.usageCompletion else { continue }
+                let attr = usageAttribution(for: m)
+                let cur = map[attr.provider] ?? (0, 0, false)
+                map[attr.provider] = (cur.0 + p, cur.1 + c, cur.2 || attr.estimated)
+            }
+        }
+        return map.map { (name: $0.key, prompt: $0.value.0, completion: $0.value.1, estimated: $0.value.2) }
+            .sorted { ($0.prompt + $0.completion) > ($1.prompt + $1.completion) }
+    }
+
+    /// 按模型汇总用量。
+    func usageByModel() -> [(name: String, prompt: Int, completion: Int, estimated: Bool)] {
+        var map: [String: (Int, Int, Bool)] = [:]
+        for conv in conversations {
+            for m in conv.messages {
+                guard let p = m.usagePrompt, let c = m.usageCompletion else { continue }
+                let attr = usageAttribution(for: m)
+                let cur = map[attr.model] ?? (0, 0, false)
+                map[attr.model] = (cur.0 + p, cur.1 + c, cur.2 || attr.estimated)
+            }
+        }
+        return map.map { (name: $0.key, prompt: $0.value.0, completion: $0.value.1, estimated: $0.value.2) }
+            .sorted { ($0.prompt + $0.completion) > ($1.prompt + $1.completion) }
+    }
+
+    /// 按日汇总用量（最近 30 天，按天倒序）。
+    func usageByDay() -> [(day: Date, prompt: Int, completion: Int)] {
+        var map: [Date: (Int, Int)] = [:]
+        let cal = Calendar.current
+        for conv in conversations {
+            for m in conv.messages {
+                guard let p = m.usagePrompt, let c = m.usageCompletion else { continue }
+                let day = cal.startOfDay(for: m.date)
+                let cur = map[day] ?? (0, 0)
+                map[day] = (cur.0 + p, cur.1 + c)
+            }
+        }
+        return map.map { (day: $0.key, prompt: $0.value.0, completion: $0.value.1) }
+            .sorted { $0.day > $1.day }
+            .prefix(30).map { $0 }
+    }
+
+    /// 给一条回复记用量（含供应商/模型快照，供上面三个汇总用）。
+    /// 聊天方在写 usagePrompt/usageCompletion 的同时调这个（ChatView 接线，见汇报）。
+    func setMessageUsage(conversationId: UUID, messageId: UUID,
+                         providerName: String, modelId: String,
+                         prompt: Int, completion: Int) {
+        guard let ci = conversations.firstIndex(where: { $0.id == conversationId }),
+              let mi = conversations[ci].messages.firstIndex(where: { $0.id == messageId })
+        else { return }
+        conversations[ci].messages[mi].usagePrompt = prompt
+        conversations[ci].messages[mi].usageCompletion = completion
+        conversations[ci].messages[mi].usageProvider = providerName
+        conversations[ci].messages[mi].usageModel = modelId
+        save()
+    }
+
     func setConnectorEnabled(id: String, _ on: Bool) {
         guard let i = connectors.firstIndex(where: { $0.id == id }) else { return }
         connectors[i].enabled = on
@@ -609,6 +911,11 @@ final class AppStore: ObservableObject {
         var agents: [Agent]
         var conversations: [Conversation]
         var providers: [ModelProvider] = []
+        var modelGroups: [ModelGroup] = []
+        var envVars: [EnvVar] = []
+        var soulText: String = ""
+        var globalMemory: String = ""
+        var dailyLogs: [DailyMemoryLog] = []
         var server: ServerConfig = ServerConfig()
         var connectors: [Connector] = builtinConnectors
         var skills: [Skill] = []
@@ -623,7 +930,10 @@ final class AppStore: ObservableObject {
 
     func save() {
         let snap = Snapshot(agents: agents, conversations: conversations,
-                            providers: providers, server: server, connectors: connectors,
+                            providers: providers, modelGroups: modelGroups,
+                            envVars: envVars, soulText: soulText,
+                            globalMemory: globalMemory, dailyLogs: dailyLogs,
+                            server: server, connectors: connectors,
                             skills: skills, plugins: plugins,
                             scheduledTasks: scheduledTasks, customMCPs: customMCPs,
                             miniApps: miniApps, deviceCapabilities: deviceCapabilities,
@@ -640,6 +950,11 @@ final class AppStore: ObservableObject {
         agents = snap.agents
         conversations = snap.conversations
         providers = snap.providers
+        modelGroups = snap.modelGroups
+        envVars = snap.envVars
+        soulText = snap.soulText
+        globalMemory = snap.globalMemory
+        dailyLogs = snap.dailyLogs
         server = snap.server
         if !snap.connectors.isEmpty { connectors = snap.connectors }
         skills = snap.skills

@@ -5,6 +5,10 @@ struct OpenQuestApp: App {
     @StateObject private var store = AppStore()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        LogStore.append("启动", "OpenQuest 已启动")
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

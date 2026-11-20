@@ -10,6 +10,7 @@ struct ChatListView: View {
     @State private var showingNewChat = false
     @State private var searchText = ""
     @State private var showingImport = false
+    @State private var showingDeepSeekLinkImport = false
     @State private var importStatus: String?
 
     private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
@@ -114,6 +115,9 @@ struct ChatListView: View {
                     Button { showingImport = true } label: {
                         Label("导入会话（DeepSeek / Chatbox）", systemImage: "square.and.arrow.down")
                     }
+                    Button { showingDeepSeekLinkImport = true } label: {
+                        Label("粘贴 DeepSeek 链接", systemImage: "link")
+                    }
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
@@ -126,6 +130,7 @@ struct ChatListView: View {
             onOpen(id)
         }
         .sheet(isPresented: $showingNewChat) { NewChatView() }
+        .sheet(isPresented: $showingDeepSeekLinkImport) { DeepSeekLinkImportView() }
         .fileImporter(isPresented: $showingImport, allowedContentTypes: [.json]) { result in
             guard case .success(let url) = result else { return }
             let scoped = url.startAccessingSecurityScopedResource()

@@ -20,7 +20,15 @@ struct SkillsView: View {
                     SkillDetailView(skillId: s.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(s.name)
+                        HStack(spacing: 6) {
+                            Text(s.name)
+                            if !s.enabled {
+                                Text("已停用").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        if !s.summary.isEmpty {
+                            Text(s.summary).font(.caption).foregroundStyle(.secondary)
+                        }
                         Text(s.agentIds.isEmpty ? "还没挂到任何智能体" : "已挂 \(s.agentIds.count) 个智能体")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -124,7 +132,21 @@ private struct SkillDetailView: View {
     var body: some View {
         List {
             if let s = skill {
-                Section("内容") {
+                Section("开关") {
+                    Toggle("启用这个技能", isOn: Binding(
+                        get: { s.enabled },
+                        set: { store.setSkillEnabled(id: s.id, $0) }
+                    ))
+                    Text("关掉后不拼进任何智能体的系统指令，内容留着，下次打开接着用。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("描述（一行）") {
+                    TextField("一句话说明这个技能是干什么的", text: Binding(
+                        get: { s.summary },
+                        set: { store.setSkillSummary(id: s.id, summary: $0) }
+                    ))
+                }
+                Section("内容（SKILL.md 正文）") {
                     Text(s.content).font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("挂到哪些智能体") {

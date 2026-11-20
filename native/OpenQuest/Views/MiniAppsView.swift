@@ -10,7 +10,7 @@ struct MiniAppsView: View {
     var body: some View {
         List {
             if store.miniApps.isEmpty {
-                Text("还没有小工具。新建一个：给它起个名字，就会生成一个能直接跑的网页小工具（改 index.html 就能改它）。")
+                Text("还没有小工具。新建一个：给它起个名字，就会生成一个能直接跑的网页小工具。")
                     .foregroundStyle(.secondary)
             }
             ForEach(store.miniApps) { app in
@@ -64,7 +64,7 @@ private struct AddMiniAppView: View {
         NavigationStack {
             Form {
                 TextField("小工具名字，如：倒计时", text: $name)
-                Text("新建会生成一个默认模板（app.json + index.html），跑起来就能看到效果；想改就改它的页面文件。")
+                Text("新建会生成一个默认模板（app.json + index.html），跑起来就能看到效果。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .navigationTitle("新建小工具")

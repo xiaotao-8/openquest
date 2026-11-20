@@ -62,38 +62,56 @@ struct HTMLCardView: View {
     let code: String
     let kind: Kind
     @State private var height: CGFloat = 200
+    @State private var showZoom = false
 
     var body: some View {
         HTMLWebView(html: document, height: $height)
             .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .stroke(Palette.stroke, lineWidth: 1))
+            // 点开放大（DDchat 补 6）：HTML 卡片只放大，Mermaid 图表放大 + 可保存为图片。
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.secondary)
+                    .padding(6)
+                    .background(Palette.background.opacity(0.9), in: Circle())
+                    .padding(6)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .onTapGesture { showZoom = true }
+            .fullScreenCover(isPresented: $showZoom) {
+                ChartZoomView(code: code, kind: kind)
+            }
     }
 
-    /// Mermaid 用打进包里的 mermaid.min.js 本地渲染，不依赖外网。
-    private var document: String {
+    private var document: String { Self.document(for: code, kind: kind) }
+
+    /// 卡片文档（浅色，配 Palette；Mermaid 用打进包里的 mermaid.min.js 本地渲染，不依赖外网）。
+    /// ChartZoomView 复用同一份文档，保证放大页和卡片看到的是同一张图。
+    static func document(for code: String, kind: Kind) -> String {
         switch kind {
         case .html:
             return """
             <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>body{margin:0;padding:8px;background:#111;color:#eee;font-family:-apple-system,BlinkMacSystemFont,sans-serif}</style>
+            <style>body{margin:0;padding:8px;background:#FFFFFF;color:#0C0C0D;font-family:-apple-system,BlinkMacSystemFont,sans-serif}</style>
             </head><body>\(code)</body></html>
             """
         case .mermaid:
             return """
             <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>body{margin:0;padding:8px;background:transparent;color:#fff;font-family:-apple-system,sans-serif}
+            <style>body{margin:0;padding:8px;background:#FFFFFF;color:#0C0C0D;font-family:-apple-system,sans-serif}
             .mermaid{display:flex;justify-content:center}</style>
             <script src="mermaid.min.js"></script>
             </head><body><pre class="mermaid">\(escape(code))</pre>
-            <script>mermaid.initialize({startOnLoad:true,theme:'dark'});</script>
+            <script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
             </body></html>
             """
         }
     }
 
-    private func escape(_ s: String) -> String {
+    private static func escape(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
@@ -102,9 +120,11 @@ struct HTMLCardView: View {
 
 /// WKWebView 包装：内容变了才重载；载完量一次正文高度，卡片跟着长，
 /// 内部不滚动，外层列表滚动。
-private struct HTMLWebView: UIViewRepresentable {
+/// onWebView 把建好的 WKWebView 交给调用方（放大页拿它截图保存）；卡片本身不用就传 nil。
+struct HTMLWebView: UIViewRepresentable {
     let html: String
     @Binding var height: CGFloat
+    var onWebView: ((WKWebView) -> Void)? = nil
 
     func makeUIView(context: Context) -> WKWebView {
         let wv = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -112,6 +132,7 @@ private struct HTMLWebView: UIViewRepresentable {
         wv.scrollView.isScrollEnabled = false
         wv.isOpaque = false
         wv.backgroundColor = .clear
+        onWebView?(wv)
         return wv
     }
 

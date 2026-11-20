@@ -119,7 +119,79 @@ workflows:
           xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewProviders
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-providers.png
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewCloud
+          sleep 12
+          xcrun simctl io "$SIM_UDID" screenshot preview-cloud.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewPermissions
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-permissions.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewAsk
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-ask.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewLog
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-log.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=agents
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-agents.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=skills
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-skills.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=plugins
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-plugins.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=connectors
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-connectors.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=browser
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-browser.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=schedules
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-schedules.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=miniapps
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-miniapps.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=language
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-language.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=usage
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-usage.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=soul
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-soul.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=memory
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-memory.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=envvars
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-envvars.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=update
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-update.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewPage=devicecaps
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-page-devicecaps.png
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png preview-cloud.png preview-permissions.png preview-ask.png preview-log.png preview-page-agents.png preview-page-skills.png preview-page-plugins.png preview-page-connectors.png preview-page-browser.png preview-page-schedules.png preview-page-miniapps.png preview-page-language.png preview-page-usage.png preview-page-soul.png preview-page-memory.png preview-page-envvars.png preview-page-update.png preview-page-devicecaps.png
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -139,4 +211,22 @@ workflows:
       - native/preview-dns.png
       - native/preview-livechat.png
       - native/preview-providers.png
+      - native/preview-cloud.png
+      - native/preview-permissions.png
+      - native/preview-ask.png
+      - native/preview-log.png
+      - native/preview-page-agents.png
+      - native/preview-page-skills.png
+      - native/preview-page-plugins.png
+      - native/preview-page-connectors.png
+      - native/preview-page-browser.png
+      - native/preview-page-schedules.png
+      - native/preview-page-miniapps.png
+      - native/preview-page-language.png
+      - native/preview-page-usage.png
+      - native/preview-page-soul.png
+      - native/preview-page-memory.png
+      - native/preview-page-envvars.png
+      - native/preview-page-update.png
+      - native/preview-page-devicecaps.png
       - native/OpenQuestNative-unsigned.ipa

@@ -5,12 +5,14 @@ struct Agent: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var name: String
     var soul: String = ""            // 人设/规矩，最高优先级，用户自己写
-    var providerKey: String = ""     // 服务商标识，如 agnes / zhipu / deepseek
+    var providerKey: String = ""     // 用户自己填的供应商标识
     var modelId: String = ""         // 该智能体用的模型
     var tintHue: Double = 0.6        // 头像底色（首字 disc，不用 emoji、不用 App 图标）
     var initial: String { String(name.prefix(1)) }
     // 思考档位：""=跟模型默认，off/low/medium/high（DDchat/Minis/FishPocket 三家都有）。
     var effort: String = ""
+    // 绑定的模型组（ModelGroup.id 的字符串，""=没绑组，直接用上面选的单个模型）。
+    var modelGroupId: String = ""
     // 生成参数（DDchat）：前置词/后置词包在每条用户消息外；temperature/Top-P 进请求体。
     var prefix: String = ""
     var suffix: String = ""
@@ -66,18 +68,56 @@ struct Message: Identifiable, Codable, Equatable {
     var fileText: String? = nil      // 文本类文件内容（截取后随消息发给模型）
     var usagePrompt: Int? = nil      // 本条回复的用量（SSE usage 段）：输入 tokens
     var usageCompletion: Int? = nil  // 输出 tokens
+    // 用量归属快照（Minis ChatStore+UsageStats.swift 的 per-message snapshot）：
+    // 写用量时同时记下当时的供应商/模型，之后换模型、删供应商也不会把旧用量
+    // 算到别的模型头上。没快照的老记录按发送智能体当前用的模型估算，界面标“估算”。
+    var usageProvider: String? = nil
+    var usageModel: String? = nil
     var eventKind: String? = nil     // 群轮次事件行：failed / missed / admin-passed / paused
     var variantOf: UUID? = nil       // 分支：同组重新生成的回复共用一个根 id
     var variantIndex: Int = 0        // 分支序号（0=第一版）
 }
 
+/// 供应商类型（协议类型，只定接口格式，不许做成具体厂商预设）。
+/// 可扩展的结构：以后加新协议类型只加一个 case + 对应格式，不用重构。
+/// 本轮只实现 OpenAI 兼容一种——不要为凑数硬加没实现的协议类型。
+enum ProviderKind: String, Codable, CaseIterable {
+    case openai   // OpenAI 兼容：chat completions 格式
+
+    var label: String {
+        switch self {
+        case .openai: return "OpenAI 兼容"
+        }
+    }
+
+    /// 接口根地址缺默认路径时自动补的后缀（OpenAI 兼容：缺 /v1 就补 /v1）。
+    var defaultPathSuffix: String {
+        switch self {
+        case .openai: return "/v1"
+        }
+    }
+}
+
 /// 一个模型供应商：用户自己添加——名字、接口地址（OpenAI 兼容）、Key；
-/// 下面可再添加任意个模型。App 只预置入口，不预置 Key。
+/// 下面可再添加任意个模型。不预置任何供应商和模型，全由用户自己填。
 struct ModelProvider: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
-    var name: String                 // 如 Agnes、智谱、DeepSeek，或用户自填
-    var baseURL: String              // 如 https://api.agnes-ai.cn/v1
+    var name: String                 // 用户自己起的名字
+    var baseURL: String              // 如 https://api.example.com/v1
+    var kind: ProviderKind = .openai // 类型（协议类型，只定接口格式）
     var models: [AIModel] = []
+
+    /// 归一化后的接口根地址：去尾斜杠；OpenAI 兼容且末段不是 /v1 时自动补 /v1。
+    /// 保存供应商时就按这个存，聊天、拉模型列表、翻译都直接用存好的地址。
+    var apiBaseURL: String {
+        let trimmed = baseURL.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if kind == .openai,
+           URL(string: trimmed)?.lastPathComponent != "v1" {
+            return trimmed + kind.defaultPathSuffix
+        }
+        return trimmed
+    }
     // 自定义请求头（DDchat）：每行一个 "Key: Value"，该供应商的每次请求都带上。
     var customHeaders: String = ""
     /// 解析 customHeaders：每行 "Key: Value"，没冒号、键或值为空的行直接忽略。
@@ -99,9 +139,12 @@ struct ModelProvider: Identifiable, Codable, Equatable {
 
 /// 供应商下面的一个模型。
 struct AIModel: Identifiable, Codable, Equatable {
-    var id: String                   // 模型 id，如 agnes-2.5-flash
+    var id: String                   // 模型 id，如 deepseek-chat
     var displayName: String = ""     // 显示名，空则用 id
     var name: String { displayName.isEmpty ? id : displayName }
+    // 每模型的思考档位（Minis ThinkingLevel，见下面）：""=跟智能体/默认，off/low/
+    // medium/high/xhigh/max。智能体没单独设档位时就用这里的；两个都没设跟模型默认。
+    var effort: String = ""
     // 能力自动检测（DDchat）：从模型 id/名字推断，只作提示，不拦着用。
     // nil=没检测出（按支持处理，控件照常显示）；true/false=检测有/没有。
     var supportsReasoning: Bool? = nil  // 深度思考（思考档位）
@@ -117,6 +160,29 @@ struct Skill: Identifiable, Codable, Equatable {
     var name: String
     var content: String              // 技能正文（指令）
     var agentIds: [UUID] = []        // 对哪些智能体生效
+    var enabled: Bool = true         // 总开关：关了就不拼进任何智能体的系统指令
+    var summary: String = ""         // 一行描述（SKILL.md frontmatter 的 description，没有就取正文首行）
+
+    /// 从 SKILL.md 正文提一行描述：frontmatter 的 description: 行优先，
+    /// 没有就取正文第一个非空行（去掉 # 号、截 120 字）。
+    static func summaryOf(content: String) -> String {
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.lowercased().hasPrefix("description:") {
+                let v = t.dropFirst("description:".count).trimmingCharacters(in: .whitespaces)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                if !v.isEmpty { return String(v.prefix(120)) }
+            }
+        }
+        for line in lines {
+            var t = line.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty || t == "---" { continue }
+            while t.hasPrefix("#") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            if !t.isEmpty { return String(t.prefix(120)) }
+        }
+        return ""
+    }
 }
 
 /// 一个 DSH 风格插件包（单文件 JSON 清单）：用户在 App 内下载/粘贴安装。
@@ -147,7 +213,6 @@ let builtinConnectors: [Connector] = [
     Connector(id: "yuque",    name: "语雀",     summary: "知识库文档读写"),
     Connector(id: "gitee",    name: "Gitee",    summary: "代码仓库、Issue"),
     Connector(id: "bocha",    name: "博查搜索", summary: "国内网页搜索"),
-    Connector(id: "aliyun",   name: "阿里云",   summary: "云服务器管理"),
 ]
 
 /// 定时任务（FishPocket）：按智能体或按群，到点发一条指令开工。
@@ -208,10 +273,10 @@ let builtinDeviceCapabilities: [DeviceCapability] = [
 ]
 
 /// 用户自己的服务器（阿里云香港 ECS）：智能体常驻主机。
-/// 地址可改；令牌存 Keychain，不进 JSON 快照。
+/// 地址写死在代码里，用户侧不选、不改；令牌打包时注入，不进 JSON 快照。
 struct ServerConfig: Codable, Equatable {
-    var host: String = "47.238.160.204"
-    var port: Int = 18789
+    let host: String = "47.238.160.204"
+    let port: Int = 18789
     var tokenRef: String = "server-main"
     var baseURL: String { "http://\(host):\(port)" }
 }
@@ -241,4 +306,119 @@ struct Conversation: Identifiable, Codable, Equatable {
     var stoppedMembers: [UUID] = []      // 被单独停下的成员
     var variantSelection: [String: Int] = [:]  // 分支显示：variantOf UUID 字符串 -> 选中的序号
     var autoReplyPending: Bool = false   // 定时任务到点：下一条用户消息已就位，打开就回
+}
+
+// MARK: - 供应商/模型管理（Minis 核心）
+
+/// 思考档位（Minis `ThinkingLevel`，Providers/LLMTypes.swift:1105-1112：
+/// off/low/medium/high/xhigh/max/ultra；ultra 是客户端“Max + 编排”概念，
+/// 线上值封顶 max，这里只做到 max）。档位存在智能体或模型配置里，""=跟模型默认。
+enum ThinkingLevel: String, Codable, CaseIterable {
+    case off, low, medium, high, xhigh, max
+
+    /// 全部可选值（含“跟模型默认”空档），供 Picker 用。
+    static var allOptions: [String] { [""] + allCases.map { $0.rawValue } }
+
+    var label: String {
+        switch self {
+        case .off: return "关"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .xhigh: return "超高"
+        case .max: return "最高"
+        }
+    }
+
+    /// 中文名（含“跟模型默认”），供界面显示。
+    static func label(for raw: String) -> String {
+        if raw.isEmpty { return "跟模型默认" }
+        return ThinkingLevel(rawValue: raw)?.label ?? raw
+    }
+
+    /// 写进请求体的值（Minis OpenAIAgentProvider.reasoningEffort，
+    /// Providers/OpenAI/OpenAIAgentProvider.swift:1230-1247：xhigh→"xhigh"，
+    /// max→"max"；off/空不发）。AgentRunner 按这个发 reasoning_effort。
+    static func wireValue(for raw: String) -> String? {
+        switch raw {
+        case "low", "medium", "high", "xhigh", "max": return raw
+        default: return nil
+        }
+    }
+}
+
+/// 模型组（Minis `ModelGroup`，Providers/ModelGroup.swift:22-28）：
+/// 一个组内多个模型，主模型失败时按顺序兜底；组可在聊天里直接选用。
+/// 成员用 "{供应商 id}:{模型 id}" 拼（Minis 的复合 id 是 "{instanceId}:{modelId}"）。
+struct ModelGroup: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var memberRefs: [String] = []    // 顺序就是兜底顺序
+    var strategy: String = "fallback"      // fallback=按顺序兜底 / loadBalance=按会话分流
+    var fallbackStrategy: String = "limited" // limited=只在供应商级错误时兜底 / always=任何错误都兜底
+    var defaultThinkingLevel: String = ""  // 组默认思考档位，""=不覆盖成员各自的档位
+
+    /// 成员引用：供应商 id + 模型 id。
+    static func ref(providerId: UUID, modelId: String) -> String {
+        "\(providerId.uuidString):\(modelId)"
+    }
+
+    /// 按顺序解析出还存在的成员（供应商或模型被删了就跳过，不报错）。
+    /// Minis ModelGroupRouter.resolve：fallback 策略取第一个可用成员。
+    func members(providers: [ModelProvider]) -> [(provider: ModelProvider, model: AIModel)] {
+        var out: [(provider: ModelProvider, model: AIModel)] = []
+        for ref in memberRefs {
+            let parts = ref.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2,
+                  let p = providers.first(where: { $0.id.uuidString == parts[0] }),
+                  let m = p.models.first(where: { $0.id == parts[1] })
+            else { continue }
+            out.append((p, m))
+        }
+        return out
+    }
+
+    /// 首选成员（fallback 策略的第一个可用成员；loadBalance 按会话 id 确定性分流，
+    /// Minis ModelGroupRouter.resolve：index = abs(sessionId.hashValue) % count）。
+    func firstMember(providers: [ModelProvider], sessionId: String? = nil) -> (provider: ModelProvider, model: AIModel)? {
+        let ms = members(providers: providers)
+        guard !ms.isEmpty else { return nil }
+        if strategy == "loadBalance", let sid = sessionId {
+            return ms[abs(sid.hashValue) % ms.count]
+        }
+        return ms[0]
+    }
+
+    /// 下一个兜底成员（Minis ModelGroupRouter.nextFallback：从当前往后找，
+    /// 到头再从头绕一圈；没有了返回 nil）。
+    func nextFallback(after ref: String, providers: [ModelProvider]) -> (provider: ModelProvider, model: AIModel)? {
+        let ms = members(providers: providers)
+        guard ms.count > 1 else { return nil }
+        let refs = ms.map { ModelGroup.ref(providerId: $0.provider.id, modelId: $0.model.id) }
+        guard let idx = refs.firstIndex(of: ref) else { return ms[0] }
+        let next = idx + 1
+        return next < ms.count ? ms[next] : nil
+    }
+}
+
+/// 环境变量（Minis `EnvVarEntry`，Shared/EnvVarStore.swift：
+/// id/key/createdAt/note；值是秘密，另存 Keychain，不进 JSON 快照）。
+/// 智能体工具调用时注入，供 shell/脚本里用；默认启用，可逐个关。
+struct EnvVar: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var key: String
+    var note: String = ""
+    var enabled: Bool = true
+    var createdAt: Date = Date()
+    /// 值的 Keychain 引用。
+    var valueRef: String { "envvar-\(id.uuidString)" }
+}
+
+/// 全局记忆的一条每日日志（Minis：GLOBAL.md + 按日记的 daily logs，
+/// AIChatViewModel+MemoryTools.swift：最近 3 条有内容的日志进系统提示）。
+/// 存在本地 AppStore 快照里；服务器端按智能体的 MEMORY.md 另有一套，不冲突。
+struct DailyMemoryLog: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var day: Date = Date()           // 当天 0 点
+    var content: String = ""
 }

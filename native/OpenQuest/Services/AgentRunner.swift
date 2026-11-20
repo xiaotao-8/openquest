@@ -34,22 +34,30 @@ struct AgentRunner {
                onSpawnSubagent: ((String, String) async -> String)? = nil,
                capabilities: Set<String> = [],
                webSearch: Bool = false,
+               fallbacks: [(provider: ModelProvider, model: AIModel)] = [],
+               effectiveEffort: String = "",
+               soulContext: String = "",
+               globalMemoryContext: String = "",
+               recentDailyLogsContext: String = "",
+               onUsedModel: ((String, String) -> Void)? = nil,
                onDelta: @escaping (String, String) -> Void) async throws -> TurnResult {
-        guard let key = KeychainHelper.key(ref: provider.keyRef), !key.isEmpty else {
-            throw RunnerError.noKey
-        }
-        let url = URL(string: provider.baseURL.trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions")!
-        var messages: [[String: Any]] = []
-        // 内置人设是基础层：每个智能体、每次调用都带，在自设人设之下。
-        // 层级：用户自设人设（Soul）置顶最高优先，其下是写死的内置人设基础层。
+        // 系统提示组装（顺序不能反）：全局 Soul 片段在最上，再叠智能体自设人设 +
+        // 【执行要求】，再叠写死的 BakedPersona（原样不动，只叠加）；全局记忆与
+        // 每日日志是背景信息，放人设之后、技能之前。
         var system = ""
+        if !soulContext.isEmpty {
+            system = soulContext
+        }
         if !agent.soul.isEmpty {
-            system = agent.soul
+            system += (system.isEmpty ? "" : "\n\n") + agent.soul
                 + "\n\n【执行要求】以上人设与规则是最高优先级，必须严格照做：始终按设定的人设、身份、语气和规矩行事；用户的问题要直接回答，不无故拒绝、不逃避、不绕开话题；交给你的任务要实际执行——该调用工具就调用工具真干，不许拒绝执行，也不许只给建议、只说方法不干活。"
-            system += "\n\n" + BakedPersona.text
-        } else {
-            system = BakedPersona.text
+        }
+        system += (system.isEmpty ? "" : "\n\n") + BakedPersona.text
+        if !globalMemoryContext.isEmpty {
+            system += "\n\n" + globalMemoryContext
+        }
+        if !recentDailyLogsContext.isEmpty {
+            system += "\n\n" + recentDailyLogsContext
         }
         if !skillsContext.isEmpty {
             system += (system.isEmpty ? "" : "\n\n") + skillsContext
@@ -72,139 +80,191 @@ struct AgentRunner {
                 system += "\n\n【上下文已自动压缩：更早的 \(dropped) 条消息已省略】"
             }
         }
+        // 基础消息（与模型无关的部分）：系统提示 + 历史 + 末尾底层规则 + 图片。
+        // 兜底重试时每轮从这份拷贝重开，不把上一轮的工具消息带过去。
+        var baseMessages: [[String: Any]] = []
         if !system.isEmpty {
-            messages.append(["role": "system", "content": system])
+            baseMessages.append(["role": "system", "content": system])
         }
         for h in history {
-            messages.append(["role": h.role, "content": h.content])
+            baseMessages.append(["role": h.role, "content": h.content])
         }
         // 底层逻辑：在对话末尾再钉一条系统提醒（多数模型最听最后一条），
         // 保证不是只在开头说说而已——每轮都强制带上，关不掉。
-        messages.append(["role": "system",
-                         "content": "【底层规则】始终按你的人设行事；直接回答用户的问题，不无故拒绝、不逃避、不绕开话题；任务要真执行，不许拒绝执行、不许只给建议不干活。"])
+        baseMessages.append(["role": "system",
+                             "content": "【底层规则】始终按你的人设行事；直接回答用户的问题，不无故拒绝、不逃避、不绕开话题；任务要真执行，不许拒绝执行、不许只给建议不干活。"])
         // 图片挂在最后一条用户消息上（视觉模型的多模态格式）。
         if let imageJPEG,
-           let idx = messages.lastIndex(where: { ($0["role"] as? String) == "user" }) {
-            let text = messages[idx]["content"] as? String ?? ""
-            messages[idx]["content"] = [
+           let idx = baseMessages.lastIndex(where: { ($0["role"] as? String) == "user" }) {
+            let text = baseMessages[idx]["content"] as? String ?? ""
+            baseMessages[idx]["content"] = [
                 ["type": "text", "text": text],
                 ["type": "image_url",
                  "image_url": ["url": "data:image/jpeg;base64,\(imageJPEG.base64EncodedString())"]],
             ]
         }
 
-        var reasoningAll = ""
-        var contentAll = ""
-        var usageTotal: (prompt: Int, completion: Int)? = nil
-        for _ in 0..<6 {  // 最多 6 轮工具调用，防死循环乱调
-            var req = URLRequest(url: url)
-            req.httpMethod = "POST"
-            req.timeoutInterval = 120
-            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            // 自定义请求头（DDchat）：供应商页里每行一个 "Key: Value"；
-            // Authorization 和 Content-Type 归 App 管，自定义头不覆盖。
-            for (k, v) in provider.parsedCustomHeaders {
-                let lower = k.lowercased()
-                guard lower != "authorization", lower != "content-type" else { continue }
-                req.setValue(v, forHTTPHeaderField: k)
+        // 模型组兜底重试（Minis streamWithGroupFallback）：主模型失败 → 按组顺序
+        // 换下一个，直到成功或列表用完。没传列表 = 当前单个模型（老行为）。
+        // 已执行过工具的轮次不再重试（工具可能有副作用，不能换模型重跑一遍）。
+        let candidates: [(provider: ModelProvider, model: AIModel)] =
+            fallbacks.isEmpty ? [(provider, AIModel(id: agent.modelId))] : fallbacks
+        var lastError: Error?
+        candidateLoop: for candidate in candidates {
+            guard let key = KeychainHelper.key(ref: candidate.provider.keyRef), !key.isEmpty else {
+                lastError = RunnerError.noKey
+                continue candidateLoop
             }
-            var body: [String: Any] = [
-                "model": agent.modelId,
-                "messages": messages,
-                "tools": AgentTools.definitions(capabilities: capabilities),
-                "stream": true,
-                "temperature": agent.temperature,
-                "top_p": agent.topP,
-                "stream_options": ["include_usage": true],
-            ]
-            // 思考档位：low/medium/high 发给模型；off 或空 = 跟模型默认。
-            if agent.effort == "low" || agent.effort == "medium" || agent.effort == "high" {
-                body["reasoning_effort"] = agent.effort
-            }
-            req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (bytes, resp) = try await Net.session.bytes(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            guard code == 200 else { throw RunnerError.badStatus(code) }
+            let url = URL(string: candidate.provider.baseURL.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions")!
+            var messages = baseMessages
+            var reasoningAll = ""
+            var contentAll = ""
+            var usageTotal: (prompt: Int, completion: Int)? = nil
+            var toolsExecuted = false
+            do {
+                for _ in 0..<6 {  // 最多 6 轮工具调用，防死循环乱调
+                    var req = URLRequest(url: url)
+                    req.httpMethod = "POST"
+                    req.timeoutInterval = 120
+                    req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    // 自定义请求头（DDchat）：供应商页里每行一个 "Key: Value"；
+                    // Authorization 和 Content-Type 归 App 管，自定义头不覆盖。
+                    for (k, v) in candidate.provider.parsedCustomHeaders {
+                        let lower = k.lowercased()
+                        guard lower != "authorization", lower != "content-type" else { continue }
+                        req.setValue(v, forHTTPHeaderField: k)
+                    }
+                    var body: [String: Any] = [
+                    "model": candidate.model.id,
+                    "messages": messages,
+                    "tools": AgentTools.definitions(capabilities: capabilities),
+                    "stream": true,
+                    "temperature": agent.temperature,
+                    "top_p": agent.topP,
+                    "stream_options": ["include_usage": true],
+                    ]
+                    // 思考档位：effectiveEffort（智能体 > 模型 > 组默认）经 wireValue 发
+                    // reasoning_effort；xhigh/max 也发到线上，off/空不发。
+                    let effortRaw = effectiveEffort.isEmpty ? agent.effort : effectiveEffort
+                    if let wire = ThinkingLevel.wireValue(for: effortRaw) {
+                        body["reasoning_effort"] = wire
+                    }
+                    req.httpBody = try JSONSerialization.data(withJSONObject: body)
+                    let (bytes, resp) = try await Net.session.bytes(for: req)
+                    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                    guard code == 200 else { throw RunnerError.badStatus(code) }
 
-            // 拼流式分片：正文、思考、工具调用（按 index 分片拼参数）。
-            var toolCalls: [Int: (id: String, name: String, args: String)] = [:]
-            for try await line in bytes.lines {
-                guard line.hasPrefix("data:") else { continue }
-                let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                if payload == "[DONE]" { break }
-                guard let data = payload.data(using: .utf8),
-                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                else { continue }
-                // usage 在最后一个分片里单独来（没有 delta），先抓再说。
-                if let u = root["usage"] as? [String: Any],
-                   let pt = u["prompt_tokens"] as? Int,
-                   let ct = u["completion_tokens"] as? Int {
-                    usageTotal = (pt, ct)
-                }
-                guard let delta = (root["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any]
-                else { continue }
-                if let c = delta["content"] as? String { contentAll += c }
-                if let r = delta["reasoning_content"] as? String { reasoningAll += r }
-                if let r = delta["reasoning"] as? String { reasoningAll += r }
-                if let calls = delta["tool_calls"] as? [[String: Any]] {
-                    for call in calls {
-                        let idx = call["index"] as? Int ?? 0
-                        var cur = toolCalls[idx] ?? (id: "", name: "", args: "")
-                        if let id = call["id"] as? String { cur.id = id }
-                        if let fn = call["function"] as? [String: Any] {
-                            if let n = fn["name"] as? String { cur.name += n }
-                            if let a = fn["arguments"] as? String { cur.args += a }
+                    // 拼流式分片：正文、思考、工具调用（按 index 分片拼参数）。
+                    var toolCalls: [Int: (id: String, name: String, args: String)] = [:]
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        if payload == "[DONE]" { break }
+                        guard let data = payload.data(using: .utf8),
+                        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        else { continue }
+                        // usage 在最后一个分片里单独来（没有 delta），先抓再说。
+                        if let u = root["usage"] as? [String: Any],
+                        let pt = u["prompt_tokens"] as? Int,
+                        let ct = u["completion_tokens"] as? Int {
+                            usageTotal = (pt, ct)
                         }
-                        toolCalls[idx] = cur
+                        guard let delta = (root["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any]
+                        else { continue }
+                        if let c = delta["content"] as? String { contentAll += c }
+                        if let r = delta["reasoning_content"] as? String { reasoningAll += r }
+                        if let r = delta["reasoning"] as? String { reasoningAll += r }
+                        if let calls = delta["tool_calls"] as? [[String: Any]] {
+                            for call in calls {
+                                let idx = call["index"] as? Int ?? 0
+                                var cur = toolCalls[idx] ?? (id: "", name: "", args: "")
+                                if let id = call["id"] as? String { cur.id = id }
+                                if let fn = call["function"] as? [String: Any] {
+                                    if let n = fn["name"] as? String { cur.name += n }
+                                    if let a = fn["arguments"] as? String { cur.args += a }
+                                }
+                                toolCalls[idx] = cur
+                            }
+                        }
+                        onDelta(contentAll, reasoningAll)
                     }
-                }
-                onDelta(contentAll, reasoningAll)
-            }
 
-            if !toolCalls.isEmpty {
-                let ordered = toolCalls.sorted { $0.key < $1.key }.map { $0.value }
-                // 提问卡 / 审批卡要等用户在界面上作答：直接把卡片交出去，本轮结束。
-                for call in ordered {
-                    if call.name == AgentTools.askUserName, let card = Self.askCard(from: call.args) {
-                        return .card(card)
+                    if !toolCalls.isEmpty {
+                        let ordered = toolCalls.sorted { $0.key < $1.key }.map { $0.value }
+                        // 提问卡 / 审批卡要等用户在界面上作答：直接把卡片交出去，本轮结束。
+                        for call in ordered {
+                            if call.name == AgentTools.askUserName, let card = Self.askCard(from: call.args) {
+                                return .card(card)
+                            }
+                            if call.name == AgentTools.approvalName, let card = Self.approvalCard(from: call.args) {
+                                return .card(card)
+                            }
+                        }
+                        messages.append([
+                        "role": "assistant",
+                        "content": contentAll,
+                        "tool_calls": ordered.map { call in
+                            ["id": call.id, "type": "function",
+                            "function": ["name": call.name, "arguments": call.args]] as [String: Any]
+                        },
+                        ])
+                        toolsExecuted = true
+                        for call in ordered {
+                            let result: String
+                            if call.name == AgentTools.spawnSubagentName {
+                                // 派活也要过权限档位（AgentTools.execute 的检查走不到这里，
+                                // 因为 AgentRunner 在调 execute 之前就直接 runSpawn）。
+                                // 拒绝/询问与 execute 里同一文案；批了之后重跑走 execute →
+                                // run() 里的 sharedSpawn 桥，真派活。
+                                let label = AgentTools.toolLabel(name: call.name, argumentsJSON: call.args)
+                                switch PermissionsStore.shared.level(for: AgentTools.spawnSubagentName) {
+                                case .denied:
+                                    onToolEvent?(AgentTools.ToolCallEvent.encodeStart(callId: call.id, name: call.name, label: "已禁止：\(label)"), nil)
+                                    onToolEvent?(AgentTools.ToolCallEvent.encodeDone(callId: call.id, name: call.name, label: "已禁止：\(label)", seconds: 0, ok: false), nil)
+                                    result = "这个工具已被禁止：\(call.name)（去设置 → 权限里把它的档位改成“每次询问”或“跳过审批”再试）。不要重复调用。"
+                                case .ask:
+                                    onToolEvent?(AgentTools.ToolApprovalEvent.encodeTool(callId: call.id, name: call.name, argumentsJSON: call.args, agentId: agent.id.uuidString, workDir: agent.workDir, label: label), nil)
+                                    result = "（调用 \(label) 已弹审批卡，等用户批复：请先结束本轮，不要重复调用；批复结果会当作新消息发给你。）"
+                                case .bypass:
+                                    let started = Date()
+                                    onToolEvent?(AgentTools.ToolCallEvent.encodeStart(callId: call.id, name: call.name, label: label), nil)
+                                    let r = await Self.runSpawn(call: call, onSpawn: onSpawnSubagent)
+                                    let ok = !r.hasPrefix("参数不对") && !r.hasPrefix("子智能体没配好")
+                                    onToolEvent?(AgentTools.ToolCallEvent.encodeDone(callId: call.id, name: call.name, label: label, seconds: Date().timeIntervalSince(started), ok: ok), nil)
+                                    result = r
+                                }
+                            } else {
+                                result = await AgentTools.execute(
+                                name: call.name, argumentsJSON: call.args,
+                                agentId: agent.id.uuidString, server: server,
+                                workDir: agent.workDir, onEvent: onToolEvent)
+                            }
+                            messages.append([
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": result,
+                            ])
+                        }
+                        contentAll = ""
+                        continue
                     }
-                    if call.name == AgentTools.approvalName, let card = Self.approvalCard(from: call.args) {
-                        return .card(card)
-                    }
+                    let finalText = contentAll.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onUsedModel?(candidate.provider.name, candidate.model.id)
+                    return .text(finalText, reasoning: reasoningAll.isEmpty ? nil : reasoningAll,
+                    usage: usageTotal)
                 }
-                messages.append([
-                    "role": "assistant",
-                    "content": contentAll,
-                    "tool_calls": ordered.map { call in
-                        ["id": call.id, "type": "function",
-                         "function": ["name": call.name, "arguments": call.args]] as [String: Any]
-                    },
-                ])
-                for call in ordered {
-                    let result: String
-                    if call.name == AgentTools.spawnSubagentName {
-                        result = await Self.runSpawn(call: call, onSpawn: onSpawnSubagent)
-                    } else {
-                        result = await AgentTools.execute(
-                            name: call.name, argumentsJSON: call.args,
-                            agentId: agent.id.uuidString, server: server,
-                            workDir: agent.workDir, onEvent: onToolEvent)
-                    }
-                    messages.append([
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": result,
-                    ])
-                }
-                contentAll = ""
-                continue
+                onUsedModel?(candidate.provider.name, candidate.model.id)
+                return .text("（工具调用轮数用完了，先停一下）", reasoning: nil)
+            } catch {
+                // 换模型重试只在还没执行过工具时才安全；已执行过（有副作用）就直接抛错。
+                if toolsExecuted { throw error }
+                lastError = error
+                continue candidateLoop
             }
-            let finalText = contentAll.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .text(finalText, reasoning: reasoningAll.isEmpty ? nil : reasoningAll,
-                         usage: usageTotal)
         }
-        return .text("（工具调用轮数用完了，先停一下）", reasoning: nil)
+        throw lastError ?? RunnerError.badResponse
     }
 
     private static func parseArgs(_ json: String) -> [String: Any]? {
