@@ -5,7 +5,14 @@ import Security
 enum KeychainHelper {
     private static let service = "com.xiaotao.openquest.providers"
 
-    static func setKey(_ key: String, ref: String) {
+    /// 同进程缓存：钥匙串写失败时（模拟器偶发），当次启动不丢 Key；
+    /// 钥匙串仍是跨启动的唯一真相来源，缓存只补当次。
+    private static var cache: [String: String] = [:]
+    private static let cacheLock = NSLock()
+
+    /// 返回 SecItemAdd 的状态码（errSecSuccess = 0）；调用方需要时可打印诊断。
+    @discardableResult
+    static func setKey(_ key: String, ref: String) -> OSStatus {
         let data = Data(key.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -15,10 +22,13 @@ enum KeychainHelper {
         SecItemDelete(query as CFDictionary)
         var attrs = query
         attrs[kSecValueData as String] = data
-        SecItemAdd(attrs as CFDictionary, nil)
+        let status = SecItemAdd(attrs as CFDictionary, nil)
+        cacheLock.withLock { cache[ref] = key }
+        return status
     }
 
     static func key(ref: String) -> String? {
+        if let cached = cacheLock.withLock({ cache[ref] }) { return cached }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -34,6 +44,7 @@ enum KeychainHelper {
     }
 
     static func deleteKey(ref: String) {
+        cacheLock.withLock { cache.removeValue(forKey: ref) }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

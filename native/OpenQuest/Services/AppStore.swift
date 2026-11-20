@@ -70,7 +70,9 @@ final class AppStore: ObservableObject {
                               baseURL: "http://47.238.160.204:8080/liveproof/v1",
                               models: [AIModel(id: "agnes-2.5-flash")])
         providers = [p]
-        KeychainHelper.setKey("oq-liveproof-2026", ref: p.keyRef)
+        let status = KeychainHelper.setKey("oq-liveproof-2026", ref: p.keyRef)
+        let roundTrip = KeychainHelper.key(ref: p.keyRef) == "oq-liveproof-2026"
+        print("[LiveChat] seed keychain status=\(status) roundTrip=\(roundTrip)")
         var a = Agent(name: "助手", tintHue: 0.62)
         a.providerKey = p.id.uuidString
         a.modelId = "agnes-2.5-flash"
