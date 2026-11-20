@@ -47,7 +47,7 @@ struct CloudComputerView: View {
             await refreshHealth()
             await refreshFiles()
         }
-        .overlay {
+        .overlay(alignment: .center) {
             if showBrowser {
                 MiniWindow(title: "服务器浏览器", onClose: { showBrowser = false }) {
                     BrowserView()

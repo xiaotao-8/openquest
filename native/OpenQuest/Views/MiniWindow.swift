@@ -4,9 +4,11 @@ import SwiftUI
 /// 浮在内容上：标题栏可拖动，右上角有关闭和展开按钮。
 /// 浏览器小窗、干活小窗、审批小窗都用它，不再各写一套。
 ///
-/// 尺寸直接取屏幕（UIScreen.main.bounds），不用 overlay 里 GeometryReader
-/// 量的宿主尺寸——实测 #25：宿主量出来的高比屏幕大，小窗被撑到约 75% 屏高，
-/// 盖住了对话；按屏幕算才是准确的 80% × 45% 居中。
+/// 尺寸直接取屏幕（UIScreen.main.bounds），居中由宿主 overlay 负责，
+/// 本组件不做 `.position`——实测 #25/#26：`.frame` + `.position` 的组合
+/// 在 overlay 里框不住高度（#25 约 75% 屏高，#26 改 UIScreen 后仍约 70%，
+/// 内容把框撑大了）；去掉 `.position`、只留 `.frame` + `.clipped()`，
+/// 框就是准确的 80% × 45%。
 struct MiniWindow<Content: View>: View {
     let title: String
     let onClose: () -> Void
@@ -79,12 +81,12 @@ struct MiniWindow<Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: w, height: h)
+        .clipped()
         .background(Palette.background,
                     in: RoundedRectangle(cornerRadius: expanded ? 0 : 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: expanded ? 0 : 20, style: .continuous)
             .stroke(Palette.stroke, lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
-        .position(x: screen.width / 2, y: screen.height / 2)
         .offset(totalOffset)
         .animation(.snappy(duration: 0.25), value: expanded)
     }

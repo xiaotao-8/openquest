@@ -463,7 +463,7 @@ struct ChatView: View {
         .sheet(isPresented: $showingGroupSettings) {
             GroupSettingsView(conversationId: conversationId)
         }
-        .overlay {
+        .overlay(alignment: .center) {
             browserWindow
                 .animation(.easeInOut(duration: 0.25), value: liveShot != nil)
         }
