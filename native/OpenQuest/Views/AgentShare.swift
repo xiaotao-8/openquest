@@ -76,6 +76,7 @@ enum AgentShare {
 
     /// 复制一份：改名另存（名字后加“副本”，重名自动加序号），返回新智能体。
     @discardableResult
+    @MainActor
     static func duplicate(store: AppStore, agent: Agent) -> Agent {
         var name = agent.name + " 副本"
         var n = 2
@@ -104,6 +105,7 @@ enum AgentShare {
     }
 
     /// 从剪贴板导入：剪贴板里是助手 JSON 就新建一个智能体；不是则返回失败原因。
+    @MainActor
     static func importFromClipboard(store: AppStore) -> Result<Agent, AgentShareError> {
         guard let s = UIPasteboard.general.string,
               let data = s.data(using: .utf8),
@@ -116,6 +118,7 @@ enum AgentShare {
     }
 
     /// 从文件数据导入（.fileImporter 读到的 Data 走这里）。
+    @MainActor
     static func importFromData(_ data: Data, store: AppStore) -> Result<Agent, AgentShareError> {
         guard let e = decode(data) else {
             return .failure(AgentShareError(message: "这个文件不是助手 JSON：确认是从 OpenQuest 导出的助手文件。"))

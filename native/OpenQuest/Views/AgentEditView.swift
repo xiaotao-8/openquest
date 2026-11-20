@@ -258,32 +258,32 @@ enum AgentOptimizer {
 
         if s.contains("简洁") || s.contains("简短") || s.contains("精简") || s.contains("言简意赅") {
             addSoul("回答要简洁，每次不超过三句话，只说重点。",
-                    "人设：回答改简洁（不超过三句话）")
+                    note: "人设：回答改简洁（不超过三句话）")
             temperature = max(0, temperature - 0.2)
             summary.append("Temperature 调到 \(String(format: "%.1f", temperature))（更收敛）")
         }
         if s.contains("详细") || s.contains("深入") || s.contains("展开") || s.contains("全面") {
             addSoul("回答要详细全面，分点讲清楚来龙去脉。",
-                    "人设：回答改详细全面")
+                    note: "人设：回答改详细全面")
             temperature = min(2, temperature + 0.1)
             summary.append("Temperature 调到 \(String(format: "%.1f", temperature))（更发散）")
         }
         if s.contains("幽默") || s.contains("风趣") || s.contains("好玩") || s.contains("有趣") {
             addSoul("说话风趣幽默，偶尔讲个冷笑话，但不跑题。",
-                    "人设：说话改风趣幽默")
+                    note: "人设：说话改风趣幽默")
         }
         if s.contains("严谨") || s.contains("专业") || s.contains("准确") || s.contains("靠谱") {
             addSoul("回答要严谨准确，不确定的就说不确定，不要编造。",
-                    "人设：回答改严谨准确，不编造")
+                    note: "人设：回答改严谨准确，不编造")
             temperature = max(0, temperature - 0.1)
         }
         if s.contains("温柔") || s.contains("耐心") || s.contains("亲切") || s.contains("友好") {
             addSoul("语气温柔耐心，像朋友一样慢慢讲。",
-                    "人设：语气改温柔耐心")
+                    note: "人设：语气改温柔耐心")
         }
         if s.contains("代码") || s.contains("编程") || s.contains("写程序") {
             addSoul("写代码先给思路再给完整可跑的代码，标出关键步骤。",
-                    "人设：写代码先给思路再给完整代码")
+                    note: "人设：写代码先给思路再给完整代码")
             if effort.isEmpty {
                 effort = "medium"
                 summary.append("思考档位改成“中”（代码想深一点）")
@@ -291,11 +291,11 @@ enum AgentOptimizer {
         }
         if s.contains("翻译") {
             addSoul("翻译要信达雅，保留原文语气，难译的地方加一句说明。",
-                    "人设：翻译改信达雅")
+                    note: "人设：翻译改信达雅")
         }
         if s.contains("诗") || s.contains("文艺") || s.contains("浪漫") {
             addSoul("语言要有文采和画面感。",
-                    "人设：语言改有文采")
+                    note: "人设：语言改有文采")
         }
         if s.contains("记住") || s.contains("上下文") || s.contains("多轮") {
             if contextLength != 0, contextLength < 40 {
@@ -313,6 +313,7 @@ enum AgentOptimizer {
                         contextLength: contextLength, summary: summary)
     }
 
+    @MainActor
     static func apply(store: AppStore, agentId: UUID, proposal: Proposal) {
         guard let i = store.agents.firstIndex(where: { $0.id == agentId }) else { return }
         store.agents[i].soul = proposal.soul

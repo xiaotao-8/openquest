@@ -91,7 +91,7 @@ struct HomeView: View {
         }
         .alert("需要语音权限", isPresented: $dictation.showPermissionAlert) {
             Button("去设置") {
-                if let url = URL(string: UIApplication.shared.openSettingsURLString) {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
             }
