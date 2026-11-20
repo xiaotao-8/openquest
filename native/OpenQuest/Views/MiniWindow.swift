@@ -77,10 +77,18 @@ struct MiniWindow<Content: View>: View {
                         dragOffset = .zero
                     }
             )
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 内容区用 GeometryReader 量出标题栏剩下的准确尺寸再定框：
+            // 图片类内容自带理想高度（浏览器实拍帧按宽缩放后约 614pt），
+            // 若只给 maxHeight: .infinity，内容会把 VStack 撑到比框高，
+            // 框再居中一裁，标题栏就被推出框顶切掉了（#27 实测）。
+            // 这里把内容框死在剩余空间里，不再留撑大的余地。
+            GeometryReader { geo in
+                content()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            }
         }
-        .frame(width: w, height: h)
+        .frame(width: w, height: h, alignment: .top)
         .clipped()
         .background(Palette.background,
                     in: RoundedRectangle(cornerRadius: expanded ? 0 : 20, style: .continuous))
