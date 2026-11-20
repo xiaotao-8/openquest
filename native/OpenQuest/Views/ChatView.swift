@@ -443,14 +443,14 @@ struct ChatView: View {
         }
     }
 
-    private func updateMessage(id: UUID, text: String, reasoning: String?) {
+    private func updateMessage(id: UUID, text: String, reasoning: String?, save: Bool = true) {
         guard let ci = store.conversations.firstIndex(where: { $0.id == conversationId }),
               let mi = store.conversations[ci].messages.firstIndex(where: { $0.id == id })
         else { return }
         store.conversations[ci].messages[mi].text = text
         store.conversations[ci].messages[mi].reasoning = reasoning
         store.conversations[ci].lastActivity = Date()
-        store.save()
+        if save { store.save() }
     }
 
     private func removeMessage(id: UUID) {
@@ -514,14 +514,23 @@ struct ChatView: View {
                 }
             }
         }
+        // 流式刷新节流：原来每来一个 token 就改一次界面 + 全量写一次盘，
+        // 长回复必卡。改成 0.1 秒刷一次、流式过程不写盘；最终文本由 send()
+        // 里 updateMessage 一次写盘，不丢内容、不阉割功能。
+        var lastFlush = Date.distantPast
+        let flushStream: (String, String?) -> Void = { content, reasoning in
+            let now = Date()
+            guard now.timeIntervalSince(lastFlush) >= 0.1 else { return }
+            lastFlush = now
+            Task { @MainActor in
+                self.updateMessage(id: placeholderId, text: content, reasoning: reasoning, save: false)
+            }
+        }
         do {
             let first = try await runner.reply(
                 agent: agent, history: history, imageJPEG: lastImage,
                 skillsContext: skills, onToolEvent: toolEvent) { content, reasoning in
-                    Task { @MainActor in
-                        self.updateMessage(id: placeholderId, text: content,
-                                           reasoning: reasoning.isEmpty ? nil : reasoning)
-                    }
+                    flushStream(content, reasoning.isEmpty ? nil : reasoning)
                 }
             // 写死的底层逻辑（与模型无关）：设了人设，模型就没有把「拒绝」
             // 当最终答案的权利——软件检测到拒绝/逃避就不认，清空重答，
@@ -539,10 +548,7 @@ struct ChatView: View {
                     result = try await runner.reply(
                         agent: agent, history: forced, imageJPEG: lastImage,
                         skillsContext: skills, onToolEvent: toolEvent) { content, reasoning in
-                            Task { @MainActor in
-                                self.updateMessage(id: placeholderId, text: content,
-                                                   reasoning: reasoning.isEmpty ? nil : reasoning)
-                            }
+                            flushStream(content, reasoning.isEmpty ? nil : reasoning)
                         }
                 }
                 if case .text(let t, _) = result, Self.looksLikeRefusal(t) {
