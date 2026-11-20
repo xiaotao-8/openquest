@@ -97,6 +97,12 @@ struct ChatListView: View {
                 }
             }
         }
+        .onChange(of: store.openConversationId) { _, id in
+            guard let id,
+                  store.conversations.contains(where: { $0.id == id }) else { return }
+            store.openConversationId = nil
+            if !path.contains(id) { path.append(id) }
+        }
         .sheet(isPresented: $showingNewChat) { NewChatView() }
         .fileImporter(isPresented: $showingImport, allowedContentTypes: [.json]) { result in
             guard case .success(let url) = result else { return }

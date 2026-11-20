@@ -20,6 +20,10 @@ final class AppStore: ObservableObject {
     @Published var pluginStoreIndex: String = ""   // 插件商店当前用的索引源（""=没开）
     @Published var language: String = "zh-Hans"    // 界面语言（多语言设置）
     @Published var autoReplyTick: Int = 0           // 定时任务到点时 +1，聊天页监听后开工
+    /// 锁屏审批 deep link 回来后要打开的会话（ChatListView 监听，跳过去）。
+    @Published var openConversationId: UUID?
+    /// 锁屏审批 deep link 回来后的作答（ChatView 监听，是自己的会话就按卡片作答）。
+    @Published var deepLinkApproval: DeepLinkApproval?
 
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

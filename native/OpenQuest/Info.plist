@@ -10,5 +10,9 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 <key>UILaunchStoryboardName</key><string></string>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>com.xiaotao.openquest</string>
+<key>CFBundleURLSchemes</key><array><string>openquest</string></array>
+</dict></array>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
 </dict></plist>

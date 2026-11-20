@@ -132,6 +132,12 @@ let builtinConnectors: [Connector] = [
 
 /// 定时任务（FishPocket）：按智能体或按群，到点发一条指令开工。
 /// iOS 诚实做法：本地通知 + 打开 App 后执行到期的任务（后台常驻跑不了，不假装）。
+/// 锁屏审批 deep link 带来的作答：哪个会话、批不批准。
+struct DeepLinkApproval: Equatable {
+    var convId: UUID
+    var approve: Bool
+}
+
 struct ScheduledTask: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var targetKind: String = "agent"  // agent=某个智能体，room=某个群

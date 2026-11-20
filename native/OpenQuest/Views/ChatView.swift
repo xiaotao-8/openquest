@@ -433,6 +433,26 @@ struct ChatView: View {
         .onChange(of: store.autoReplyTick) { _, _ in
             maybeAutoReply()
         }
+        .onChange(of: conversation?.pendingCard == nil) { _, nowNil in
+            // 审批卡刚出现：在锁屏上起一个 LiveActivity；卡片清掉就收掉。
+            if !nowNil, let card = conversation?.pendingCard, card.kind == .approval {
+                Task { @MainActor in
+                    LiveApproval.start(convId: conversationId,
+                                       action: card.actionText.isEmpty ? card.question : card.actionText,
+                                       impact: card.impact, risk: card.risk)
+                }
+            } else if nowNil {
+                Task { @MainActor in LiveApproval.end() }
+            }
+        }
+        .onChange(of: store.deepLinkApproval) { _, v in
+            // 锁屏上点了允许/拒绝，深链回到这条会话：按卡片作答，走正常续轮。
+            guard let v, v.convId == conversationId else { return }
+            guard let card = conversation?.pendingCard, card.kind == .approval else { return }
+            store.deepLinkApproval = nil
+            answerPendingCard([CardOption(id: v.approve ? "approve" : "reject",
+                                          label: v.approve ? "批准" : "拒绝")])
+        }
         .onChange(of: scenePhase) { _, phase in
             // 提问卡在后台等回答：发一条本地通知，答案随下一条消息回来。
             if phase == .background, let card = conversation?.pendingCard {
@@ -510,6 +530,7 @@ struct ChatView: View {
               let card = store.conversations[i].pendingCard else { return }
         store.conversations[i].pendingCard = nil
         store.save()
+        Task { @MainActor in LiveApproval.end() }
         let answer: String
         if card.kind == .approval {
             answer = chosen.first?.id == "approve" ? "批准" : "拒绝"
@@ -645,6 +666,7 @@ struct ChatView: View {
             store.conversations[i].pendingCard = nil
             store.save()
         }
+        Task { @MainActor in LiveApproval.end() }
         let suggestion = card.recommendedId.isEmpty
             ? (card.options.first?.label ?? "")
             : (card.options.first { $0.id == card.recommendedId }?.label
@@ -1204,11 +1226,13 @@ private struct MessageBubble: View {
     private var sender: Agent? { store.agent(id: UUID(uuidString: message.senderId) ?? UUID()) }
 
     /// Markdown 渲染：粗体/斜体/行内代码/链接按格式显示，解析不了就原文。
-    private var rendered: AttributedString {
+    private var rendered: AttributedString { attributed(message.text) }
+
+    private func attributed(_ s: String) -> AttributedString {
         (try? AttributedString(
-            markdown: message.text,
+            markdown: s,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(message.text)
+        )) ?? AttributedString(s)
     }
 
     var body: some View {
@@ -1372,11 +1396,21 @@ private struct MessageBubble: View {
                     Text("思考中…").font(.subheadline).foregroundStyle(.secondary)
                 }
             } else {
-                Text(rendered)
-                    .font(.body)
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // 回复按段渲染：```html / ```mermaid 直接成卡片/图表，其余照常。
+                ForEach(Array(segments(of: message.text).enumerated()), id: \.offset) { _, seg in
+                    switch seg {
+                    case .text(let t):
+                        Text(attributed(t))
+                            .font(.body)
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .html(let code):
+                        HTMLCardView(code: code, kind: .html)
+                    case .mermaid(let code):
+                        HTMLCardView(code: code, kind: .mermaid)
+                    }
+                }
             }
             if let p = message.usagePrompt, let c = message.usageCompletion {
                 Text("输入 \(p) · 输出 \(c)")
