@@ -130,7 +130,7 @@ private struct HeadersRow: View {
                 Spacer()
                 let n = provider.parsedCustomHeaders.count
                 Text(n == 0 ? "未填" : "\(n) 个")
-                    .foregroundStyle(n == 0 ? .secondary : .green)
+                    .foregroundStyle(n == 0 ? Color.secondary : Color.green)
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
             }
         }
