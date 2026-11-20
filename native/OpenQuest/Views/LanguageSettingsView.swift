@@ -3,6 +3,7 @@ import SwiftUI
 /// 语言设置：六种语言，换了立即生效（核心界面字符串走 L10n 表）。
 struct LanguageSettingsView: View {
     @EnvironmentObject var store: AppStore
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     var body: some View {
         List {
