@@ -12,6 +12,11 @@ struct NewChatView: View {
     @State private var groupAdmin: UUID?
     @State private var speakMode = "everyone"
     @State private var groupNotice = ""
+    @State private var selectNote: String?
+
+    private var selectedPrivate: Agent? {
+        store.agents.first { $0.isPrivate && selected.contains($0.id) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -35,21 +40,41 @@ struct NewChatView: View {
                         }
                     }
                 }
-                Section("选成员开聊（选一个是单聊，选多个是群聊）") {
+                Section("选成员开聊（选一个是单聊，选多个是群聊，最多 12 人）") {
                     ForEach(store.agents) { a in
                         Button {
-                            if selected.contains(a.id) { selected.remove(a.id) }
-                            else { selected.insert(a.id) }
+                            if selected.contains(a.id) { selected.remove(a.id); selectNote = nil }
+                            else if a.isPrivate && !selected.isEmpty {
+                                selectNote = "「\(a.name)」是私有智能体，只能单聊，不能进群。"
+                            } else if selectedPrivate != nil {
+                                selectNote = "已选了私有智能体「\(selectedPrivate!.name)」，只能单聊；要建群先取消它。"
+                            } else if selected.count >= 12 {
+                                selectNote = "群最多 12 人，已经选满了。"
+                            } else {
+                                selected.insert(a.id); selectNote = nil
+                            }
                         } label: {
                             HStack {
                                 AvatarDisc(text: a.initial, hue: a.tintHue, size: 34)
-                                Text(a.name).foregroundStyle(.primary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(a.name).foregroundStyle(.primary)
+                                    if a.isPrivate {
+                                        Text("私有 · 只能单聊").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer()
                                 if selected.contains(a.id) {
                                     Image(systemName: "checkmark.circle.fill")
                                 }
                             }
                         }
+                    }
+                    if let selectNote {
+                        Text(selectNote).font(.caption).foregroundStyle(.orange)
+                    }
+                    if selected.count > 1 {
+                        Text("已选 \(selected.count)/12 人")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if selected.count > 1 {
@@ -68,7 +93,13 @@ struct NewChatView: View {
                                 Text(a.name).tag(a.id as UUID?)
                             }
                         }
-                        TextField("群公告（每个成员发言前先读，可空）", text: $groupNotice)
+                        TextField("群公告（每个成员发言前先读，可空，最多 2000 字）", text: $groupNotice, axis: .vertical)
+                            .lineLimit(3...6)
+                            .onChange(of: groupNotice) { _, v in
+                                if v.count > 2000 { groupNotice = String(v.prefix(2000)) }
+                            }
+                        Text("\(groupNotice.count)/2000 字")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }

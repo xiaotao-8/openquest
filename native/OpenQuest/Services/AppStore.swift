@@ -192,6 +192,22 @@ final class AppStore: ObservableObject {
         Set(deviceCapabilities.filter { $0.enabled }.map { $0.id })
     }
 
+    /// 已开启且已填 Key 的连接器 id 集合（进 AgentRunner 的工具表）：
+    /// 开了但没填 Key 的不进，模型看不到也调不到。
+    var enabledConnectorIds: Set<String> {
+        Set(connectors.filter { $0.enabled
+            && !(KeychainHelper.key(ref: "connector-\($0.id)") ?? "").isEmpty
+        }.map { $0.id })
+    }
+
+    /// 已开启的自定义 MCP 服务器（进 AgentRunner 的工具表）。
+    var enabledMCPs: [CustomMCP] { customMCPs.filter { $0.enabled } }
+
+    /// 已开启的脚本类插件（进 AgentRunner 的 run_plugin_script 工具表）。
+    var enabledScriptPlugins: [Plugin] {
+        plugins.filter { $0.enabled && $0.type == "script" && !$0.content.isEmpty }
+    }
+
     func setDeviceCapability(id: String, on: Bool) {
         guard let i = deviceCapabilities.firstIndex(where: { $0.id == id }) else { return }
         deviceCapabilities[i].enabled = on
@@ -250,13 +266,22 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    /// 建会话：群最多 12 人（FishPocket 房间上限）；私有智能体不进群聊
+    /// （只在自己的文件夹里工作），多人里混了私有的一律剔掉；公告超 2000 字截断。
+    /// 界面层（新建/群设置）也拦，这里是最后一道防线。
     func createConversation(title: String, memberIds: [UUID],
                             adminId: UUID? = nil, speakMode: String = "everyone",
                             notice: String = "") {
-        var conv = Conversation(title: title, memberIds: memberIds)
-        conv.adminId = adminId
+        var ids = memberIds
+        if ids.count > 1 {
+            ids = ids.filter { agent(id: $0)?.isPrivate != true }
+            if ids.count > 12 { ids = Array(ids.prefix(12)) }
+        }
+        guard !ids.isEmpty else { return }
+        var conv = Conversation(title: title, memberIds: ids)
+        conv.adminId = ids.contains(adminId ?? UUID()) ? adminId : nil
         conv.speakMode = speakMode
-        conv.notice = notice
+        conv.notice = String(notice.prefix(2000))
         conversations.insert(conv, at: 0)
         save()
     }
@@ -722,7 +747,15 @@ final class AppStore: ObservableObject {
             if t.repeatKind == "once" {
                 t.enabled = false
             } else {
-                t.nextFire = Self.nextFire(after: t.nextFire, task: t)
+                // 重复任务：下次时间从上次往后推到现在之后（App 关了几天再开，
+                // 只补发一次，不把欠的次数全补成一堆消息），再重新排通知。
+                var next = Self.nextFire(after: t.nextFire, task: t)
+                var guardCount = 0
+                while next <= now && guardCount < 10000 {
+                    next = Self.nextFire(after: next, task: t)
+                    guardCount += 1
+                }
+                t.nextFire = next
                 NotificationHelper.schedule(task: t)
             }
             scheduledTasks[i] = t
@@ -803,6 +836,20 @@ final class AppStore: ObservableObject {
 
     func deleteMiniApp(id: UUID) {
         miniApps.removeAll { $0.id == id }
+        save()
+    }
+
+    /// 改小工具里一个文件的内容（MiniApps 文件编辑用；不存在就新建）。
+    func updateMiniAppFile(id: UUID, file: String, content: String) {
+        guard let i = miniApps.firstIndex(where: { $0.id == id }) else { return }
+        miniApps[i].files[file] = content
+        save()
+    }
+
+    /// 小工具里删一个文件（index.html 和 app.json 删了会跑不起来，界面层会拦）。
+    func deleteMiniAppFile(id: UUID, file: String) {
+        guard let i = miniApps.firstIndex(where: { $0.id == id }) else { return }
+        miniApps[i].files.removeValue(forKey: file)
         save()
     }
 

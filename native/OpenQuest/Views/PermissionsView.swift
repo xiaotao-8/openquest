@@ -53,6 +53,13 @@ final class PermissionsStore: ObservableObject {
         Item(id: "device_clipboard", name: "剪贴板", summary: "读写剪贴板文字"),
         Item(id: "device_location", name: "位置", summary: "读一次当前位置"),
         Item(id: "device_contacts", name: "通讯录", summary: "按名字查联系人"),
+        Item(id: "connector_search", name: "博查搜索", summary: "用博查搜网页（要先在连接工具里开并填 Key）"),
+        Item(id: "connector_yuque", name: "语雀", summary: "在语雀知识库里搜文档（要先开并填 Token）"),
+        Item(id: "connector_gitee", name: "Gitee", summary: "在 Gitee 上搜仓库（要先开并填 Token）"),
+        Item(id: "connector_feishu", name: "飞书", summary: "往飞书群/人发文字消息（要先开并填 App ID:Secret）"),
+        Item(id: "connector_dingtalk", name: "钉钉", summary: "往钉钉发工作消息（要先开并填 AppKey:Secret）"),
+        Item(id: "call_mcp_tool", name: "自定义 MCP", summary: "调你自己的 MCP 服务器上的工具（要先开并填 HTTPS 地址）"),
+        Item(id: "run_plugin_script", name: "运行插件脚本", summary: "跑已开启的脚本类插件（在你的服务器上执行）"),
     ]
 
     private static let defaultsKey = "permissions-levels-v1"

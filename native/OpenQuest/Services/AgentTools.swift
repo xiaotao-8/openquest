@@ -11,6 +11,18 @@ enum AgentTools {
     static let fetchName = "fetch_webpage"
     static let spawnSubagentName = "spawn_subagent"
 
+    /// 连接器工具（FishPocket）：只在连接器开着且填了 Key 时进工具表，
+    /// 没开/没填 Key 的模型看都看不到。
+    static let connectorSearchName = "connector_search"     // 博查
+    static let connectorYuqueName = "connector_yuque"       // 语雀
+    static let connectorGiteeName = "connector_gitee"       // Gitee
+    static let connectorFeishuName = "connector_feishu"     // 飞书
+    static let connectorDingtalkName = "connector_dingtalk" // 钉钉
+    /// 自定义 MCP：调已开启的 MCP 服务器上的工具（JSON-RPC tools/call）。
+    static let mcpCallName = "call_mcp_tool"
+    /// 插件 Host：跑一个已开启的脚本类插件（在用户服务器上执行）。
+    static let pluginScriptName = "run_plugin_script"
+
     /// 聊天页搭的桥：AppStore 没有共享单例（@StateObject 只在 App 入口），
     /// minis-config 读写要 store，AgentRunner 又不传——聊天页每轮开始前把
     /// 自己的 store / 智能体名放在这里（weak，不留住），execute 用完即取。
@@ -27,7 +39,12 @@ enum AgentTools {
     /// 给模型看的工具定义（OpenAI tools 格式）。
     /// capabilities 是已开启的本机能力 id：只有开着的能力才进工具表，
     /// 没开的模型看都看不到（默认全关）。
-    static func definitions(capabilities: Set<String> = []) -> [[String: Any]] {
+    /// connectors 是已开启且已填 Key 的连接器 id；mcps 是已开启的自定义 MCP
+    /// 服务器；scriptPlugins 是已开启的脚本类插件——三者都没开就不进表。
+    static func definitions(capabilities: Set<String> = [],
+                            connectors: Set<String> = [],
+                            mcps: [CustomMCP] = [],
+                            scriptPlugins: [Plugin] = []) -> [[String: Any]] {
         var defs: [[String: Any]] = [
             [
                 "type": "function",
@@ -131,6 +148,103 @@ enum AgentTools {
                 ],
             ],
         ]
+        // 连接器工具：只把已开启且已填 Key 的放进工具表。
+        if connectors.contains("bocha") {
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": connectorSearchName,
+                    "description": "用博查搜国内网页：返回标题、链接和摘要。query 是要搜的东西。",
+                    "parameters": ["type": "object", "properties": [
+                        "query": ["type": "string", "description": "搜索关键词"],
+                        "count": ["type": "integer", "description": "返回几条，默认 5，最多 10"],
+                    ], "required": ["query"]],
+                ],
+            ])
+        }
+        if connectors.contains("yuque") {
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": connectorYuqueName,
+                    "description": "在用户的语雀知识库里搜文档：返回标题和链接。query 是关键词。",
+                    "parameters": ["type": "object", "properties": [
+                        "query": ["type": "string", "description": "搜索关键词"],
+                    ], "required": ["query"]],
+                ],
+            ])
+        }
+        if connectors.contains("gitee") {
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": connectorGiteeName,
+                    "description": "在 Gitee 上搜公开仓库：返回仓库名、链接和简介。query 为空时列出用户自己的仓库。",
+                    "parameters": ["type": "object", "properties": [
+                        "query": ["type": "string", "description": "搜索关键词，可空"],
+                    ]],
+                ],
+            ])
+        }
+        if connectors.contains("feishu") {
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": connectorFeishuName,
+                    "description": "往飞书发一条文字消息。receive_id 是目标群的 chat_id 或用户的 open_id（不知道就问用户要，不要猜）；receive_id_type 是 chat_id 或 open_id，默认 chat_id。",
+                    "parameters": ["type": "object", "properties": [
+                        "receive_id": ["type": "string", "description": "目标群 chat_id 或用户 open_id"],
+                        "receive_id_type": ["type": "string", "description": "chat_id / open_id，默认 chat_id"],
+                        "text": ["type": "string", "description": "要发的文字"],
+                    ], "required": ["receive_id", "text"]],
+                ],
+            ])
+        }
+        if connectors.contains("dingtalk") {
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": connectorDingtalkName,
+                    "description": "往钉钉发一条工作消息。agent_id 是钉钉应用的 AgentId（没填过就问用户要，不要猜）；user_ids 是接收人的手机号或 userId，逗号隔开；to_all 为 true 时发给全体。text 是要发的文字。",
+                    "parameters": ["type": "object", "properties": [
+                        "agent_id": ["type": "string", "description": "钉钉应用 AgentId，可空（连接器 Key 里第三段也能填）"],
+                        "user_ids": ["type": "string", "description": "接收人，逗号隔开，可空"],
+                        "to_all": ["type": "boolean", "description": "是否发给全体，默认 false"],
+                        "text": ["type": "string", "description": "要发的文字"],
+                    ], "required": ["text"]],
+                ],
+            ])
+        }
+        // 自定义 MCP：只把已开启的服务器列进描述，模型按名字或地址指定。
+        if !mcps.isEmpty {
+            let names = mcps.map { "\($0.name)（\($0.url)）" }.joined(separator: "、")
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": mcpCallName,
+                    "description": "调你自己的 MCP 服务器上的工具。已开启的服务器：\(names)。server 填服务器名字或地址；tool 填工具名；arguments 是传给工具的参数（对象）。",
+                    "parameters": ["type": "object", "properties": [
+                        "server": ["type": "string", "description": "MCP 服务器名字或地址"],
+                        "tool": ["type": "string", "description": "工具名"],
+                        "arguments": ["type": "object", "description": "传给工具的参数"],
+                    ], "required": ["server", "tool"]],
+                ],
+            ])
+        }
+        // 脚本类插件：只把已开启的列进描述，模型按名字指定。
+        if !scriptPlugins.isEmpty {
+            let names = scriptPlugins.map { $0.name }.joined(separator: "、")
+            defs.append([
+                "type": "function",
+                "function": [
+                    "name": pluginScriptName,
+                    "description": "跑一个已开启的脚本类插件，在用户自己的服务器上执行并返回输出。已开启的脚本插件：\(names)。plugin 填插件名字。",
+                    "parameters": ["type": "object", "properties": [
+                        "plugin": ["type": "string", "description": "脚本插件名字"],
+                    ], "required": ["plugin"]],
+                ],
+            ])
+        }
         // 本机能力：只把已开启的能力放进工具表。
         if capabilities.contains("calendar") {
             defs.append([
@@ -357,6 +471,25 @@ enum AgentTools {
         case spawnSubagentName:
             let a = (args["agent"] as? String) ?? ""
             return a.isEmpty ? "派给子智能体" : "派给子智能体 \(oneLine(a, 32))"
+        case connectorSearchName:
+            let q = (args["query"] as? String) ?? ""
+            return q.isEmpty ? "博查搜索" : "博查搜索 \(oneLine(q, 32))"
+        case connectorYuqueName:
+            let q = (args["query"] as? String) ?? ""
+            return q.isEmpty ? "搜语雀" : "搜语雀 \(oneLine(q, 32))"
+        case connectorGiteeName:
+            let q = (args["query"] as? String) ?? ""
+            return q.isEmpty ? "看 Gitee 仓库" : "搜 Gitee \(oneLine(q, 32))"
+        case connectorFeishuName:
+            return "发飞书消息"
+        case connectorDingtalkName:
+            return "发钉钉消息"
+        case mcpCallName:
+            let t = (args["tool"] as? String) ?? ""
+            return t.isEmpty ? "调 MCP 工具" : "调 MCP 工具 \(oneLine(t, 32))"
+        case pluginScriptName:
+            let p = (args["plugin"] as? String) ?? ""
+            return p.isEmpty ? "运行插件脚本" : "运行插件 \(oneLine(p, 32))"
         case MinisConfig.getName:
             let p = (args["path"] as? String) ?? ""
             return p.isEmpty ? "读设置" : "读设置 \(oneLine(p, 40))"
@@ -376,7 +509,10 @@ enum AgentTools {
     private static func looksLikeFailure(_ result: String) -> Bool {
         ["参数不对", "调用服务器失败", "服务器浏览器操作失败",
          "抓取失败", "未知工具", "子智能体没配好",
-         "设置接口没开", "没有这个设置项", "值不对"]
+         "设置接口没开", "没有这个设置项", "值不对",
+         "博查搜索失败", "语雀搜索失败", "Gitee 搜索失败",
+         "飞书发送失败", "钉钉发送失败", "MCP 调用失败",
+         "插件脚本失败", "这个连接器还没开", "这个连接器还没填"]
             .contains { result.hasPrefix($0) }
     }
 
@@ -497,6 +633,10 @@ enum AgentTools {
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let command = obj["command"] as? String, !command.isEmpty
             else { return "参数不对：缺 command" }
+            // 工作文件夹只能是相对路径：绝对路径或 .. 会跑到工作区外面，直接拦下。
+            if workDir.hasPrefix("/") || workDir.contains("..") {
+                return "参数不对：工作文件夹只能是相对路径，不能以 / 开头、不能含 .."
+            }
             do {
                 let cmd = workDir.isEmpty ? command
                     : "cd '\(workDir.replacingOccurrences(of: "'", with: "'\\''"))' && \(command)"
@@ -585,8 +725,296 @@ enum AgentTools {
             } catch {
                 return "抓取失败：\(error.localizedDescription)"
             }
+        case connectorSearchName, connectorYuqueName, connectorGiteeName,
+             connectorFeishuName, connectorDingtalkName:
+            return await runConnector(name: name, argumentsJSON: argumentsJSON)
+        case mcpCallName:
+            return await runMCP(argumentsJSON: argumentsJSON)
+        case pluginScriptName:
+            return await runPluginScript(argumentsJSON: argumentsJSON, server: server)
         default:
             return "未知工具 \(name)"
+        }
+    }
+
+    // MARK: - 连接器工具（真调用，凭据走钥匙串）
+
+    private static func connectorCred(_ id: String) -> String? {
+        let c = KeychainHelper.key(ref: "connector-\(id)") ?? ""
+        return c.isEmpty ? nil : c
+    }
+
+    /// 连接器原始请求：返回 (JSON 根对象, 状态码)，失败返回 nil。
+    private static func connectorRequest(url urlString: String, method: String = "GET",
+                                         headers: [String: String] = [:],
+                                         body: [String: Any]? = nil) async -> ([String: Any]?, Int) {
+        guard let url = URL(string: urlString) else { return (nil, 0) }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.timeoutInterval = 20
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        if let body {
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        do {
+            let (data, resp) = try await Net.session.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return (root, code)
+        } catch {
+            return (nil, 0)
+        }
+    }
+
+    private static func runConnector(name: String, argumentsJSON: String) async -> String {
+        let args = (try? JSONSerialization.jsonObject(with: Data(argumentsJSON.utf8))
+                    as? [String: Any]) ?? [:]
+        switch name {
+        case connectorSearchName:
+            guard let cred = connectorCred("bocha") else { return "这个连接器还没填 Key：去设置 → 连接工具里填博查的 Key 再试。" }
+            guard let q = args["query"] as? String, !q.isEmpty else { return "参数不对：connector_search 要 query" }
+            let count = min(max((args["count"] as? Int) ?? 5, 1), 10)
+            let (root, code) = await connectorRequest(
+                url: "https://api.bochaai.com/v1/web-search", method: "POST",
+                headers: ["Authorization": "Bearer \(cred)", "Content-Type": "application/json"],
+                body: ["query": q, "count": count])
+            guard code == 200, let root,
+                  (root["code"] as? Int) == 200,
+                  let values = (root["data"] as? [String: Any])?["webPages"] as? [String: Any],
+                  let items = values["value"] as? [[String: Any]], !items.isEmpty
+            else { return "博查搜索失败：没搜到结果或 Key 不对" }
+            let lines = items.prefix(count).enumerated().map { i, it in
+                let t = (it["name"] as? String) ?? (it["title"] as? String) ?? ""
+                let u = (it["url"] as? String) ?? ""
+                let s = (it["snippet"] as? String) ?? ""
+                return "\(i + 1). \(t)\n   \(u)\(s.isEmpty ? "" : "\n   \(s)")"
+            }
+            return "搜到 \(lines.count) 条：\n" + lines.joined(separator: "\n")
+        case connectorYuqueName:
+            guard let cred = connectorCred("yuque") else { return "这个连接器还没填 Token：去设置 → 连接工具里填语雀的 Token 再试。" }
+            guard let q = args["query"] as? String, !q.isEmpty else { return "参数不对：connector_yuque 要 query" }
+            let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+            let (root, code) = await connectorRequest(
+                url: "https://www.yuque.com/api/v2/search?q=\(encoded)&type=Doc",
+                headers: ["X-Auth-Token": cred])
+            guard code == 200, let root,
+                  let items = root["data"] as? [[String: Any]], !items.isEmpty
+            else { return "语雀搜索失败：没搜到结果或 Token 不对" }
+            let lines = items.prefix(5).enumerated().map { i, it in
+                let t = (it["title"] as? String) ?? (it["name"] as? String) ?? ""
+                let u = (it["url"] as? String) ?? ""
+                return "\(i + 1). \(t)\n   \(u)"
+            }
+            return "语雀搜到 \(lines.count) 篇：\n" + lines.joined(separator: "\n")
+        case connectorGiteeName:
+            guard let cred = connectorCred("gitee") else { return "这个连接器还没填 Token：去设置 → 连接工具里填 Gitee 的 Token 再试。" }
+            let q = (args["query"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            if q.isEmpty {
+                // /user/repos 返回的是顶层数组，走单独的解法。
+                return await giteeOwnRepos(cred: cred)
+            }
+            let encoded = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+            let (root, code) = await connectorRequest(
+                url: "https://gitee.com/api/v5/search/repositories?q=\(encoded)")
+            guard code == 200,
+                  let items = (root?["items"] as? [[String: Any]]), !items.isEmpty
+            else { return "Gitee 搜索失败：没搜到结果或网络不通" }
+            let lines = items.prefix(5).enumerated().map { i, it in
+                let n = (it["full_name"] as? String) ?? (it["name"] as? String) ?? ""
+                let u = (it["html_url"] as? String) ?? ""
+                let d = (it["description"] as? String) ?? ""
+                return "\(i + 1). \(n)\n   \(u)\(d.isEmpty ? "" : "\n   \(d)")"
+            }
+            return "Gitee 搜到 \(lines.count) 个仓库：\n" + lines.joined(separator: "\n")
+        case connectorFeishuName:
+            guard let cred = connectorCred("feishu") else { return "这个连接器还没填 Key：去设置 → 连接工具里填飞书的 App ID:App Secret 再试。" }
+            let parts = cred.split { $0 == ":" || $0 == " " || $0 == "\n" }.map(String.init)
+            guard parts.count >= 2 else { return "飞书 Key 格式不对：要 App ID:App Secret（冒号隔开）" }
+            guard let receiveId = args["receive_id"] as? String, !receiveId.isEmpty,
+                  let text = args["text"] as? String, !text.isEmpty
+            else { return "参数不对：connector_feishu 要 receive_id 和 text" }
+            let type = (args["receive_id_type"] as? String) ?? "chat_id"
+            let (tokenRoot, tokenCode) = await connectorRequest(
+                url: "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                method: "POST", headers: ["Content-Type": "application/json"],
+                body: ["app_id": parts[0], "app_secret": parts[1]])
+            guard tokenCode == 200,
+                  (tokenRoot?["code"] as? Int) == 0,
+                  let token = tokenRoot?["tenant_access_token"] as? String
+            else { return "飞书发送失败：App ID 或 Secret 不对，拿不到 token" }
+            let encodedType = type.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? type
+            let contentJSON = (try? JSONSerialization.data(
+                withJSONObject: ["text": text])) ?? Data()
+            let (root, code) = await connectorRequest(
+                url: "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=\(encodedType)",
+                method: "POST",
+                headers: ["Authorization": "Bearer \(token)", "Content-Type": "application/json"],
+                body: ["receive_id": receiveId, "msg_type": "text",
+                       "content": String(data: contentJSON, encoding: .utf8) ?? ""])
+            guard code == 200, (root?["code"] as? Int) == 0 else {
+                return "飞书发送失败：receive_id 不对或没权限（\(root?["msg"] as? String ?? "code \(code)")）"
+            }
+            return "飞书消息发出去了。"
+        case connectorDingtalkName:
+            guard let cred = connectorCred("dingtalk") else { return "这个连接器还没填 Key：去设置 → 连接工具里填钉钉的 AppKey:AppSecret 再试。" }
+            let parts = cred.split { $0 == ":" || $0 == " " || $0 == "\n" }.map(String.init)
+            guard parts.count >= 2 else { return "钉钉 Key 格式不对：要 AppKey:AppSecret（冒号隔开）" }
+            guard let text = args["text"] as? String, !text.isEmpty else { return "参数不对：connector_dingtalk 要 text" }
+            let agentId = (args["agent_id"] as? String ?? "").isEmpty
+                ? (parts.count >= 3 ? parts[2] : "") : (args["agent_id"] as? String ?? "")
+            guard !agentId.isEmpty else {
+                return "钉钉发送要 AgentId：去设置 → 连接工具里把钉钉的 Key 改成 AppKey:AppSecret:AgentId（第三段填应用的 AgentId），或者调用时传 agent_id。"
+            }
+            let userIds = (args["user_ids"] as? String ?? "")
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let toAll = (args["to_all"] as? Bool) ?? false
+            guard !userIds.isEmpty || toAll else {
+                return "钉钉发送要接收人：传 user_ids（手机号或 userId，逗号隔开）或 to_all=true。"
+            }
+            let (tokenRoot, tokenCode) = await connectorRequest(
+                url: "https://oapi.dingtalk.com/gettoken?appkey=\(parts[0])&appsecret=\(parts[1])")
+            guard tokenCode == 200,
+                  (tokenRoot?["errcode"] as? Int) == 0,
+                  let token = tokenRoot?["access_token"] as? String
+            else { return "钉钉发送失败：AppKey 或 Secret 不对，拿不到 token" }
+            var msgBody: [String: Any] = [
+                "agent_id": agentId,
+                "msg": ["msgtype": "text", "text": ["content": text]],
+            ]
+            if toAll { msgBody["to_all_user"] = true }
+            else { msgBody["userid_list"] = userIds.joined(separator: ",") }
+            let (root, code) = await connectorRequest(
+                url: "https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=\(token)",
+                method: "POST", headers: ["Content-Type": "application/json"], body: msgBody)
+            guard code == 200, (root?["errcode"] as? Int) == 0 else {
+                return "钉钉发送失败：\(root?["errmsg"] as? String ?? "errcode \(root?["errcode"] as? Int ?? code)")"
+            }
+            return "钉钉消息发出去了。"
+        default:
+            return "未知工具 \(name)"
+        }
+    }
+
+    /// Gitee 自己的仓库列表（/user/repos 返回顶层数组，单独解）。
+    private static func giteeOwnRepos(cred: String) async -> String {
+        guard let url = URL(string: "https://gitee.com/api/v5/user/repos?access_token=\(cred)&page=1&per_page=10") else {
+            return "Gitee 搜索失败：地址不对"
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 20
+        do {
+            let (data, resp) = try await Net.session.data(for: req)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  !items.isEmpty else { return "Gitee 搜索失败：没拿到仓库列表或 Token 不对" }
+            let lines = items.prefix(10).enumerated().map { i, it in
+                let n = (it["full_name"] as? String) ?? (it["name"] as? String) ?? ""
+                let u = (it["html_url"] as? String) ?? ""
+                return "\(i + 1). \(n)\n   \(u)"
+            }
+            return "你的 Gitee 仓库：\n" + lines.joined(separator: "\n")
+        } catch {
+            return "Gitee 搜索失败：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 自定义 MCP（JSON-RPC tools/call）
+
+    /// 调已开启的 MCP 服务器上的工具：server 按名字或地址找，找不到就直说。
+    /// 先 initialize 再 tools/call；只走 HTTP POST（Streamable HTTP），
+    /// 对方要 SSE 长连时直说不支持，不硬编。
+    private static func runMCP(argumentsJSON: String) async -> String {
+        let args = (try? JSONSerialization.jsonObject(with: Data(argumentsJSON.utf8))
+                    as? [String: Any]) ?? [:]
+        guard let serverRef = args["server"] as? String, !serverRef.isEmpty,
+              let tool = args["tool"] as? String, !tool.isEmpty
+        else { return "参数不对：call_mcp_tool 要 server（名字或地址）和 tool（工具名）" }
+        guard let store = sharedStore else {
+            return "MCP 调用失败：这一轮没接上当前会话的存储。"
+        }
+        // AppStore 是 @MainActor：这里是非隔离的工具执行上下文，读它的属性要跳主线程。
+        let enabled: [CustomMCP] = await MainActor.run { store.enabledMCPs }
+        guard let mcp = enabled.first(where: { $0.name == serverRef || $0.url == serverRef })
+                ?? enabled.first(where: { $0.name.contains(serverRef) || $0.url.contains(serverRef) })
+        else { return "MCP 调用失败：没找到已开启的服务器「\(serverRef)」——去设置 → 连接工具里先开一个自定义 MCP。" }
+        guard let url = URL(string: mcp.url) else { return "MCP 调用失败：服务器地址不对" }
+        let params = (args["arguments"] as? [String: Any]) ?? [:]
+        func post(_ body: [String: Any]) async -> [String: Any]? {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 30
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            guard let (data, resp) = try? await Net.session.data(for: req),
+                  (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return root
+        }
+        let initBody: [String: Any] = [
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": ["protocolVersion": "2024-11-05", "capabilities": [:],
+                       "clientInfo": ["name": "OpenQuest", "version": "1"]],
+        ]
+        guard let initRoot = await post(initBody), initRoot["result"] != nil else {
+            return "MCP 调用失败：\(mcp.name) 没按 MCP 协议回 initialize（对方可能要 SSE 长连，App 只支持 HTTP POST 的 MCP 服务器）。"
+        }
+        // initialize 之后按协议补一条 initialized 通知（不用等回包）。
+        _ = await post(["jsonrpc": "2.0", "method": "notifications/initialized"])
+        let callBody: [String: Any] = [
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": ["name": tool, "arguments": params],
+        ]
+        guard let callRoot = await post(callBody) else {
+            return "MCP 调用失败：\(mcp.name) 没回 tools/call。"
+        }
+        if let err = callRoot["error"] as? [String: Any] {
+            return "MCP 调用失败：\(err["message"] as? String ?? "对方报错")"
+        }
+        guard let result = callRoot["result"] as? [String: Any] else {
+            return "MCP 调用失败：对方回包里没有 result。"
+        }
+        if let isError = result["isError"] as? Bool, isError {
+            let texts = ((result["content"] as? [[String: Any]]) ?? [])
+                .compactMap { $0["text"] as? String }.joined(separator: "\n")
+            return "MCP 工具报错：\(texts.isEmpty ? "对方返回 isError" : texts)"
+        }
+        let texts = ((result["content"] as? [[String: Any]]) ?? [])
+            .compactMap { $0["text"] as? String }
+        if !texts.isEmpty { return String(texts.joined(separator: "\n").prefix(6000)) }
+        return "MCP 工具 \(tool) 跑完了，没回文字结果。"
+    }
+
+    // MARK: - 插件 Host：跑脚本类插件
+
+    /// 跑一个已开启的脚本类插件（在用户服务器上执行，和插件页“在服务器上运行”同一路）。
+    private static func runPluginScript(argumentsJSON: String, server: ServerConfig) async -> String {
+        let args = (try? JSONSerialization.jsonObject(with: Data(argumentsJSON.utf8))
+                    as? [String: Any]) ?? [:]
+        guard let name = args["plugin"] as? String, !name.isEmpty else {
+            return "参数不对：run_plugin_script 要 plugin（插件名字）"
+        }
+        guard let store = sharedStore else {
+            return "插件脚本失败：这一轮没接上当前会话的存储。"
+        }
+        // AppStore 是 @MainActor：这里是非隔离的工具执行上下文，读它的属性要跳主线程。
+        let enabled: [Plugin] = await MainActor.run { store.enabledScriptPlugins }
+        guard let p = enabled.first(where: { $0.name == name })
+                ?? enabled.first(where: { $0.name.contains(name) })
+        else { return "插件脚本失败：没找到已开启的脚本插件「\(name)」——去设置 → 插件里先装一个脚本类插件并打开。" }
+        let b64 = Data(p.content.utf8).base64EncodedString()
+        let path = "/tmp/oq-plugin-\(p.id.uuidString.prefix(8)).sh"
+        let cmd = "echo \(b64) | base64 -d > \(path) && bash \(path)"
+        do {
+            let r = try await ServerClient(config: server).exec(agentId: "user", command: cmd)
+            var out = "退出码 \(r.exitCode)"
+            if !r.stdout.isEmpty { out += "\n\(r.stdout)" }
+            if !r.stderr.isEmpty { out += "\n[stderr]\n\(r.stderr)" }
+            return String(out.prefix(6000))
+        } catch {
+            return "插件脚本失败：\(error.localizedDescription)"
         }
     }
 

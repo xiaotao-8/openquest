@@ -8,42 +8,57 @@ enum NotificationHelper {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    /// 按任务的重复规则排一条本地通知（到点响一声，用户点开 App 就执行）。
+    /// 按任务的重复规则排本地通知（到点响一声，用户点开 App 就执行）。
+    /// 每周多天：每天各排一条（identifier 带星期几），只排第一天会漏通知。
     static func schedule(task: ScheduledTask) {
         requestAuthorization()
         let center = UNUserNotificationCenter.current()
-        let id = "oq-task-\(task.id.uuidString)"
-        center.removePendingNotificationRequests(withIdentifiers: [id])
+        cancel(taskId: task.id)
         guard task.enabled else { return }
         let content = UNMutableNotificationContent()
         content.title = "定时任务：\(task.title)"
         content.body = task.prompt
-        let trigger: UNNotificationTrigger?
         let cal = Calendar.current
         switch task.repeatKind {
-        case "daily", "weekly":
+        case "daily":
             var comps = cal.dateComponents([.hour, .minute], from: task.nextFire)
-            if task.repeatKind == "weekly" {
+            add(center: center, id: "oq-task-\(task.id.uuidString)",
+                content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: true))
+        case "weekly":
+            var comps = cal.dateComponents([.hour, .minute], from: task.nextFire)
+            for wd in task.weekdays {
                 // 任务里周一=1；Calendar 里周日=1。
-                let wd = task.weekdays.first ?? 1
                 comps.weekday = wd % 7 + 1
+                add(center: center, id: "oq-task-\(task.id.uuidString)-\(wd)",
+                    content: content,
+                    trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: true))
             }
-            trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
         case "every":
             let interval = TimeInterval(max(task.everyMinutes, 1) * 60)
-            trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: true)
+            add(center: center, id: "oq-task-\(task.id.uuidString)",
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: true))
         default:
             let interval = max(task.nextFire.timeIntervalSinceNow, 5)
-            trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+            add(center: center, id: "oq-task-\(task.id.uuidString)",
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false))
         }
-        guard let trigger else { return }
+    }
+
+    private static func add(center: UNUserNotificationCenter, id: String,
+                            content: UNMutableNotificationContent,
+                            trigger: UNNotificationTrigger) {
         let req = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
         center.add(req)
     }
 
     static func cancel(taskId: UUID) {
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: ["oq-task-\(taskId.uuidString)"])
+        // 基础 id + 每周多天的 7 个带星期后缀 id，全清掉。
+        var ids = ["oq-task-\(taskId.uuidString)"]
+        ids += (1...7).map { "oq-task-\(taskId.uuidString)-\($0)" }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
     }
 
     /// 立刻发一条提醒（如提问卡在后台等回答）。

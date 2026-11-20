@@ -254,10 +254,15 @@ struct PluginsView: View {
         let summary = (obj["description"] as? String) ?? (obj["desc"] as? String) ?? ""
         let settingsURL = (obj["settingsURL"] as? String) ?? (obj["settingsUrl"] as? String) ?? ""
         let (name, desc) = await store.translatePluginText(name: rawName, summary: summary)
+        // 和商店安装同一套判断：带网页界面部分的插件不静默装，挂“只跑主机部分”标记。
+        let clientHalf = Plugin.manifestHasClientHalf(obj)
         store.addPlugin(Plugin(name: name, summary: desc,
                                type: type == "script" ? "script" : "instruction",
-                               content: content, settingsURL: settingsURL))
-        status = "装好了「\(name)」，默认关着，去列表里打开才生效。"
+                               content: content, settingsURL: settingsURL,
+                               hasClientHalf: clientHalf))
+        status = clientHalf
+            ? "装好了「\(name)」，默认关着；它带网页界面部分，App 内只跑主机部分。"
+            : "装好了「\(name)」，默认关着，去列表里打开才生效。"
         pasteText = ""
     }
 

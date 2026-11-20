@@ -82,11 +82,11 @@ enum MiniAppTemplate {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>\(name)</title>
             <style>
-              body { background: #000; color: #fff; font-family: -apple-system, sans-serif;
+              body { background: #fff; color: #0c0c0d; font-family: -apple-system, sans-serif;
                      margin: 0; padding: 24px; }
               h1 { font-size: 22px; }
-              p { color: #999; line-height: 1.6; }
-              button { background: #fff; color: #000; border: 0; border-radius: 999px;
+              p { color: #6b6b72; line-height: 1.6; }
+              button { background: #0c0c0d; color: #fff; border: 0; border-radius: 999px;
                        padding: 10px 22px; font-size: 16px; }
             </style></head>
             <body>

@@ -48,6 +48,8 @@ struct RootView: View {
         case "envvars": EnvVarsView()
         case "update": UpdateView()
         case "devicecaps": DeviceCapabilitiesView()
+        case "group": GroupSettingsView(
+            conversationId: store.conversations.first(where: { $0.isGroup })?.id ?? UUID())
         default: HomeView(onOpenSessions: {}, onOpenConversation: { _ in })
         }
     }
@@ -567,7 +569,7 @@ private struct ConnectorRow: View {
     private var placeholder: String {
         switch connector.id {
         case "feishu": return "App ID:App Secret（冒号隔开）"
-        case "dingtalk": return "AppKey:AppSecret（冒号隔开）"
+        case "dingtalk": return "AppKey:AppSecret（冒号隔开；要发钉钉消息再加第三段 AgentId）"
         case "yuque": return "语雀 Token"
         case "gitee": return "Gitee Token"
         case "bocha": return "博查 API Key"

@@ -151,7 +151,7 @@ struct PluginStoreView: View {
             }
             var entry = e
             entry.manifest = obj
-            if Self.hasClientHalf(obj) {
+            if Plugin.manifestHasClientHalf(obj) {
                 pendingInstall = entry
                 pendingClientHalf = true
             } else {
@@ -160,16 +160,6 @@ struct PluginStoreView: View {
         } catch {
             status = "清单下载失败：\(error.localizedDescription)"
         }
-    }
-
-    /// 清单里有 client/webUI/cordis 字段或 type 是 web/cordis = 带网页界面部分。
-    private static func hasClientHalf(_ obj: [String: Any]) -> Bool {
-        let type = (obj["type"] as? String ?? "").lowercased()
-        if type == "web" || type == "cordis" || type == "client" { return true }
-        for key in ["client", "clientHalf", "webUI", "webUi", "cordis", "ui"] {
-            if obj[key] != nil { return true }
-        }
-        return false
     }
 
     /// 按插件页同一套规则安装：主题类拦下，英文名/说明自动译中文，默认关。

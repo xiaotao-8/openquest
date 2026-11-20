@@ -5,9 +5,25 @@ struct GroupSettingsView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) var dismiss
     let conversationId: UUID
+    @State private var addMemberId: UUID?
 
     private var conv: Conversation? {
         store.conversations.first { $0.id == conversationId }
+    }
+
+    /// 能加进群的智能体：不在群里、不是私有的。
+    private func addableAgents(for c: Conversation) -> [Agent] {
+        store.agents.filter { !c.memberIds.contains($0.id) && !$0.isPrivate }
+    }
+
+    /// 移出成员：群主被移走时群主位空出来（发言模式照常，群主没了就按轮流接话，
+    /// 上面会提示重新选群主）；被停下的成员一并从停下名单里清掉。
+    private func removeMember(_ id: UUID) {
+        setConv { conv in
+            conv.memberIds.removeAll { $0 == id }
+            conv.stoppedMembers.removeAll { $0 == id }
+            if conv.adminId == id { conv.adminId = nil }
+        }
     }
 
     var body: some View {
@@ -37,8 +53,15 @@ struct GroupSettingsView: View {
                     Section("群公告") {
                         TextEditor(text: convBinding(\.notice))
                             .frame(minHeight: 70)
-                        Text("每个成员发言前都会先读这段公告。")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .onChange(of: c.notice) { _, v in
+                                if v.count > 2000 { setConv { $0.notice = String(v.prefix(2000)) } }
+                            }
+                        HStack {
+                            Text("每个成员发言前都会先读这段公告。")
+                            Spacer()
+                            Text("\(c.notice.count)/2000 字")
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
                     }
                     Section("群目标") {
                         TextField("目标标题，如：做一份产品测评", text: convBinding(\.goalTitle))
@@ -67,7 +90,7 @@ struct GroupSettingsView: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    Section("成员") {
+                    Section("成员（\(c.memberIds.count)/12 人）") {
                         ForEach(c.memberIds.compactMap { store.agent(id: $0) }) { a in
                             HStack {
                                 AvatarDisc(text: a.initial, hue: a.tintHue, size: 32)
@@ -90,7 +113,38 @@ struct GroupSettingsView: View {
                                     }
                                 }
                                 .font(.subheadline)
+                                Button("移出", role: .destructive) {
+                                    removeMember(a.id)
+                                }
+                                .font(.subheadline)
+                                .disabled(c.memberIds.count <= 2)
                             }
+                        }
+                        if c.memberIds.count <= 2 {
+                            Text("群最少 2 人，再移就只剩一个人了。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if c.memberIds.count >= 12 {
+                            Text("群最多 12 人，已经满了。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Picker("加成员", selection: $addMemberId) {
+                                Text("选一个加进来").tag(nil as UUID?)
+                                ForEach(addableAgents(for: c)) { a in
+                                    Text(a.name).tag(a.id as UUID?)
+                                }
+                            }
+                            .onChange(of: addMemberId) { _, v in
+                                guard let v else { return }
+                                setConv { $0.memberIds.append(v) }
+                                addMemberId = nil
+                            }
+                            Text("私有智能体只能单聊，不能加进群。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if c.adminId != nil, !c.memberIds.contains(c.adminId!) {
+                            Text("群主已不在群里，先在上面重新选一个群主，不然群主模式会按轮流接话。")
+                                .font(.caption).foregroundStyle(.orange)
                         }
                         HStack {
                             Button("全部停下") {

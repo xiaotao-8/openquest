@@ -197,6 +197,17 @@ struct Plugin: Identifiable, Codable, Equatable {
     var settingsURL: String = ""     // 网页设置页（有就用内嵌网页在 App 里打开）
     var enabled: Bool = false        // 默认关，全局原则
     var hasClientHalf: Bool = false  // 带网页界面部分的插件：App 内只跑主机部分
+
+    /// 清单里有 client/webUI/cordis 字段或 type 是 web/cordis/client = 带网页界面部分。
+    /// 商店安装与粘贴/链接安装共用这一处判断，不静默装。
+    static func manifestHasClientHalf(_ obj: [String: Any]) -> Bool {
+        let type = (obj["type"] as? String ?? "").lowercased()
+        if type == "web" || type == "cordis" || type == "client" { return true }
+        for key in ["client", "clientHalf", "webUI", "webUi", "cordis", "ui"] {
+            if obj[key] != nil { return true }
+        }
+        return false
+    }
 }
 
 struct Connector: Identifiable, Codable, Equatable {

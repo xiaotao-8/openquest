@@ -141,6 +141,10 @@ struct AgentEditView: View {
                     TextField("文件夹，如：project-a（空=团队工作区）", text: binding(\.workDir))
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                    if a.workDir.hasPrefix("/") || a.workDir.contains("..") {
+                        Text("文件夹只能是相对路径，不能以 / 开头、不能含 ..，不然命令会在不对的地方跑。")
+                            .font(.caption).foregroundStyle(.red)
+                    }
                     Toggle("私有智能体（只在自己的文件夹里工作）", isOn: binding(\.isPrivate))
                     Text(a.isPrivate
                          ? "私有智能体必须另指一个不重叠的文件夹，不能是主智能体、不能进群聊；换文件夹后下一轮在新文件夹开新的一段对话。"
