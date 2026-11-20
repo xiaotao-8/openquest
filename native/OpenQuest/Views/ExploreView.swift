@@ -13,7 +13,7 @@ struct ExploreView: View {
                 Section(L("discover")) {
                     NavigationLink { PluginStoreView() } label: {
                         ExploreRow(icon: "puzzlepiece",
-                                   title: L("plugins"), subtitle: L("plugins_subtitle")
+                                   title: L("plugins"), subtitle: L("plugins_subtitle"))
                     }
                     NavigationLink { SchedulesView() } label: {
                         ExploreRow(icon: "alarm",
