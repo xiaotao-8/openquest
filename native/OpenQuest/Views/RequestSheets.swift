@@ -11,6 +11,7 @@ struct AskSheetView: View {
     /// 用户在卡上点了一下：聊天页把倒计时重开（Minis noteInteraction，
     /// 人在就重算；不传就是不重开，卡片本身照常）。
     var onInteract: () -> Void = {}
+    @EnvironmentObject var store: AppStore
     @State private var page = 0
     @State private var pagePicked: [Int: Set<String>] = [:]
     /// Other / 备注 / 开放式答案 / 你来定 都是按题存的草稿（Minis
@@ -19,6 +20,8 @@ struct AskSheetView: View {
     @State private var pageNote: [Int: String] = [:]
     @State private var pageOpen: [Int: String] = [:]
     @State private var pageDelegated: Set<Int> = []
+
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     private var pages: [CardPayload] { [card] + card.extraQuestions }
     private var current: CardPayload { pages[min(page, pages.count - 1)] }
@@ -64,7 +67,7 @@ struct AskSheetView: View {
     /// 本题的答案行：选中的选项 + Other 自写（多选可与选项并存）；
     /// 你来定是一行 __youdecide__；开放式题的答案走 __other__。
     private func optionsForPage(_ p: Int) -> [CardOption] {
-        if pageDelegated.contains(p) { return [CardOption(id: "__youdecide__", label: "你来定")] }
+        if pageDelegated.contains(p) { return [CardOption(id: "__youdecide__", label: L("you_decide"))] }
         let q = pages[p]
         var out: [CardOption] = []
         if q.options.isEmpty {
@@ -90,7 +93,7 @@ struct AskSheetView: View {
         for p in pages.indices {
             let note = (pageNote[p] ?? "").trimmingCharacters(in: .whitespaces)
             if !note.isEmpty {
-                all.append(CardOption(id: "__note__", label: "备注：\(note)"))
+                all.append(CardOption(id: "__note__", label: L("note_prefix") + note))
             }
         }
         onAnswer(all)
@@ -107,7 +110,7 @@ struct AskSheetView: View {
             Capsule().fill(Palette.control).frame(width: 36, height: 5)
                 .frame(maxWidth: .infinity)
             HStack(spacing: 8) {
-                Text(pageHeader.isEmpty ? (card.kind == .vote ? "投票" : "提问") : pageHeader)
+                Text(pageHeader.isEmpty ? (card.kind == .vote ? L("vote") : L("ask_card")) : pageHeader)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Palette.secondary)
                 Spacer()
@@ -122,7 +125,7 @@ struct AskSheetView: View {
                 .font(.system(size: 22, weight: .bold))
                 .fixedSize(horizontal: false, vertical: true)
             if isOpenQuestion {
-                TextField("写下你的回答…", text: Binding(
+                TextField(L("write_answer"), text: Binding(
                     get: { pageOpen[page] ?? "" },
                     set: { pageOpen[page] = $0 }
                 ), axis: .vertical)
@@ -156,7 +159,7 @@ struct AskSheetView: View {
                                             .font(.system(size: 16, weight: isSelected(opt) ? .semibold : .regular))
                                             .foregroundStyle(Palette.ink)
                                         if isRecommended(opt) {
-                                            Text("推荐")
+                                            Text(L("recommended"))
                                                 .font(.system(size: 11, weight: .semibold))
                                                 .foregroundStyle(Palette.secondary)
                                                 .padding(.horizontal, 6).padding(.vertical, 2)
@@ -187,7 +190,7 @@ struct AskSheetView: View {
                 Button {
                     onInteract()
                     if pages.count == 1 {
-                        submit([CardOption(id: "__youdecide__", label: "你来定")])
+                        submit([CardOption(id: "__youdecide__", label: L("you_decide"))])
                     } else {
                         pageDelegated.insert(page)
                         pagePicked[page] = []
@@ -201,7 +204,7 @@ struct AskSheetView: View {
                             .foregroundStyle(pageDelegated.contains(page)
                                              ? Palette.ink : Palette.faint)
                             .frame(width: 22)
-                        Text("你来定").font(.system(size: 16)).foregroundStyle(Palette.ink)
+                        Text(L("you_decide")).font(.system(size: 16)).foregroundStyle(Palette.ink)
                         Spacer()
                     }
                     .padding(.vertical, 8)
@@ -211,13 +214,13 @@ struct AskSheetView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "circle").font(.system(size: 19))
                         .foregroundStyle(Palette.faint).frame(width: 22)
-                    TextField("其他：自己写答案", text: Binding(
+                    TextField(L("other_answer"), text: Binding(
                         get: { pageOther[page] ?? "" },
                         set: { pageOther[page] = $0 }
                     ))
                         .font(.system(size: 16))
                     if pages.count == 1 {
-                        Button("发送") {
+                        Button(L("send")) {
                             onInteract()
                             let v = (pageOther[page] ?? "").trimmingCharacters(in: .whitespaces)
                             guard !v.isEmpty else { return }
@@ -236,7 +239,7 @@ struct AskSheetView: View {
                           ? "plus" : "note.text")
                         .font(.system(size: 14.5))
                         .foregroundStyle(Palette.secondary)
-                    TextField("补充说明（随答案一起发）", text: Binding(
+                    TextField(L("add_note"), text: Binding(
                         get: { pageNote[page] ?? "" },
                         set: { pageNote[page] = $0 }
                     ))
@@ -247,10 +250,10 @@ struct AskSheetView: View {
             if current.multiSelect || pages.count > 1 {
                 HStack(spacing: 10) {
                     if page > 0 {
-                        Button("上一题") { onInteract(); page -= 1 }
+                        Button(L("prev_question")) { onInteract(); page -= 1 }
                             .secondaryCapsule()
                     }
-                    Button(isLastPage ? "提交" : "下一题") {
+                    Button(isLastPage ? L("submit") : L("next_question")) {
                         onInteract()
                         if isLastPage { submit(allPickedOptions()) }
                         else { page += 1 }
@@ -259,11 +262,11 @@ struct AskSheetView: View {
                     .disabled(!isPageComplete(page))
                 }
             } else {
-                Button("提交") { submit(optionsForPage(page)) }
+                Button(L("submit")) { submit(optionsForPage(page)) }
                     .primaryCapsule()
                     .disabled(!isPageComplete(page))
             }
-            Button("跳过", action: onSkip)
+            Button(L("skip"), action: onSkip)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Palette.secondary)
                 .frame(maxWidth: .infinity)
@@ -293,20 +296,23 @@ struct ApprovalSheetView: View {
     let card: CardPayload
     let onAnswer: ([CardOption]) -> Void
     let onSkip: () -> Void
+    @EnvironmentObject var store: AppStore
     @State private var denyReason = ""
     @State private var showMore = false
 
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
+
     private var approveOption: CardOption {
-        card.options.first { $0.id == "approve" } ?? CardOption(id: "approve", label: "批准")
+        card.options.first { $0.id == "approve" } ?? CardOption(id: "approve", label: L("approve"))
     }
     private var rejectOption: CardOption {
-        card.options.first { $0.id == "reject" } ?? CardOption(id: "reject", label: "拒绝")
+        card.options.first { $0.id == "reject" } ?? CardOption(id: "reject", label: L("reject"))
     }
 
     private var riskText: String? {
         switch card.risk {
-        case "high": return "高风险"
-        case "medium": return "中等风险"
+        case "high": return L("risk_high")
+        case "medium": return L("risk_medium")
         default: return nil
         }
     }
@@ -320,7 +326,7 @@ struct ApprovalSheetView: View {
             Capsule().fill(Palette.control).frame(width: 36, height: 5)
                 .frame(maxWidth: .infinity)
             HStack(spacing: 8) {
-                Text(card.actionText.isEmpty ? card.question : "允许运行这条命令？")
+                Text(card.actionText.isEmpty ? card.question : L("allow_command_title"))
                     .font(.system(size: 20, weight: .bold))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
@@ -341,7 +347,7 @@ struct ApprovalSheetView: View {
                         .foregroundStyle(Palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if card.question.count > 120 {
-                        Button(showMore ? "收起" : "显示更多") { showMore.toggle() }
+                        Button(showMore ? L("show_less") : L("show_more")) { showMore.toggle() }
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(Palette.ink)
                     }
@@ -374,27 +380,27 @@ struct ApprovalSheetView: View {
                       ? "plus" : "arrow.uturn.backward")
                     .font(.system(size: 14.5))
                     .foregroundStyle(Palette.secondary)
-                TextField("取消原因 / 改成怎么做", text: $denyReason)
+                TextField(L("cancel_reason"), text: $denyReason)
                     .font(.system(size: 14.5))
             }
             .padding(.vertical, 6)
             HStack(spacing: 10) {
-                Button("拒绝") {
+                Button(L("reject")) {
                     var opts = [rejectOption]
                     let r = denyReason.trimmingCharacters(in: .whitespaces)
                     if !r.isEmpty {
-                        opts.append(CardOption(id: "__deny_reason__", label: "取消原因：\(r)"))
+                        opts.append(CardOption(id: "__deny_reason__", label: L("cancel_reason_prefix") + r))
                     }
                     onAnswer(opts)
                 }
                 .secondaryCapsule()
-                Button("允许") { onAnswer([approveOption]) }
+                Button(L("allow")) { onAnswer([approveOption]) }
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Palette.onInk)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(card.risk == "high" ? Color.red : Palette.ink, in: Capsule())
             }
-            Button("跳过", action: onSkip)
+            Button(L("skip"), action: onSkip)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Palette.secondary)
                 .frame(maxWidth: .infinity)
@@ -414,7 +420,7 @@ struct SheetCountdown: View {
     var body: some View {
         if let deadline {
             let left = Int(deadline.timeIntervalSince(now))
-            Label(left <= 0 ? "已超时" : "\(left / 60):\(String(format: "%02d", left % 60))",
+            Label(left <= 0 ? L("expired") : "\(left / 60):\(String(format: "%02d", left % 60))",
                   systemImage: "timer")
                 .font(.system(size: 12.5, weight: .medium).monospacedDigit())
                 .foregroundStyle(left <= 30 ? Palette.waiting : Palette.secondary)

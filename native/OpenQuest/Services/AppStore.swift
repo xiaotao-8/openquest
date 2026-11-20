@@ -37,6 +37,12 @@ final class AppStore: ObservableObject {
 
     init() {
         load()
+        // 仅供模拟器截图预览：-PreviewLang=<code> 时临时覆写语言（不落盘，
+        // 只验非中文 chrome；正常启动永远读保存的语言）。
+        if let arg = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("-PreviewLang=") }) {
+            let code = String(arg.dropFirst("-PreviewLang=".count))
+            if L10n.languages.contains(where: { $0.code == code }) { language = code }
+        }
         // 仅供模拟器截图预览：启动参数带 -PreviewSeed 时临时填演示数据（不落盘，
         // 正常启动永远是空的——什么都不预置）。
         if ProcessInfo.processInfo.arguments.contains("-PreviewSeed") {
@@ -871,7 +877,7 @@ final class AppStore: ObservableObject {
         for conv in conversations {
             for m in conv.messages {
                 guard let p = m.usagePrompt, let c = m.usageCompletion else { continue }
-                let name = agent(id: UUID(uuidString: m.senderId) ?? UUID())?.name ?? "其他"
+                let name = agent(id: UUID(uuidString: m.senderId) ?? UUID())?.name ?? L10n.t("other", lang: language)
                 let cur = map[name] ?? (0, 0)
                 map[name] = (cur.0 + p, cur.1 + c)
             }
@@ -888,9 +894,9 @@ final class AppStore: ObservableObject {
         }
         if let a = agent(id: UUID(uuidString: m.senderId) ?? UUID()),
            let p = providers.first(where: { $0.id.uuidString == a.providerKey }) {
-            return (p.name, a.modelId.isEmpty ? "未选模型" : a.modelId, true)
+            return (p.name, a.modelId.isEmpty ? L10n.t("no_model", lang: language) : a.modelId, true)
         }
-        return ("其他", m.usageModel ?? "未知模型", true)
+        return (L10n.t("other", lang: language), m.usageModel ?? L10n.t("unknown_model", lang: language), true)
     }
 
     /// 按供应商汇总用量（Minis Usage 页按 provider 分组的同款口径）。

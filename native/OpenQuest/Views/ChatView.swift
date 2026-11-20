@@ -63,7 +63,7 @@ struct ChatView: View {
 
     private var headerName: String {
         if let w = working.first { return w.name }
-        return conversation?.title ?? "聊天"
+        return conversation?.title ?? L10n.t("nav_chat", lang: store.language)
     }
 
     private var headerStatus: String {
@@ -72,9 +72,9 @@ struct ChatView: View {
             if conv.memberIds.count == 1, let a = store.agent(id: conv.memberIds[0]) {
                 let p = store.providers.first { $0.id.uuidString == a.providerKey }
                 let m = p?.models.first { $0.id == a.modelId }
-                return m?.name ?? "未选模型"
+                return m?.name ?? L10n.t("no_model", lang: store.language)
             }
-            return "\(conv.memberIds.count) 位智能体"
+            return String(format: L10n.t("n_agents_fmt", lang: store.language), conv.memberIds.count)
         }
         return ""
     }
@@ -92,7 +92,7 @@ struct ChatView: View {
                         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("返回")
+                .accessibilityLabel(L10n.t("back", lang: store.language))
                 Spacer()
                 Button { openChatSettings() } label: {
                     Image(systemName: "gearshape")
@@ -104,7 +104,7 @@ struct ChatView: View {
                         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("聊天设置")
+                .accessibilityLabel(L10n.t("chat_settings", lang: store.language))
             }
             if !working.isEmpty {
                 // 干活中：中间变干活胶囊（点一下展开“几人在干活”大面板）。
@@ -159,12 +159,12 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(currentAgent == nil)
-                .accessibilityLabel("模型：\(currentModelName)")
+                .accessibilityLabel(L10n.t("model_label", lang: store.language) + "：\(currentModelName)")
             } else {
                 // 群聊：中间是群名 pill，点开群设置。
                 Button { showingGroupSettings = true } label: {
                     HStack(spacing: 6) {
-                        Text(conversation?.title ?? "群聊")
+                        Text(conversation?.title ?? L10n.t("group_chat", lang: store.language))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)
@@ -200,19 +200,19 @@ struct ChatView: View {
     }
 
     private var currentModelName: String {
-        guard let a = currentAgent else { return "群聊" }
+        guard let a = currentAgent else { return L10n.t("group_chat", lang: store.language) }
         let p = store.providers.first { $0.id.uuidString == a.providerKey }
         let m = p?.models.first { $0.id == a.modelId }
-        return m?.name ?? "未选模型"
+        return m?.name ?? L10n.t("no_model", lang: store.language)
     }
 
     private func effortLabel(_ e: String) -> String {
         switch e {
-        case "low": return "浅想"
-        case "medium": return "深想"
-        case "high": return "极深"
-        case "xhigh": return "超高"
-        case "max": return "最高"
+        case "low": return L10n.t("effort_low", lang: store.language)
+        case "medium": return L10n.t("effort_medium", lang: store.language)
+        case "high": return L10n.t("effort_high", lang: store.language)
+        case "xhigh": return L10n.t("effort_xhigh", lang: store.language)
+        case "max": return L10n.t("effort_max", lang: store.language)
         default: return ""
         }
     }
@@ -242,7 +242,7 @@ struct ChatView: View {
                 Button { webSearchOn.toggle() } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "globe").font(.caption2)
-                        Text("联网").font(.caption)
+                        Text(L10n.t("online", lang: store.language)).font(.caption)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .background(webSearchOn ? Palette.ink : Palette.control,
@@ -256,11 +256,11 @@ struct ChatView: View {
                 // 发图片只在当前模型支持视觉理解时显示（能力自动检测；没检测出按支持处理）。
                 if store.agentSupportsVision(currentAgent) {
                     PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label("发图片", systemImage: "photo")
+                        Label(L10n.t("send_image", lang: store.language), systemImage: "photo")
                     }
                 }
                 Button { showingFileImporter = true } label: {
-                    Label("发文件", systemImage: "doc")
+                    Label(L10n.t("send_file", lang: store.language), systemImage: "doc")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -322,7 +322,7 @@ struct ChatView: View {
     @ViewBuilder
     private var browserWindow: some View {
         if let shot = liveShot, let ui = UIImage(data: shot) {
-            MiniWindow(title: liveCaption.isEmpty ? "服务器浏览器" : liveCaption,
+            MiniWindow(title: liveCaption.isEmpty ? L10n.t("server_browser", lang: store.language) : liveCaption,
                        onClose: { liveShot = nil }) {
                 Image(uiImage: ui)
                     .resizable()
@@ -406,9 +406,9 @@ struct ChatView: View {
                             Text("\(min(conv.goalCurrent + 1, max(conv.goalStages.count, 1)))/\(max(conv.goalStages.count, 1))")
                                 .font(.caption2).foregroundStyle(.secondary)
                             if conv.goalStatus == "done" {
-                                Text("已完成").font(.caption2).foregroundStyle(.green)
+                                Text(L10n.t("done", lang: store.language)).font(.caption2).foregroundStyle(.green)
                             } else if conv.goalStatus == "stopped" {
-                                Text("已停下").font(.caption2).foregroundStyle(.red)
+                                Text(L10n.t("stopped", lang: store.language)).font(.caption2).foregroundStyle(.red)
                             }
                         }
                         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -554,8 +554,8 @@ struct ChatView: View {
                     kind: .approval,
                     question: "小评想把 DNS 改成阿里云，测完再改回来。",
                     options: [
-                        CardOption(id: "approve", label: "批准", detail: "改这个设置"),
-                        CardOption(id: "reject", label: "拒绝", detail: "不改"),
+                        CardOption(id: "approve", label: L10n.t("approve", lang: store.language), detail: L10n.t("detail_change_setting", lang: store.language)),
+                        CardOption(id: "reject", label: L10n.t("reject", lang: store.language), detail: L10n.t("detail_no_change", lang: store.language)),
                     ])
                 card.actionText = "oq_config_set dnsMode = aliyun"
                 card.impact = "把 dnsMode 从 system 改成 aliyun。可再改回来。"
@@ -597,7 +597,7 @@ struct ChatView: View {
             guard let card = conversation?.pendingCard, card.kind == .approval else { return }
             store.deepLinkApproval = nil
             answerPendingCard([CardOption(id: v.approve ? "approve" : "reject",
-                                          label: v.approve ? "批准" : "拒绝")])
+                                          label: v.approve ? L10n.t("approve", lang: store.language) : L10n.t("reject", lang: store.language))])
         }
         .onChange(of: scenePhase) { _, phase in
             // 提问卡在后台等回答：发一条本地通知，答案随下一条消息回来。
@@ -690,8 +690,8 @@ struct ChatView: View {
                 kind: .approval,
                 question: "允许智能体调用这个工具吗？",
                 options: [
-                    CardOption(id: "approve", label: "批准", detail: "执行这次调用"),
-                    CardOption(id: "reject", label: "拒绝", detail: "不执行这个操作"),
+                    CardOption(id: "approve", label: L10n.t("approve", lang: store.language), detail: L10n.t("detail_run_call", lang: store.language)),
+                    CardOption(id: "reject", label: L10n.t("reject", lang: store.language), detail: L10n.t("detail_no_run", lang: store.language)),
                 ])
             card.actionText = req.label
             card.impact = "工具：\(req.name)。批了就执行这一次，下次调用还要再批。"
@@ -709,8 +709,8 @@ struct ChatView: View {
                 kind: .approval,
                 question: req.caption.isEmpty ? "智能体想改一个设置" : req.caption,
                 options: [
-                    CardOption(id: "approve", label: "批准", detail: "改这个设置"),
-                    CardOption(id: "reject", label: "拒绝", detail: "不改"),
+                    CardOption(id: "approve", label: L10n.t("approve", lang: store.language), detail: L10n.t("detail_change_setting", lang: store.language)),
+                    CardOption(id: "reject", label: L10n.t("reject", lang: store.language), detail: L10n.t("detail_no_change", lang: store.language)),
                 ])
             card.actionText = "oq_config_set \(req.key) = \(req.value)"
             card.impact = "把 \(req.key) 从 \(old) 改成 \(req.value)。\(req.sensitive ? "敏感改动，改完立即生效。" : "可再改回来。")"
@@ -803,7 +803,7 @@ struct ChatView: View {
         }
         let answer: String
         if card.kind == .approval {
-            answer = chosen.first?.id == "approve" ? "批准" : "拒绝"
+            answer = chosen.first?.id == "approve" ? L10n.t("approve", lang: store.language) : L10n.t("reject", lang: store.language)
         } else {
             answer = chosen.map(\.label).joined(separator: "、")
         }
@@ -923,12 +923,12 @@ struct ChatView: View {
         while let speaker = floorHolder, hops < 3 {
             // 全部停下：本棒不跑了，留一行暂停事件。
             if stopRequested {
-                appendEvent("paused", "已停下")
+                appendEvent("paused", L10n.t("event_paused", lang: store.language))
                 break
             }
             // 被单独停下的成员不接话，留一行“没接上”，换下一个人。
             if conv.stoppedMembers.contains(speaker.id) {
-                appendEvent("missed", "\(speaker.name) 已停下，没接上")
+                appendEvent("missed", String(format: L10n.t("event_missed_fmt", lang: store.language), speaker.name))
                 floorHolder = nextSpeaker(after: speaker, members: members, conv: conv)
                 continue
             }
@@ -949,12 +949,12 @@ struct ChatView: View {
                     updateMessage(id: placeholder.id, text: reply, reasoning: reasoning, usage: usage)
                 }
                 if reply.hasPrefix("（出错了") {
-                    appendEvent("failed", "\(speaker.name) 出错了，没接上")
+                    appendEvent("failed", String(format: L10n.t("event_failed_fmt", lang: store.language), speaker.name))
                 }
                 // 群主模式：群主没 @ 谁就停下，留一行事件；成员 @ 谁谁接棒。
                 if conv.speakMode == "admin", conv.adminId == speaker.id,
                    mentionedMember(in: reply, members: members, excluding: speaker) == nil {
-                    appendEvent("admin-passed", "群主没有点名别人")
+                    appendEvent("admin-passed", L10n.t("event_admin_passed", lang: store.language))
                     return
                 }
                 floorHolder = mentionedMember(in: reply, members: members, excluding: speaker)
@@ -1265,7 +1265,7 @@ struct ChatView: View {
             }
             return result
         } catch {
-            LogStore.append("聊天", "出错：\(error.localizedDescription)")
+            LogStore.append(L10n.t("nav_chat", lang: store.language), L10n.t("error_prefix", lang: store.language) + error.localizedDescription)
             return .text("（出错了：\(error.localizedDescription)）", reasoning: nil)
         }
     }
@@ -1377,6 +1377,7 @@ struct ChatView: View {
 struct CardView: View {
     let card: CardPayload
     let onAnswer: ([CardOption]) -> Void
+    @EnvironmentObject var store: AppStore
     @State private var page = 0
     @State private var pagePicked: [Int: Set<String>] = [:]
     @State private var otherText = ""
@@ -1387,6 +1388,8 @@ struct CardView: View {
     @State private var questionExpanded = false
     @State private var questionClampedHeight: CGFloat = 0
     @State private var questionFullHeight: CGFloat = 0
+
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     private var questionOverflows: Bool { questionFullHeight > questionClampedHeight + 1 }
 
@@ -1408,8 +1411,8 @@ struct CardView: View {
     private var isLastPage: Bool { page >= pages.count - 1 }
 
     private var chipText: String {
-        if card.kind == .approval { return card.risk == "high" ? "高风险操作" : "需要批准" }
-        return card.kind == .vote ? "投票" : "提问"
+        if card.kind == .approval { return card.risk == "high" ? L("risk_high_action") : L("needs_approval") }
+        return card.kind == .vote ? L("vote") : L("ask_card")
     }
     /// Minis UserAskTint：confirm 按风险着色（high 红、其余橙），提问蓝。
     private var chipColor: Color {
@@ -1428,7 +1431,7 @@ struct CardView: View {
     /// Minis 倒计时文案：m:ss（无“剩余”二字），配 timer 图标；≤30 秒变橙。
     private var countdownText: String? {
         guard let left = countdownLeft else { return nil }
-        if left <= 0 { return "已超时" }
+        if left <= 0 { return L("expired") }
         return "\(left / 60):\(String(format: "%02d", left % 60))"
     }
     private var countdownUrgent: Bool { (countdownLeft ?? Int.max) <= 30 }
@@ -1473,7 +1476,7 @@ struct CardView: View {
                 askBody
             }
             if answered {
-                Text("已作答")
+                Text(L("answered"))
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.top, 6)
             }
@@ -1517,17 +1520,17 @@ struct CardView: View {
                     Image(systemName: denyReason.trimmingCharacters(in: .whitespaces).isEmpty ? "plus" : "arrow.uturn.backward")
                         .font(.system(size: 14.5))
                         .foregroundStyle(.secondary)
-                    TextField("取消原因 / 改成怎么做", text: $denyReason)
+                    TextField(L("cancel_reason"), text: $denyReason)
                         .font(.system(size: 14.5))
                 }
                 .padding(.vertical, 7)
                 .frame(minHeight: 44)
             }
             HStack(spacing: 8) {
-                Button("取消") {
+                Button(L("cancel")) {
                     var opts = [rejectOption]
                     let r = denyReason.trimmingCharacters(in: .whitespaces)
-                    if !r.isEmpty { opts.append(CardOption(id: "__deny_reason__", label: "取消原因：\(r)")) }
+                    if !r.isEmpty { opts.append(CardOption(id: "__deny_reason__", label: L("cancel_reason_prefix") + r)) }
                     submit(opts)
                 }
                 .font(.system(size: 16, weight: .semibold))
@@ -1535,7 +1538,7 @@ struct CardView: View {
                 .frame(minWidth: 72, minHeight: 44)
                 .background(Palette.control, in: Capsule())
                 Spacer(minLength: 12)
-                Button("允许") { submit([approveOption]) }
+                Button(L("allow")) { submit([approveOption]) }
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.black)
                     .padding(.horizontal, 16)
@@ -1548,10 +1551,10 @@ struct CardView: View {
     }
 
     private var approveOption: CardOption {
-        card.options.first { $0.id == "approve" } ?? CardOption(id: "approve", label: "批准")
+        card.options.first { $0.id == "approve" } ?? CardOption(id: "approve", label: L("approve"))
     }
     private var rejectOption: CardOption {
-        card.options.first { $0.id == "reject" } ?? CardOption(id: "reject", label: "拒绝")
+        card.options.first { $0.id == "reject" } ?? CardOption(id: "reject", label: L("reject"))
     }
 
     // MARK: 提问/投票卡
@@ -1590,7 +1593,7 @@ struct CardView: View {
                 .padding(.bottom, 4)
             if questionOverflows && !answered {
                 Button { questionExpanded.toggle() } label: {
-                    Text(questionExpanded ? "收起" : "展开更多")
+                    Text(questionExpanded ? L("show_less") : L("expand_more"))
                         .font(.system(size: 14.5, weight: .medium))
                         .foregroundStyle(chipColor)
                         .padding(.trailing, 16)
@@ -1625,7 +1628,7 @@ struct CardView: View {
                                 Text(opt.label)
                                     .font(.system(size: 16, weight: isSelected(opt) ? .semibold : .regular))
                                 if idx == 0 {
-                                    Text("推荐")
+                                    Text(L("recommended"))
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(chipColor)
                                         .padding(.horizontal, 5).padding(.vertical, 1)
@@ -1650,13 +1653,13 @@ struct CardView: View {
             // 提问卡专属行（单题时）：你来定 / 其他 / 补充说明。
             if card.kind == .ask && pages.count == 1 && !answered {
                 Divider().background(Palette.stroke)
-                Button { submit([CardOption(id: "__youdecide__", label: "你来定")]) } label: {
+                Button { submit([CardOption(id: "__youdecide__", label: L("you_decide"))]) } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "circle")
                             .font(.system(size: 17))
                             .foregroundStyle(.secondary)
                             .frame(width: 21)
-                        Text("你来定").font(.system(size: 16))
+                        Text(L("you_decide")).font(.system(size: 16))
                         Spacer(minLength: 0)
                     }
                     .padding(.vertical, 7)
@@ -1670,9 +1673,9 @@ struct CardView: View {
                         .font(.system(size: 17))
                         .foregroundStyle(.secondary)
                         .frame(width: 21)
-                    TextField("其他：自己写答案", text: $otherText)
+                    TextField(L("other_answer"), text: $otherText)
                         .font(.system(size: 16))
-                    Button("发送") {
+                    Button(L("send")) {
                         let v = otherText.trimmingCharacters(in: .whitespaces)
                         guard !v.isEmpty else { return }
                         submit([CardOption(id: "__other__", label: v)])
@@ -1686,7 +1689,7 @@ struct CardView: View {
                     Image(systemName: noteText.trimmingCharacters(in: .whitespaces).isEmpty ? "plus" : "note.text")
                         .font(.system(size: 14.5))
                         .foregroundStyle(.secondary)
-                    TextField("补充说明（随答案一起发）", text: $noteText)
+                    TextField(L("add_note"), text: $noteText)
                         .font(.system(size: 14.5))
                 }
                 .padding(.vertical, 7)
@@ -1696,13 +1699,13 @@ struct CardView: View {
             if !answered && (current.multiSelect || pages.count > 1) {
                 HStack(spacing: 10) {
                     if page > 0 {
-                        Button("上一题") { page -= 1 }
+                        Button(L("prev_question")) { page -= 1 }
                             .font(.system(size: 16, weight: .semibold))
                             .padding(.horizontal, 16)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .background(Palette.control, in: Capsule())
                     }
-                    Button(isLastPage ? "提交" : "下一题") {
+                    Button(isLastPage ? L("submit") : L("next_question")) {
                         if isLastPage { submit(allPickedOptions()) }
                         else { page += 1 }
                     }
@@ -1741,7 +1744,7 @@ struct CardView: View {
         var all = opts
         let note = noteText.trimmingCharacters(in: .whitespaces)
         if !note.isEmpty {
-            all.append(CardOption(id: "__note__", label: "备注：\(note)"))
+            all.append(CardOption(id: "__note__", label: L("note_prefix") + note))
         }
         onAnswer(all)
     }

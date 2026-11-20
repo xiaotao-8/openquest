@@ -21,58 +21,59 @@ struct LanguageSettingsView: View {
                 }
             }
             Section {
-                Text("换语言后核心界面（标签栏、设置、聊天列表、输入框）立即切换；个别深层页面下次打开时切换。")
+                Text(L("lang_footnote"))
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("语言")
+        .navigationTitle(L("language"))
     }
 }
 
 /// 用量统计：全部会话的回复用量合计 + 按智能体分。
 struct UsageStatsView: View {
     @EnvironmentObject var store: AppStore
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     var body: some View {
         List {
-            Section("合计") {
+            Section(L("total")) {
                 HStack {
-                    Text("输入")
+                    Text(L("input_tokens"))
                     Spacer()
                     Text("\(store.totalUsage.prompt) tokens")
                 }
                 HStack {
-                    Text("输出")
+                    Text(L("output_tokens"))
                     Spacer()
                     Text("\(store.totalUsage.completion) tokens")
                 }
                 HStack {
-                    Text("总计")
+                    Text(L("grand_total"))
                     Spacer()
                     Text("\(store.totalUsage.prompt + store.totalUsage.completion) tokens")
                         .font(.body.weight(.semibold))
                 }
             }
-            Section("按智能体") {
+            Section(L("usage_by_agent")) {
                 if store.usageByAgent().isEmpty {
-                    Text("还没有带用量的回复。聊过天之后，这里按智能体统计输入/输出。")
+                    Text(L("usage_empty"))
                         .foregroundStyle(.secondary)
                 }
                 ForEach(store.usageByAgent(), id: \.name) { row in
                     HStack {
                         Text(row.name)
                         Spacer()
-                        Text("入 \(row.prompt) · 出 \(row.completion)")
+                        Text(String(format: L("usage_in_out_fmt"), row.prompt, row.completion))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
             Section {
-                Text("用量取每次回复的 SSE usage 段（输入/输出 token 数），存在每条回复下面；换模型、清会话都会跟着变。")
+                Text(L("usage_note"))
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("用量统计")
+        .navigationTitle(L("usage"))
     }
 }
 

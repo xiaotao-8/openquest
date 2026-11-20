@@ -10,10 +10,10 @@ struct ExploreView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("发现") {
+                Section(L("discover")) {
                     NavigationLink { PluginStoreView() } label: {
                         ExploreRow(icon: "puzzlepiece",
-                                   title: L("plugins"), subtitle: "在 App 内安装、配置和使用")
+                                   title: L("plugins"), subtitle: L("plugins_subtitle")
                     }
                     NavigationLink { SchedulesView() } label: {
                         ExploreRow(icon: "alarm",

@@ -123,7 +123,7 @@ struct RootView: View {
                     )
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("关闭") { showSessions = false }
+                            Button(L("close")) { showSessions = false }
                         }
                     }
                 }
@@ -277,12 +277,12 @@ struct SettingsView: View {
                                    value: store.providers.isEmpty ? nil : "\(store.providers.count)") {
                             ProvidersView()
                         }
-                        SettingRow(icon: "lock.shield", title: "默认访问模式",
+                        SettingRow(icon: "lock.shield", title: L("access_mode"),
                                    value: permissions.accessModeDescription,
                                    accessory: .upDownChevrons) {
                             PermissionsView()
                         }
-                        SettingRow(icon: "lock.shield.fill", title: "权限") {
+                        SettingRow(icon: "lock.shield.fill", title: L("permissions")) {
                             PermissionsView()
                         }
                         SettingRow(icon: "wand.and.stars", title: L("skills"),
@@ -294,18 +294,18 @@ struct SettingsView: View {
                             PluginsView()
                         }
                         SettingRow(icon: "network", title: L("dns"),
-                                   value: store.dnsMode == "system" ? "跟随系统" : nil) {
+                                   value: store.dnsMode == "system" ? L("follow_system") : nil) {
                             DNSSettingsView()
                         }
                         SettingRow(icon: "link", title: L("connectors"),
-                                   value: store.connectors.contains { $0.enabled } ? nil : "全部关") {
+                                   value: store.connectors.contains { $0.enabled } ? nil : L("all_off")) {
                             ConnectorsView()
                         }
                         SettingRow(icon: "safari", title: L("server_browser"), showsDivider: false) {
                             BrowserView()
                         }
                     }
-                    Text("每个供应商都能独立用，配好一个、填上 Key 就能开始聊天。")
+                    Text(L("settings_footnote"))
                         .font(.footnote).foregroundStyle(.secondary)
                         .padding(.leading, 36).padding(.top, 8)
 
@@ -331,20 +331,20 @@ struct SettingsView: View {
                     .padding(.top, 24)
 
                     // 智能体运行时分组：Soul / 记忆 / 环境变量（技能只在第一张卡出现，不重复）。
-                    Text("智能体运行时")
+                    Text(L("agent_runtime"))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 36).padding(.top, 28).padding(.bottom, 8)
                     SettingsCard {
                         SettingRow(icon: "heart.text.square", title: "Soul",
-                                   value: store.soulText.isEmpty ? "未写" : "已写") {
+                                   value: store.soulText.isEmpty ? L("not_written") : L("written")) {
                             SoulView()
                         }
-                        SettingRow(icon: "brain", title: "记忆",
+                        SettingRow(icon: "brain", title: L("memory"),
                                    value: store.dailyLogs.isEmpty ? nil : "\(store.dailyLogs.count)") {
                             GlobalMemoryView()
                         }
-                        SettingRow(icon: "terminal", title: "环境变量",
+                        SettingRow(icon: "terminal", title: L("env_vars"),
                                    value: store.envVars.isEmpty ? nil : "\(store.envVars.count)", showsDivider: false) {
                             EnvVarsView()
                         }
@@ -356,7 +356,7 @@ struct SettingsView: View {
                             UpdateView()
                         }
                         SettingRow(icon: "iphone", title: L("device_caps"),
-                                   value: store.deviceCapabilities.contains { $0.enabled } ? nil : "全部关") {
+                                   value: store.deviceCapabilities.contains { $0.enabled } ? nil : L("all_off")) {
                             DeviceCapabilitiesView()
                         }
                         SettingRow(icon: "doc.text", title: L("log"), showsDivider: false) {

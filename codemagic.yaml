@@ -196,7 +196,12 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-page-group.png
           xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png preview-permissions.png preview-ask.png preview-approval.png preview-log.png preview-page-agents.png preview-page-skills.png preview-page-plugins.png preview-page-connectors.png preview-page-browser.png preview-page-schedules.png preview-page-miniapps.png preview-page-language.png preview-page-usage.png preview-page-soul.png preview-page-memory.png preview-page-envvars.png preview-page-update.png preview-page-devicecaps.png preview-page-group.png
+          # 英文 chrome 验收：-PreviewLang=en 临时切英文（不落盘），截首页看标签栏/设置/输入框是否全英文。
+          xcrun simctl launch "$SIM_UDID" com.xiaotao.openquest -- -PreviewSeed -PreviewLang=en
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-lang-en.png
+          xcrun simctl terminate "$SIM_UDID" com.xiaotao.openquest || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-settings.png preview-dns.png preview-livechat.png preview-providers.png preview-permissions.png preview-ask.png preview-approval.png preview-log.png preview-page-agents.png preview-page-skills.png preview-page-plugins.png preview-page-connectors.png preview-page-browser.png preview-page-schedules.png preview-page-miniapps.png preview-page-language.png preview-page-usage.png preview-page-soul.png preview-page-memory.png preview-page-envvars.png preview-page-update.png preview-page-devicecaps.png preview-page-group.png preview-lang-en.png
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -235,4 +240,5 @@ workflows:
       - native/preview-page-update.png
       - native/preview-page-devicecaps.png
       - native/preview-page-group.png
+      - native/preview-lang-en.png
       - native/OpenQuestNative-unsigned.ipa

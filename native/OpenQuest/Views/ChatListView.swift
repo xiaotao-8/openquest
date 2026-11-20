@@ -75,7 +75,7 @@ struct ChatListView: View {
                                 Button(role: .destructive) {
                                     store.deleteConversation(id: conv.id)
                                 } label: {
-                                    Label("删除会话", systemImage: "trash")
+                                    Label(L("delete_conversation"), systemImage: "trash")
                                 }
                             }
                             Divider().background(Palette.stroke).padding(.leading, 76)
@@ -113,10 +113,10 @@ struct ChatListView: View {
                         Label(L("new_chat"), systemImage: "square.and.pencil")
                     }
                     Button { showingImport = true } label: {
-                        Label("导入会话（DeepSeek / Chatbox）", systemImage: "square.and.arrow.down")
+                        Label(L("import_chats_full"), systemImage: "square.and.arrow.down")
                     }
                     Button { showingDeepSeekLinkImport = true } label: {
-                        Label("粘贴 DeepSeek 链接", systemImage: "link")
+                        Label(L("paste_deepseek_link"), systemImage: "link")
                     }
                 } label: {
                     Image(systemName: "square.and.pencil")
@@ -136,22 +136,22 @@ struct ChatListView: View {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             guard let data = try? Data(contentsOf: url) else {
-                importStatus = "文件读不出来"
+                importStatus = L("import_unreadable")
                 return
             }
             let sessions = ChatImport.parse(data)
             if sessions.isEmpty {
-                importStatus = "没认出这是 DeepSeek 或 Chatbox 导出的会话"
+                importStatus = L("import_unknown")
                 return
             }
             let n = ChatImport.importInto(store, sessions: sessions)
-            importStatus = "导入了 \(n) 个会话"
+            importStatus = String(format: L("imported_n"), n)
         }
-        .alert("导入会话", isPresented: Binding(
+        .alert(L("import_title"), isPresented: Binding(
             get: { importStatus != nil },
             set: { if !$0 { importStatus = nil } }
         )) {
-            Button("好") { importStatus = nil }
+            Button(L("ok")) { importStatus = nil }
         } message: {
             Text(importStatus ?? "")
         }

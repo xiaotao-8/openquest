@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// 发消息直接进“直接聊”（不用先建智能体），首条消息随跳转一起发出去。
 struct HomeView: View {
     @EnvironmentObject var store: AppStore
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
     let onOpenSessions: () -> Void
     let onOpenConversation: (ChatDestination) -> Void
     @State private var draft = ""
@@ -30,13 +31,13 @@ struct HomeView: View {
     private var modelName: String {
         if let a = directAgent {
             let p = store.providers.first { $0.id.uuidString == a.providerKey }
-            return p?.models.first { $0.id == a.modelId }?.name ?? "未选模型"
+            return p?.models.first { $0.id == a.modelId }?.name ?? L("no_model")
         }
-        return store.providers.first?.models.first?.name ?? "未选模型"
+        return store.providers.first?.models.first?.name ?? L("no_model")
     }
 
     private var modeName: String {
-        directAgent?.effort == "high" ? "深度思考" : "标准模式"
+        directAgent?.effort == "high" ? L("deep_thinking") : L("standard_mode")
     }
 
     private var canSend: Bool {
@@ -44,27 +45,30 @@ struct HomeView: View {
             || pendingImage != nil || pendingFileName != nil
     }
 
-    private let suggestions = ["导入 DeepSeek 对话", "写一首短诗", "解释一个概念", "帮我规划今天"]
+    // 首页建议 chips：按语言取文案（拿不准的语言用英文兜底，见 L10n 表）。
+    private var suggestions: [String] {
+        [L("suggest_import"), L("suggest_poem"), L("suggest_concept"), L("suggest_plan")]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
             Spacer()
             VStack(spacing: 18) {
-                Text("开始探索")
+                Text(L("start_explore"))
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(Palette.ink)
                 // 两个 pill 竖排居中（原版 home.png）：上工作区、下模式。
                 VStack(spacing: 12) {
                     // 工作区：底座只有一个默认工作区，先只展示；多工作区进 FishPocket 核心阶段。
-                    Label("默认工作区", systemImage: "folder")
+                    Label(L("default_workspace"), systemImage: "folder")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.secondary)
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(Palette.field, in: Capsule())
                     Menu {
-                        Button("标准模式") { setMode("") }
-                        Button("深度思考") { setMode("high") }
+                        Button(L("standard_mode")) { setMode("") }
+                        Button(L("deep_thinking")) { setMode("high") }
                     } label: {
                         Label(modeName, systemImage: "cpu")
                             .font(.subheadline.weight(.medium))
@@ -89,15 +93,15 @@ struct HomeView: View {
         .onChange(of: dictation.liveText) { _, text in
             draft = dictationBase + text
         }
-        .alert("需要语音权限", isPresented: $dictation.showPermissionAlert) {
-            Button("去设置") {
+        .alert(L("voice_permission_title"), isPresented: $dictation.showPermissionAlert) {
+            Button(L("go_settings")) {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
             }
-            Button("以后再说", role: .cancel) {}
+            Button(L("later"), role: .cancel) {}
         } message: {
-            Text("请在系统设置里打开语音识别与麦克风权限，才能用语音输入。")
+            Text(L("voice_permission_msg"))
         }
         .sheet(isPresented: $showingModelSheet) {
             if let a = directAgent { ModelPickerSheet(agent: a) }
@@ -107,22 +111,22 @@ struct HomeView: View {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             guard let data = try? Data(contentsOf: url) else {
-                importStatus = "文件读不出来"
+                importStatus = L("import_unreadable")
                 return
             }
             let sessions = ChatImport.parse(data)
             if sessions.isEmpty {
-                importStatus = "没认出这是 DeepSeek 或 Chatbox 导出的会话"
+                importStatus = L("import_unknown")
                 return
             }
             let n = ChatImport.importInto(store, sessions: sessions)
-            importStatus = "导入了 \(n) 个会话"
+            importStatus = String(format: L("imported_n"), n)
         }
-        .alert("导入会话", isPresented: Binding(
+        .alert(L("import_title"), isPresented: Binding(
             get: { importStatus != nil },
             set: { if !$0 { importStatus = nil } }
         )) {
-            Button("好") { importStatus = nil }
+            Button(L("ok")) { importStatus = nil }
         } message: {
             Text(importStatus ?? "")
         }
@@ -189,7 +193,7 @@ struct HomeView: View {
                         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("会话列表")
+                .accessibilityLabel(L("session_list"))
                 Spacer()
                 Color.clear.frame(width: 40, height: 40)
             }
@@ -209,7 +213,7 @@ struct HomeView: View {
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("模型：\(modelName)")
+            .accessibilityLabel(L("model_label") + "：\(modelName)")
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
@@ -264,11 +268,11 @@ struct HomeView: View {
                 Menu {
                     if store.agentSupportsVision(directAgent) {
                         PhotosPicker(selection: $photoItem, matching: .images) {
-                            Label("发图片", systemImage: "photo")
+                            Label(L("send_image"), systemImage: "photo")
                         }
                     }
                     Button { showingFileImporter = true } label: {
-                        Label("发文件", systemImage: "doc")
+                        Label(L("send_file"), systemImage: "doc")
                     }
                 } label: {
                     Image(systemName: "plus")
@@ -278,7 +282,7 @@ struct HomeView: View {
                         .background(Palette.control, in: Circle())
                         .frame(minWidth: 44, minHeight: 44)
                 }
-                TextField("发消息", text: $draft, axis: .vertical)
+                TextField(L("send_message"), text: $draft, axis: .vertical)
                     .font(.body)
                     .lineLimit(1...5)
                     .focused($focused)
@@ -294,7 +298,7 @@ struct HomeView: View {
                             .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(dictation.isRecording ? "停止听写" : "语音输入")
+                    .accessibilityLabel(dictation.isRecording ? L("stop_dictation") : L("voice_input"))
                 }
                 if canSend {
                     Button(action: sendDraft) {
@@ -306,7 +310,7 @@ struct HomeView: View {
                             .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("发送消息")
+                    .accessibilityLabel(L("send_message"))
                 }
             }
         }
