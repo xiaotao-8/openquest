@@ -1211,7 +1211,7 @@ struct CardView: View {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: radioIcon(for: opt))
                             .font(.system(size: 17))
-                            .foregroundStyle(isSelected(opt) ? chipColor : .tertiary)
+                            .foregroundStyle(isSelected(opt) ? chipColor : .secondary)
                             .frame(width: 21)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
@@ -1247,7 +1247,7 @@ struct CardView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "circle")
                             .font(.system(size: 17))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .frame(width: 21)
                         Text("你来定").font(.system(size: 16))
                         Spacer(minLength: 0)
@@ -1261,7 +1261,7 @@ struct CardView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "circle")
                         .font(.system(size: 17))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .frame(width: 21)
                     TextField("其他：自己写答案", text: $otherText)
                         .font(.system(size: 16))
@@ -1476,7 +1476,7 @@ private struct MessageBubble: View {
                         .foregroundStyle(.secondary)
                     Text(message.date.formatted(date: .omitted, time: .shortened))
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
             }
             if let reasoning = message.reasoning, !reasoning.isEmpty {
