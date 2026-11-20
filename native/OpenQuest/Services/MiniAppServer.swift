@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import WebKit
 
 /// 小工具 MiniApp 的自定义协议：miniapp://<id>/index.html。
