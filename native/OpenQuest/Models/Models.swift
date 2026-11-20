@@ -9,6 +9,19 @@ struct Agent: Identifiable, Codable, Equatable {
     var modelId: String = ""         // 该智能体用的模型
     var tintHue: Double = 0.6        // 头像底色（首字 disc，不用 emoji、不用 App 图标）
     var initial: String { String(name.prefix(1)) }
+    // 思考档位：""=跟模型默认，off/low/medium/high（DDchat/Minis/FishPocket 三家都有）。
+    var effort: String = ""
+    // 生成参数（DDchat）：前置词/后置词包在每条用户消息外；temperature/Top-P 进请求体。
+    var prefix: String = ""
+    var suffix: String = ""
+    var temperature: Double = 1.0
+    var topP: Double = 1.0
+    // 上下文：最多带几条历史消息（0=不限）；满了自动压缩=截掉最旧的并打标记。
+    var contextLength: Int = 0
+    var autoCompress: Bool = false
+    // 工作文件夹（FishPocket）：""=团队工作区；私有智能体必须另指一个不重叠的文件夹。
+    var workDir: String = ""
+    var isPrivate: Bool = false
 }
 
 /// 卡片（提问卡 / 投票卡 / 审批卡）：智能体发起，用户点选项行作答。
@@ -21,6 +34,16 @@ struct CardPayload: Codable, Equatable {
     var options: [CardOption] = []
     var multiSelect: Bool = false
     var resolved: [String] = []      // 用户已选的 option id；非空 = 已作答
+    // 提问卡补全（Minis）：倒计时（分钟，0=不限）、作答截止时间、最佳选项角标、
+    // 多题向导（后面的题）。label/问题各 ≤12 字，解析时截断。
+    var timeoutMinutes: Int = 5
+    var deadline: Date? = nil
+    var recommendedId: String = ""
+    var extraQuestions: [CardPayload] = []
+    // 审批卡补全（Minis confirm）：等宽字体的精确动作、影响行、风险等级。
+    var actionText: String = ""
+    var impact: String = ""
+    var risk: String = "low"         // low / medium / high（medium 橙、high 红，只定颜色）
 }
 
 struct CardOption: Identifiable, Codable, Equatable {
@@ -40,6 +63,11 @@ struct Message: Identifiable, Codable, Equatable {
     var imageJPEG: Data? = nil       // 用户发的图片（压缩后）：气泡显示 + 发给视觉模型
     var fileName: String? = nil      // 用户发的文件名
     var fileText: String? = nil      // 文本类文件内容（截取后随消息发给模型）
+    var usagePrompt: Int? = nil      // 本条回复的用量（SSE usage 段）：输入 tokens
+    var usageCompletion: Int? = nil  // 输出 tokens
+    var eventKind: String? = nil     // 群轮次事件行：failed / missed / admin-passed / paused
+    var variantOf: UUID? = nil       // 分支：同组重新生成的回复共用一个根 id
+    var variantIndex: Int = 0        // 分支序号（0=第一版）
 }
 
 /// 一个模型供应商：用户自己添加——名字、接口地址（OpenAI 兼容）、Key；
@@ -82,6 +110,7 @@ struct Plugin: Identifiable, Codable, Equatable {
     var content: String = ""         // instruction 类是指令正文；script 类是脚本正文
     var settingsURL: String = ""     // 网页设置页（有就用内嵌网页在 App 里打开）
     var enabled: Bool = false        // 默认关，全局原则
+    var hasClientHalf: Bool = false  // 带网页界面部分的插件：App 内只跑主机部分
 }
 
 struct Connector: Identifiable, Codable, Equatable {
@@ -99,6 +128,57 @@ let builtinConnectors: [Connector] = [
     Connector(id: "gitee",    name: "Gitee",    summary: "代码仓库、Issue"),
     Connector(id: "bocha",    name: "博查搜索", summary: "国内网页搜索"),
     Connector(id: "aliyun",   name: "阿里云",   summary: "云服务器管理"),
+]
+
+/// 定时任务（FishPocket）：按智能体或按群，到点发一条指令开工。
+/// iOS 诚实做法：本地通知 + 打开 App 后执行到期的任务（后台常驻跑不了，不假装）。
+struct ScheduledTask: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var targetKind: String = "agent"  // agent=某个智能体，room=某个群
+    var targetId: UUID = UUID()       // 智能体 id 或会话 id
+    var targetName: String = ""
+    var title: String = ""
+    var prompt: String = ""           // 到点要做的事
+    var repeatKind: String = "once"   // once / daily / weekly / every
+    var time: String = "09:00"        // daily/weekly 用，HH:mm
+    var weekdays: [Int] = [1, 2, 3, 4, 5]  // weekly 用，周一=1
+    var everyMinutes: Int = 60        // every 用
+    var nextFire: Date = Date()
+    var enabled: Bool = true
+}
+
+/// 用户自己的 MCP 服务器（FishPocket 自定义连接器）：一个 HTTPS 地址。
+struct CustomMCP: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var url: String
+    var enabled: Bool = false
+}
+
+/// 小工具 MiniApp（FishPocket）：应用 = 一个文件夹（app.json + 页面文件），
+/// files 存文件名 -> 文件内容，WKWebView 用自定义协议跑起来。
+struct MiniApp: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var files: [String: String] = [:]  // 如 index.html、app.json、style.css
+}
+
+/// 本机能力（FishPocket）：一能力一开关，全部默认关，开关只决定模型看不看得到
+/// 这个工具；真用时还要过系统授权，拒绝就报没拿到授权。
+struct DeviceCapability: Identifiable, Codable, Equatable {
+    var id: String
+    var name: String
+    var summary: String
+    var enabled: Bool = false
+}
+
+let builtinDeviceCapabilities: [DeviceCapability] = [
+    DeviceCapability(id: "calendar", name: "日历", summary: "新建日程"),
+    DeviceCapability(id: "reminders", name: "提醒事项", summary: "新建提醒"),
+    DeviceCapability(id: "photos", name: "照片", summary: "读最近照片的数量和时间"),
+    DeviceCapability(id: "clipboard", name: "剪贴板", summary: "读写剪贴板文字"),
+    DeviceCapability(id: "location", name: "位置", summary: "读一次当前位置"),
+    DeviceCapability(id: "contacts", name: "通讯录", summary: "按名字查联系人"),
 ]
 
 /// 用户自己的服务器（阿里云香港 ECS）：智能体常驻主机。
@@ -124,4 +204,15 @@ struct Conversation: Identifiable, Codable, Equatable {
     var lastPreview: String {
         messages.last?.text ?? ""
     }
+    // 群聊补全（FishPocket）：群主、发言模式、群公告、群目标、停下的成员。
+    var adminId: UUID? = nil
+    var speakMode: String = "everyone"  // everyone=全员轮流，admin=群主先接再点名
+    var notice: String = ""              // 群公告：每成员发言前先读
+    var goalTitle: String = ""           // 群目标标题
+    var goalStages: [String] = []        // 群目标阶段
+    var goalCurrent: Int = 0             // 当前到第几个阶段
+    var goalStatus: String = "active"    // active / done / stopped
+    var stoppedMembers: [UUID] = []      // 被单独停下的成员
+    var variantSelection: [String: Int] = [:]  // 分支显示：variantOf UUID 字符串 -> 选中的序号
+    var autoReplyPending: Bool = false   // 定时任务到点：下一条用户消息已就位，打开就回
 }

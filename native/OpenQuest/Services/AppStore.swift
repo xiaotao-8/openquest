@@ -13,6 +13,13 @@ final class AppStore: ObservableObject {
     @Published var plugins: [Plugin] = []
     @Published var dnsMode: String = DNSSettings.mode
     @Published var dnsCustom: String = DNSSettings.custom
+    @Published var scheduledTasks: [ScheduledTask] = []
+    @Published var customMCPs: [CustomMCP] = []
+    @Published var miniApps: [MiniApp] = []
+    @Published var deviceCapabilities: [DeviceCapability] = builtinDeviceCapabilities
+    @Published var pluginStoreIndex: String = ""   // 插件商店当前用的索引源（""=没开）
+    @Published var language: String = "zh-Hans"    // 界面语言（多语言设置）
+    @Published var autoReplyTick: Int = 0           // 定时任务到点时 +1，聊天页监听后开工
 
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -96,6 +103,23 @@ final class AppStore: ObservableObject {
         save()
     }
 
+    func setAgentEffort(agentId: UUID, effort: String) {
+        guard let i = agents.firstIndex(where: { $0.id == agentId }) else { return }
+        agents[i].effort = effort
+        save()
+    }
+
+    /// 已开启的本机能力 id 集合（进 AgentRunner 的工具表）。
+    var enabledDeviceCaps: Set<String> {
+        Set(deviceCapabilities.filter { $0.enabled }.map { $0.id })
+    }
+
+    func setDeviceCapability(id: String, on: Bool) {
+        guard let i = deviceCapabilities.firstIndex(where: { $0.id == id }) else { return }
+        deviceCapabilities[i].enabled = on
+        save()
+    }
+
     func createAgent(name: String) {
         agents.append(Agent(name: name))
         save()
@@ -109,11 +133,31 @@ final class AppStore: ObservableObject {
         save()
     }
 
-    func createConversation(title: String, memberIds: [UUID]) {
-        conversations.insert(
-            Conversation(title: title, memberIds: memberIds),
-            at: 0
-        )
+    func createConversation(title: String, memberIds: [UUID],
+                            adminId: UUID? = nil, speakMode: String = "everyone",
+                            notice: String = "") {
+        var conv = Conversation(title: title, memberIds: memberIds)
+        conv.adminId = adminId
+        conv.speakMode = speakMode
+        conv.notice = notice
+        conversations.insert(conv, at: 0)
+        save()
+    }
+
+    /// 某个智能体的单聊会话（定时任务到点时用，没有就建一个）。
+    func directConversation(for agentId: UUID) -> UUID {
+        if let c = conversations.first(where: { $0.memberIds == [agentId] }) {
+            return c.id
+        }
+        let title = agent(id: agentId)?.name ?? "智能体"
+        createConversation(title: title, memberIds: [agentId])
+        return conversations[0].id
+    }
+
+    /// 分支切换：某组重新生成的回复显示第几个版本。
+    func setVariant(conversationId: UUID, groupId: UUID, index: Int) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationId }) else { return }
+        conversations[i].variantSelection[groupId.uuidString] = index
         save()
     }
 
@@ -305,6 +349,164 @@ final class AppStore: ObservableObject {
         return (lines[0], lines.count > 1 ? lines[1] : summary)
     }
 
+    // MARK: 定时任务
+
+    func addScheduledTask(_ t: ScheduledTask) {
+        scheduledTasks.append(t)
+        save()
+        NotificationHelper.schedule(task: t)
+    }
+
+    func deleteScheduledTask(id: UUID) {
+        scheduledTasks.removeAll { $0.id == id }
+        save()
+        NotificationHelper.cancel(taskId: id)
+    }
+
+    func setScheduledTaskEnabled(id: UUID, _ on: Bool) {
+        guard let i = scheduledTasks.firstIndex(where: { $0.id == id }) else { return }
+        scheduledTasks[i].enabled = on
+        save()
+        if on { NotificationHelper.schedule(task: scheduledTasks[i]) }
+        else { NotificationHelper.cancel(taskId: id) }
+    }
+
+    /// App 回到前台时执行到期的任务：把指令作为用户消息投进目标会话，
+    /// 标记 autoReplyPending，聊天页看到就开工（人设+拒绝拦截照常走 send 那套）。
+    /// 一次性的做完就关；重复的按下一次算好下次时间并重新排通知。
+    func fireDueTasks() {
+        let now = Date()
+        var changed = false
+        for i in scheduledTasks.indices {
+            var t = scheduledTasks[i]
+            guard t.enabled, t.nextFire <= now else { continue }
+            let convId: UUID
+            if t.targetKind == "room" {
+                convId = t.targetId
+            } else {
+                convId = directConversation(for: t.targetId)
+            }
+            guard let ci = conversations.firstIndex(where: { $0.id == convId }) else { continue }
+            conversations[ci].messages.append(
+                Message(senderId: "user", text: "【定时任务：\(t.title)】\(t.prompt)"))
+            conversations[ci].autoReplyPending = true
+            conversations[ci].lastActivity = now
+            autoReplyTick += 1
+            changed = true
+            if t.repeatKind == "once" {
+                t.enabled = false
+            } else {
+                t.nextFire = Self.nextFire(after: t.nextFire, task: t)
+                NotificationHelper.schedule(task: t)
+            }
+            scheduledTasks[i] = t
+        }
+        if changed { save() }
+    }
+
+    /// 按重复规则算下一次触发时间（从上一次触发时间往后推，不是现在）。
+    static func nextFire(after date: Date, task: ScheduledTask) -> Date {
+        let cal = Calendar.current
+        switch task.repeatKind {
+        case "daily":
+            let parts = task.time.split(separator: ":").compactMap { Int($0) }
+            let h = parts.count > 0 ? parts[0] : 9, m = parts.count > 1 ? parts[1] : 0
+            var next = cal.date(bySettingHour: h, minute: m, second: 0, of: date) ?? date
+            if next <= date { next = cal.date(byAdding: .day, value: 1, to: next) ?? next }
+            return next
+        case "weekly":
+            let parts = task.time.split(separator: ":").compactMap { Int($0) }
+            let h = parts.count > 0 ? parts[0] : 9, m = parts.count > 1 ? parts[1] : 0
+            var next = date
+            for _ in 0..<8 {
+                next = cal.date(byAdding: .day, value: 1, to: next) ?? next
+                // Calendar 的 weekday：周日=1，周一=2；任务里周一=1。
+                let wd = (cal.component(.weekday, from: next) + 5) % 7 + 1
+                if task.weekdays.contains(wd) {
+                    next = cal.date(bySettingHour: h, minute: m, second: 0, of: next) ?? next
+                    if next > date { return next }
+                }
+            }
+            return cal.date(byAdding: .day, value: 7, to: date) ?? date
+        case "every":
+            return cal.date(byAdding: .minute,
+                            value: max(task.everyMinutes, 1), to: date) ?? date
+        default:
+            return date
+        }
+    }
+
+    /// 新建任务的首次触发时间（一次=选的日期时间；每天/每周=最近一次；每 N 分钟=现在+N 分钟）。
+    static func firstFire(repeatKind: String, time: String, weekdays: [Int],
+                          everyMinutes: Int, at: Date) -> Date {
+        let cal = Calendar.current
+        switch repeatKind {
+        case "once":
+            return at
+        case "every":
+            return cal.date(byAdding: .minute, value: max(everyMinutes, 1), to: Date()) ?? Date()
+        default:
+            let probe = ScheduledTask(repeatKind: repeatKind, time: time,
+                                      weekdays: weekdays, everyMinutes: everyMinutes)
+            return nextFire(after: Date().addingTimeInterval(-60), task: probe)
+        }
+    }
+
+    // MARK: 自定义 MCP / 小工具
+
+    func addCustomMCP(name: String, url: String) {
+        customMCPs.append(CustomMCP(name: name, url: url))
+        save()
+    }
+
+    func deleteCustomMCP(id: UUID) {
+        customMCPs.removeAll { $0.id == id }
+        save()
+    }
+
+    func setCustomMCPEnabled(id: UUID, _ on: Bool) {
+        guard let i = customMCPs.firstIndex(where: { $0.id == id }) else { return }
+        customMCPs[i].enabled = on
+        save()
+    }
+
+    func addMiniApp(name: String, files: [String: String]) {
+        miniApps.append(MiniApp(name: name, files: files))
+        save()
+    }
+
+    func deleteMiniApp(id: UUID) {
+        miniApps.removeAll { $0.id == id }
+        save()
+    }
+
+    /// 全部会话的用量合计（每条回复尾部的用量胶囊加起来）。
+    var totalUsage: (prompt: Int, completion: Int) {
+        var p = 0, c = 0
+        for conv in conversations {
+            for m in conv.messages {
+                p += m.usagePrompt ?? 0
+                c += m.usageCompletion ?? 0
+            }
+        }
+        return (p, c)
+    }
+
+    /// 每个智能体的用量（按回复的发送者分）。
+    func usageByAgent() -> [(name: String, prompt: Int, completion: Int)] {
+        var map: [String: (Int, Int)] = [:]
+        for conv in conversations {
+            for m in conv.messages {
+                guard let p = m.usagePrompt, let c = m.usageCompletion else { continue }
+                let name = agent(id: UUID(uuidString: m.senderId) ?? UUID())?.name ?? "其他"
+                let cur = map[name] ?? (0, 0)
+                map[name] = (cur.0 + p, cur.1 + c)
+            }
+        }
+        return map.map { (name: $0.key, prompt: $0.value.0, completion: $0.value.1) }
+            .sorted { ($0.prompt + $0.completion) > ($1.prompt + $1.completion) }
+    }
+
     func setConnectorEnabled(id: String, _ on: Bool) {
         guard let i = connectors.firstIndex(where: { $0.id == id }) else { return }
         connectors[i].enabled = on
@@ -319,12 +521,21 @@ final class AppStore: ObservableObject {
         var connectors: [Connector] = builtinConnectors
         var skills: [Skill] = []
         var plugins: [Plugin] = []
+        var scheduledTasks: [ScheduledTask] = []
+        var customMCPs: [CustomMCP] = []
+        var miniApps: [MiniApp] = []
+        var deviceCapabilities: [DeviceCapability] = builtinDeviceCapabilities
+        var pluginStoreIndex: String = ""
+        var language: String = "zh-Hans"
     }
 
     func save() {
         let snap = Snapshot(agents: agents, conversations: conversations,
                             providers: providers, server: server, connectors: connectors,
-                            skills: skills, plugins: plugins)
+                            skills: skills, plugins: plugins,
+                            scheduledTasks: scheduledTasks, customMCPs: customMCPs,
+                            miniApps: miniApps, deviceCapabilities: deviceCapabilities,
+                            pluginStoreIndex: pluginStoreIndex, language: language)
         if let data = try? JSONEncoder().encode(snap) {
             try? data.write(to: fileURL, options: .atomic)
         }
@@ -341,5 +552,11 @@ final class AppStore: ObservableObject {
         if !snap.connectors.isEmpty { connectors = snap.connectors }
         skills = snap.skills
         plugins = snap.plugins
+        scheduledTasks = snap.scheduledTasks
+        customMCPs = snap.customMCPs
+        miniApps = snap.miniApps
+        if !snap.deviceCapabilities.isEmpty { deviceCapabilities = snap.deviceCapabilities }
+        pluginStoreIndex = snap.pluginStoreIndex
+        if !snap.language.isEmpty { language = snap.language }
     }
 }

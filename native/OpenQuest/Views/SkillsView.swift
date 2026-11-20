@@ -7,6 +7,7 @@ struct SkillsView: View {
     @EnvironmentObject var store: AppStore
     @State private var showingAdd = false
     @State private var showingImport = false
+    @State private var showingFolderImport = false
 
     var body: some View {
         List {
@@ -35,10 +36,17 @@ struct SkillsView: View {
                 Menu {
                     Button { showingAdd = true } label: { Label("新建技能", systemImage: "plus") }
                     Button { showingImport = true } label: { Label("导入 .md 文件", systemImage: "square.and.arrow.down") }
+                    Button { showingFolderImport = true } label: { Label("导入技能文件夹", systemImage: "folder") }
                 } label: {
                     Image(systemName: "plus")
                 }
             }
+        }
+        .fileImporter(isPresented: $showingFolderImport, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            importSkillFolder(url)
         }
         .sheet(isPresented: $showingAdd) { AddSkillView() }
         .fileImporter(isPresented: $showingImport, allowedContentTypes: [.text, .plainText, .data]) { result in
@@ -50,6 +58,26 @@ struct SkillsView: View {
             store.addSkill(name: url.deletingPathExtension().lastPathComponent,
                            content: String(text.prefix(20000)))
         }
+    }
+
+    /// 导入技能文件夹：SKILL.md 是入口，其余 .md 文件附在后面；名字取文件夹名。
+    private func importSkillFolder(_ url: URL) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else { return }
+        let mdFiles = items.filter { $0.pathExtension.lowercased() == "md" }
+        guard !mdFiles.isEmpty else { return }
+        let entry = mdFiles.first { $0.lastPathComponent == "SKILL.md" } ?? mdFiles[0]
+        var parts: [String] = []
+        if let text = try? String(contentsOf: entry, encoding: .utf8), !text.isEmpty {
+            parts.append(String(text.prefix(20000)))
+        }
+        for f in mdFiles where f != entry {
+            if let text = try? String(contentsOf: f, encoding: .utf8), !text.isEmpty {
+                parts.append("## 附加文件：\(f.lastPathComponent)\n\(String(text.prefix(8000)))")
+            }
+        }
+        guard !parts.isEmpty else { return }
+        store.addSkill(name: url.lastPathComponent, content: parts.joined(separator: "\n\n"))
     }
 }
 

@@ -73,6 +73,23 @@ struct PluginsView: View {
 
     var body: some View {
         List {
+            Section {
+                NavigationLink {
+                    PluginStoreView()
+                } label: {
+                    HStack {
+                        Image(systemName: "bag.fill")
+                            .frame(width: 29, height: 29)
+                            .background(Color.indigo, in: RoundedRectangle(cornerRadius: 7))
+                            .foregroundStyle(.white)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("插件商店").foregroundStyle(.primary)
+                            Text(store.pluginStoreIndex.isEmpty ? "索引源没开" : "正在用 \(store.pluginStoreIndex)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
             Section("从链接安装") {
                 HStack {
                     TextField("插件包地址（.json）", text: $urlText)
@@ -106,6 +123,13 @@ struct PluginsView: View {
                                 }
                             }
                             Spacer()
+                            if p.hasClientHalf {
+                                Text("只跑主机部分")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.orange)
+                                    .padding(.horizontal, 7).padding(.vertical, 3)
+                                    .background(Color.orange.opacity(0.15), in: Capsule())
+                            }
                             Text(typeLabel(p.type))
                                 .font(.caption2.weight(.semibold))
                                 .padding(.horizontal, 7).padding(.vertical, 3)

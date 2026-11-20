@@ -6,6 +6,7 @@ struct RootView: View {
     @EnvironmentObject var store: AppStore
     @State private var path: [UUID] = []
     @State private var tab = 0
+    @State private var updateFeed: UpdateChecker.Feed?
 
     var body: some View {
         // 预览专用：-PreviewDNS 直接落在 DNS 页截图。
@@ -43,15 +44,35 @@ struct RootView: View {
                     path = [first.id]
                 }
             }
+            .task {
+                // 云更新：每次打开 App 查一次版本源，有新版弹窗提示下载。
+                if case .available(let feed) = await UpdateChecker.check() {
+                    updateFeed = feed
+                }
+            }
+            .alert("有新版本", isPresented: Binding(
+                get: { updateFeed != nil },
+                set: { if !$0 { updateFeed = nil } }
+            )) {
+                Button("去下载") {
+                    if let urlString = updateFeed?.url, let url = URL(string: urlString) {
+                        UIApplication.shared.open(url)
+                    }
+                    updateFeed = nil
+                }
+                Button("稍后再说", role: .cancel) { updateFeed = nil }
+            } message: {
+                Text(updateFeed?.notes.isEmpty == false ? updateFeed!.notes : "下载新包后去签名工具重签安装。")
+            }
         }
     }
 
     private var tabBar: some View {
         HStack(spacing: 4) {
-            tabButton(0, icon: "message.fill", label: "聊天")
-            tabButton(1, icon: "wand.and.stars", label: "技能")
-            tabButton(2, icon: "globe", label: "浏览器")
-            tabButton(3, icon: "gearshape.fill", label: "设置")
+            tabButton(0, icon: "message.fill", label: L10n.t("tab_chat", lang: store.language))
+            tabButton(1, icon: "wand.and.stars", label: L10n.t("tab_skills", lang: store.language))
+            tabButton(2, icon: "globe", label: L10n.t("tab_browser", lang: store.language))
+            tabButton(3, icon: "gearshape.fill", label: L10n.t("tab_settings", lang: store.language))
         }
         .padding(5)
         .liquidGlass(Capsule())
@@ -81,45 +102,72 @@ struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var store: AppStore
 
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
+
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    SettingRow(icon: "person.2.fill", color: .purple, title: "智能体",
+                    SettingRow(icon: "person.2.fill", color: .purple, title: L("agents"),
                                value: store.agents.isEmpty ? nil : "\(store.agents.count)") {
                         AgentsView()
                     }
-                    SettingRow(icon: "cube.fill", color: .blue, title: "供应商与模型",
+                    SettingRow(icon: "cube.fill", color: .blue, title: L("providers"),
                                value: store.providers.isEmpty ? nil : "\(store.providers.count)") {
                         ProvidersView()
                     }
-                    SettingRow(icon: "wand.and.stars", color: .pink, title: "技能",
+                    SettingRow(icon: "wand.and.stars", color: .pink, title: L("skills"),
                                value: store.skills.isEmpty ? nil : "\(store.skills.count)") {
                         SkillsView()
                     }
-                    SettingRow(icon: "puzzlepiece.fill", color: .indigo, title: "插件",
+                    SettingRow(icon: "puzzlepiece.fill", color: .indigo, title: L("plugins"),
                                value: store.plugins.isEmpty ? nil : "\(store.plugins.count)") {
                         PluginsView()
                     }
-                    SettingRow(icon: "network", color: .teal, title: "DNS",
+                    SettingRow(icon: "network", color: .teal, title: L("dns"),
                                value: store.dnsMode == "system" ? "跟随系统" : nil) {
                         DNSSettingsView()
                     }
-                    SettingRow(icon: "link", color: .orange, title: "连接工具",
+                    SettingRow(icon: "link", color: .orange, title: L("connectors"),
                                value: store.connectors.contains { $0.enabled } ? nil : "全部关") {
                         ConnectorsView()
                     }
-                    SettingRow(icon: "safari.fill", color: .cyan, title: "服务器浏览器") {
+                    SettingRow(icon: "safari.fill", color: .cyan, title: L("server_browser")) {
                         BrowserView()
                     }
                 }
                 Section {
-                    SettingRow(icon: "doc.text.fill", color: .gray, title: "日志") {
+                    SettingRow(icon: "alarm.fill", color: .red, title: L("schedules"),
+                               value: store.scheduledTasks.isEmpty ? nil : "\(store.scheduledTasks.count)") {
+                        SchedulesView()
+                    }
+                    SettingRow(icon: "square.on.circle", color: .mint, title: L("mini_apps"),
+                               value: store.miniApps.isEmpty ? nil : "\(store.miniApps.count)") {
+                        MiniAppsView()
+                    }
+                    SettingRow(icon: "globe", color: .brown, title: L("language"),
+                               value: L10n.languages.first { $0.code == store.language }?.name) {
+                        LanguageSettingsView()
+                    }
+                    SettingRow(icon: "chart.bar.fill", color: .green, title: L("usage"),
+                               value: "\(store.totalUsage.prompt + store.totalUsage.completion)") {
+                        UsageStatsView()
+                    }
+                    SettingRow(icon: "arrow.down.circle.fill", color: .blue, title: L("update")) {
+                        UpdateView()
+                    }
+                    SettingRow(icon: "iphone", color: .gray, title: L("device_caps"),
+                               value: store.deviceCapabilities.contains { $0.enabled } ? nil : "全部关") {
+                        DeviceCapabilitiesView()
+                    }
+                }
+                Section {
+                    SettingRow(icon: "doc.text.fill", color: .gray, title: L("log")) {
                         LogView()
                     }
                 }
             }
-            .navigationTitle("设置")
+            .navigationTitle(L("settings"))
         }
     }
 }
@@ -160,28 +208,168 @@ struct LogView: View {
     }
 }
 
-/// 连接工具：只列国内服务，全部默认关，用户手动开。
+/// 连接工具：只列国内服务，全部默认关，用户手动开；每个可填 Key/Token，
+/// 点“测试”走一次真实调用，通过才算连上。自定义 MCP 另外加。
 struct ConnectorsView: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
         List {
             ForEach(store.connectors) { c in
-                Toggle(isOn: Binding(
-                    get: { c.enabled },
-                    set: { store.setConnectorEnabled(id: c.id, $0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(c.name)
-                        Text(c.summary).font(.caption).foregroundStyle(.secondary)
-                    }
+                ConnectorRow(connector: c)
+            }
+            Section("自定义 MCP（你自己的 MCP 服务器，HTTPS 地址）") {
+                ForEach(store.customMCPs) { m in
+                    CustomMCPRow(mcp: m)
                 }
+                .onDelete { idx in
+                    for i in idx { store.deleteCustomMCP(id: store.customMCPs[i].id) }
+                }
+                AddMCPRow()
             }
             Section {
-                Text("只装国内服务，全部默认关，开哪个用哪个。")
+                Text("只装国内服务，全部默认关，开哪个用哪个。Key 只存系统钥匙串。测试走一次真实调用，通过才算连上。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("连接工具")
+    }
+}
+
+private struct ConnectorRow: View {
+    @EnvironmentObject var store: AppStore
+    let connector: Connector
+    @State private var credText = ""
+    @State private var status: String?
+    @State private var busy = false
+    @State private var showCred = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: Binding(
+                get: { connector.enabled },
+                set: { store.setConnectorEnabled(id: connector.id, $0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(connector.name)
+                    Text(connector.summary).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if connector.id == "aliyun" {
+                Text("阿里云暂只留开关：调用要 AK/SK 签名，App 内还没接。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Button(showCred ? "收起 Key" : (hasCred ? "改 Key（已填）" : "填 Key / Token")) {
+                    showCred.toggle()
+                    if showCred {
+                        credText = KeychainHelper.key(ref: "connector-\(connector.id)") ?? ""
+                    }
+                }
+                .font(.subheadline)
+                if showCred {
+                    SecureField(placeholder, text: $credText)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    HStack {
+                        Button("保存") {
+                            KeychainHelper.setKey(
+                                credText.trimmingCharacters(in: .whitespaces),
+                                ref: "connector-\(connector.id)")
+                            showCred = false
+                            status = "已保存到钥匙串"
+                        }
+                        .disabled(credText.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("测试") { Task { await runTest() } }
+                            .disabled(busy)
+                        if busy { ProgressView() }
+                    }
+                    .font(.subheadline)
+                }
+                if let status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var hasCred: Bool {
+        !(KeychainHelper.key(ref: "connector-\(connector.id)") ?? "").isEmpty
+    }
+
+    private var placeholder: String {
+        switch connector.id {
+        case "feishu": return "App ID:App Secret（冒号隔开）"
+        case "dingtalk": return "AppKey:AppSecret（冒号隔开）"
+        case "yuque": return "语雀 Token"
+        case "gitee": return "Gitee Token"
+        case "bocha": return "博查 API Key"
+        default: return "Key / Token"
+        }
+    }
+
+    private func runTest() async {
+        busy = true
+        defer { busy = false }
+        let cred = KeychainHelper.key(ref: "connector-\(connector.id)") ?? ""
+        status = await ConnectorTest.test(id: connector.id, credential: cred)
+    }
+}
+
+private struct CustomMCPRow: View {
+    @EnvironmentObject var store: AppStore
+    let mcp: CustomMCP
+    @State private var status: String?
+    @State private var busy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(
+                get: { mcp.enabled },
+                set: { store.setCustomMCPEnabled(id: mcp.id, $0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mcp.name)
+                    Text(mcp.url).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Button("测试") { Task { await test() } }.disabled(busy)
+                if busy { ProgressView() }
+                if let status { Text(status).font(.caption).foregroundStyle(.secondary) }
+            }
+            .font(.subheadline)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func test() async {
+        busy = true
+        defer { busy = false }
+        status = await ConnectorTest.testMCP(url: mcp.url)
+    }
+}
+
+private struct AddMCPRow: View {
+    @EnvironmentObject var store: AppStore
+    @State private var name = ""
+    @State private var url = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("名字，如：我的 MCP", text: $name)
+            TextField("HTTPS 地址，如 https://example.com/mcp", text: $url)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+            Button("添加") {
+                store.addCustomMCP(name: name.trimmingCharacters(in: .whitespaces),
+                                   url: url.trimmingCharacters(in: .whitespaces))
+                name = ""
+                url = ""
+            }
+            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty
+                      || url.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
     }
 }

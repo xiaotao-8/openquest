@@ -19,8 +19,9 @@ struct AgentRunner {
     }
 
     /// 一轮的结果：要么是文本回复（可带深度思考过程），要么是等用户作答的卡片。
+    /// usage 是 SSE usage 段里的输入/输出 token 数（有才填）。
     enum TurnResult {
-        case text(String, reasoning: String?)
+        case text(String, reasoning: String?, usage: (prompt: Int, completion: Int)? = nil)
         case card(CardPayload)
     }
 
@@ -30,6 +31,9 @@ struct AgentRunner {
                imageJPEG: Data? = nil,
                skillsContext: String = "",
                onToolEvent: ((String, Data?) -> Void)? = nil,
+               onSpawnSubagent: ((String, String) async -> String)? = nil,
+               capabilities: Set<String> = [],
+               webSearch: Bool = false,
                onDelta: @escaping (String, String) -> Void) async throws -> TurnResult {
         guard let key = KeychainHelper.key(ref: provider.keyRef), !key.isEmpty else {
             throw RunnerError.noKey
@@ -49,6 +53,24 @@ struct AgentRunner {
         }
         if !skillsContext.isEmpty {
             system += (system.isEmpty ? "" : "\n\n") + skillsContext
+        }
+        if webSearch {
+            system += "\n\n【联网搜索已开启】需要最新信息时，用 browse_on_server 或 fetch_webpage 工具去查，不要凭记忆编。"
+        }
+        // 生成参数：前置词/后置词包在每条用户消息外；上下文超长截掉最旧的，
+        // 自动压缩开着时在系统指令里打一条标记（只截断、不谎称已总结）。
+        var history = history
+        if !agent.prefix.isEmpty || !agent.suffix.isEmpty {
+            history = history.map { h in
+                h.role == "user" ? (role: h.role, content: agent.prefix + h.content + agent.suffix) : h
+            }
+        }
+        if agent.contextLength > 0, history.count > agent.contextLength {
+            let dropped = history.count - agent.contextLength
+            history = Array(history.suffix(agent.contextLength))
+            if agent.autoCompress {
+                system += "\n\n【上下文已自动压缩：更早的 \(dropped) 条消息已省略】"
+            }
         }
         if !system.isEmpty {
             messages.append(["role": "system", "content": system])
@@ -73,18 +95,27 @@ struct AgentRunner {
 
         var reasoningAll = ""
         var contentAll = ""
+        var usageTotal: (prompt: Int, completion: Int)? = nil
         for _ in 0..<6 {  // 最多 6 轮工具调用，防死循环乱调
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.timeoutInterval = 120
             req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try JSONSerialization.data(withJSONObject: [
+            var body: [String: Any] = [
                 "model": agent.modelId,
                 "messages": messages,
-                "tools": AgentTools.definitions,
+                "tools": AgentTools.definitions(capabilities: capabilities),
                 "stream": true,
-            ])
+                "temperature": agent.temperature,
+                "top_p": agent.topP,
+                "stream_options": ["include_usage": true],
+            ]
+            // 思考档位：low/medium/high 发给模型；off 或空 = 跟模型默认。
+            if agent.effort == "low" || agent.effort == "medium" || agent.effort == "high" {
+                body["reasoning_effort"] = agent.effort
+            }
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
             let (bytes, resp) = try await Net.session.bytes(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard code == 200 else { throw RunnerError.badStatus(code) }
@@ -96,8 +127,15 @@ struct AgentRunner {
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 if payload == "[DONE]" { break }
                 guard let data = payload.data(using: .utf8),
-                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let delta = (root["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any]
+                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else { continue }
+                // usage 在最后一个分片里单独来（没有 delta），先抓再说。
+                if let u = root["usage"] as? [String: Any],
+                   let pt = u["prompt_tokens"] as? Int,
+                   let ct = u["completion_tokens"] as? Int {
+                    usageTotal = (pt, ct)
+                }
+                guard let delta = (root["choices"] as? [[String: Any]])?.first?["delta"] as? [String: Any]
                 else { continue }
                 if let c = delta["content"] as? String { contentAll += c }
                 if let r = delta["reasoning_content"] as? String { reasoningAll += r }
@@ -137,10 +175,15 @@ struct AgentRunner {
                     },
                 ])
                 for call in ordered {
-                    let result = await AgentTools.execute(
-                        name: call.name, argumentsJSON: call.args,
-                        agentId: agent.id.uuidString, server: server,
-                        onEvent: onToolEvent)
+                    let result: String
+                    if call.name == AgentTools.spawnSubagentName {
+                        result = await Self.runSpawn(call: call, onSpawn: onSpawnSubagent)
+                    } else {
+                        result = await AgentTools.execute(
+                            name: call.name, argumentsJSON: call.args,
+                            agentId: agent.id.uuidString, server: server,
+                            workDir: agent.workDir, onEvent: onToolEvent)
+                    }
                     messages.append([
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -151,7 +194,8 @@ struct AgentRunner {
                 continue
             }
             let finalText = contentAll.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .text(finalText, reasoning: reasoningAll.isEmpty ? nil : reasoningAll)
+            return .text(finalText, reasoning: reasoningAll.isEmpty ? nil : reasoningAll,
+                         usage: usageTotal)
         }
         return .text("（工具调用轮数用完了，先停一下）", reasoning: nil)
     }
@@ -159,6 +203,11 @@ struct AgentRunner {
     private static func parseArgs(_ json: String) -> [String: Any]? {
         guard let data = json.data(using: .utf8) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// label/问题各 ≤12 字：超了截断（Minis 的 user_ask 校验）。
+    private static func short(_ t: String) -> String {
+        t.count <= 12 ? t : String(t.prefix(12)) + "…"
     }
 
     private static func askCard(from args: String) -> CardPayload? {
@@ -169,23 +218,67 @@ struct AgentRunner {
         let options = raw.compactMap { o -> CardOption? in
             guard let label = o["label"] as? String else { return nil }
             return CardOption(id: (o["id"] as? String) ?? label,
-                              label: label,
+                              label: short(label),
                               detail: (o["detail"] as? String) ?? "")
         }
         guard !options.isEmpty else { return nil }
-        return CardPayload(kind: .ask, question: q, options: options,
-                           multiSelect: (obj["multiSelect"] as? Bool) ?? false)
+        var card = CardPayload(kind: .ask, question: short(q), options: options,
+                               multiSelect: (obj["multiSelect"] as? Bool) ?? false)
+        // 倒计时：模型可指定 1/2/5/10/30/60 分钟，0=不限；默认 5 分钟。
+        let t = (obj["timeoutMinutes"] as? Int) ?? 5
+        card.timeoutMinutes = [0, 1, 2, 5, 10, 30, 60].contains(t) ? t : 5
+        if card.timeoutMinutes > 0 {
+            card.deadline = Date().addingTimeInterval(TimeInterval(card.timeoutMinutes * 60))
+        }
+        card.recommendedId = (obj["recommendedId"] as? String) ?? ""
+        // 多题向导：questions 里是后面的题（同结构），卡片上 Previous/Next/Submit。
+        if let qs = obj["questions"] as? [[String: Any]] {
+            for qobj in qs {
+                guard let qq = qobj["question"] as? String,
+                      let qraw = qobj["options"] as? [[String: Any]] else { continue }
+                let qopts = qraw.compactMap { o -> CardOption? in
+                    guard let label = o["label"] as? String else { return nil }
+                    return CardOption(id: (o["id"] as? String) ?? label,
+                                      label: short(label),
+                                      detail: (o["detail"] as? String) ?? "")
+                }
+                guard !qopts.isEmpty else { continue }
+                var sub = CardPayload(kind: .ask, question: short(qq), options: qopts,
+                                      multiSelect: (qobj["multiSelect"] as? Bool) ?? false)
+                sub.recommendedId = (qobj["recommendedId"] as? String) ?? ""
+                card.extraQuestions.append(sub)
+            }
+        }
+        return card
     }
 
     private static func approvalCard(from args: String) -> CardPayload? {
         guard let obj = parseArgs(args), let action = obj["action"] as? String else { return nil }
         let impact = (obj["impact"] as? String) ?? ""
-        return CardPayload(
+        let risk = (obj["risk"] as? String) ?? "low"
+        var card = CardPayload(
             kind: .approval,
             question: action,
             options: [
                 CardOption(id: "approve", label: "批准", detail: impact),
                 CardOption(id: "reject", label: "拒绝", detail: "不执行这个操作"),
             ])
+        card.actionText = action
+        card.impact = impact
+        card.risk = ["low", "medium", "high"].contains(risk) ? risk : "low"
+        return card
+    }
+
+    /// 子智能体工具：参数 {agent: 名字或 id, task: 要做的事}。
+    /// 真跑：调 onSpawn 回调（聊天页里另起一轮 AgentRunner 跑完回正文）；
+    /// 没回调就是单轮调用里没配，报一句，不假装跑了。
+    private static func runSpawn(call: (id: String, name: String, args: String),
+                                 onSpawn: ((String, String) async -> String)?) async -> String {
+        guard let onSpawn else { return "子智能体没配好：这一轮不能派活" }
+        guard let obj = parseArgs(call.args),
+              let task = obj["task"] as? String, !task.isEmpty,
+              let ref = obj["agent"] as? String, !ref.isEmpty
+        else { return "参数不对：spawn_subagent 要 agent（名字或 id）和 task" }
+        return await onSpawn(ref, task)
     }
 }

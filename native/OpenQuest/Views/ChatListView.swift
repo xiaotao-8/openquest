@@ -7,6 +7,10 @@ struct ChatListView: View {
     @Binding var path: [UUID]
     @State private var showingNewChat = false
     @State private var searchText = ""
+    @State private var showingImport = false
+    @State private var importStatus: String?
+
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     private var filtered: [Conversation] {
         if searchText.isEmpty { return store.conversations }
@@ -32,8 +36,8 @@ struct ChatListView: View {
                                     .frame(width: 50, height: 50)
                                     .liquidGlass(Circle())
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("直接聊").font(.body.weight(.semibold))
-                                    Text("不用建智能体，点开就能聊")
+                                    Text(L("direct_chat")).font(.body.weight(.semibold))
+                                    Text(L("direct_hint"))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -49,7 +53,7 @@ struct ChatListView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "magnifyingglass")
                                 .foregroundStyle(.secondary)
-                            TextField("搜索", text: $searchText)
+                            TextField(L("search"), text: $searchText)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
@@ -78,22 +82,56 @@ struct ChatListView: View {
             }
         }
         .background(Color.black)
-        .navigationTitle("聊天")
+        .navigationTitle(L("nav_chat"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingNewChat = true } label: {
+                Menu {
+                    Button { showingNewChat = true } label: {
+                        Label(L("new_chat"), systemImage: "square.and.pencil")
+                    }
+                    Button { showingImport = true } label: {
+                        Label("导入会话（DeepSeek / Chatbox）", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
                     Image(systemName: "square.and.pencil")
                 }
             }
         }
         .sheet(isPresented: $showingNewChat) { NewChatView() }
+        .fileImporter(isPresented: $showingImport, allowedContentTypes: [.json]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else {
+                importStatus = "文件读不出来"
+                return
+            }
+            let sessions = ChatImport.parse(data)
+            if sessions.isEmpty {
+                importStatus = "没认出这是 DeepSeek 或 Chatbox 导出的会话"
+                return
+            }
+            let n = ChatImport.importInto(store, sessions: sessions)
+            importStatus = "导入了 \(n) 个会话"
+        }
+        .alert("导入会话", isPresented: Binding(
+            get: { importStatus != nil },
+            set: { if !$0 { importStatus = nil } }
+        )) {
+            Button("好") { importStatus = nil }
+        } message: {
+            Text(importStatus ?? "")
+        }
     }
 }
 
 /// 空状态：打开就能直接聊，不用先建智能体；想组队再去建。
 private struct EmptyHomeView: View {
+    @EnvironmentObject var store: AppStore
     let onDirect: () -> Void
     let onCreate: () -> Void
+
+    private func L(_ key: String) -> String { L10n.t(key, lang: store.language) }
 
     var body: some View {
         VStack(spacing: 18) {
@@ -103,19 +141,19 @@ private struct EmptyHomeView: View {
                 .foregroundStyle(.white)
                 .frame(width: 84, height: 84)
                 .liquidGlass(Circle())
-            Text("想聊就聊")
+            Text(L("empty_title"))
                 .font(.title3.weight(.semibold))
-            Text("点下面直接开聊，第一次会让你选个免费源填 Key。\n想组智能体团队，再点新建。")
+            Text(L("empty_hint"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button(action: onDirect) {
-                Label("直接聊", systemImage: "bubble.left.and.bubble.right.fill")
+                Label(L("direct_chat"), systemImage: "bubble.left.and.bubble.right.fill")
                     .font(.body.weight(.semibold))
                     .padding(.horizontal, 26).padding(.vertical, 12)
             }
             .liquidGlassInteractive(Capsule())
-            Button("新建智能体 / 建群", action: onCreate)
+            Button(L("new_chat"), action: onCreate)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()

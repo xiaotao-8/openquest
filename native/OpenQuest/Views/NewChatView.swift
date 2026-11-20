@@ -9,6 +9,9 @@ struct NewChatView: View {
     @State private var selected: Set<UUID> = []
     @State private var groupTitle = ""
     @State private var showingProviders = false
+    @State private var groupAdmin: UUID?
+    @State private var speakMode = "everyone"
+    @State private var groupNotice = ""
 
     var body: some View {
         NavigationStack {
@@ -53,6 +56,20 @@ struct NewChatView: View {
                     Section("群名") {
                         TextField("给群起个名字", text: $groupTitle)
                     }
+                    Section("群设置") {
+                        Picker("发言模式", selection: $speakMode) {
+                            Text("全员轮流").tag("everyone")
+                            Text("群主先接，再点名").tag("admin")
+                        }
+                        .pickerStyle(.segmented)
+                        Picker("群主", selection: $groupAdmin) {
+                            Text("不设群主").tag(nil as UUID?)
+                            ForEach(store.agents.filter { selected.contains($0.id) }) { a in
+                                Text(a.name).tag(a.id as UUID?)
+                            }
+                        }
+                        TextField("群公告（每个成员发言前先读，可空）", text: $groupNotice)
+                    }
                 }
             }
             .navigationTitle("新建")
@@ -69,7 +86,12 @@ struct NewChatView: View {
                             let t = groupTitle.trimmingCharacters(in: .whitespaces)
                             title = t.isEmpty ? members.map(\.name).joined(separator: "、") : t
                         }
-                        store.createConversation(title: title, memberIds: members.map(\.id))
+                        store.createConversation(
+                            title: title, memberIds: members.map(\.id),
+                            adminId: members.count > 1 ? groupAdmin : nil,
+                            speakMode: members.count > 1 ? speakMode : "everyone",
+                            notice: members.count > 1
+                                ? groupNotice.trimmingCharacters(in: .whitespaces) : "")
                         dismiss()
                     }
                     .disabled(selected.isEmpty)

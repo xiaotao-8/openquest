@@ -77,6 +77,58 @@ struct AgentEditView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                Section("思考档位") {
+                    Picker("思考档位", selection: binding(\.effort)) {
+                        Text("跟模型默认").tag("")
+                        Text("关").tag("off")
+                        Text("低").tag("low")
+                        Text("中").tag("medium")
+                        Text("高").tag("high")
+                    }
+                    .pickerStyle(.segmented)
+                    Text("档位越高想得越深、回得越慢；关就是不让模型做深度思考。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("生成参数") {
+                    TextField("前置词（每条用户消息前面加）", text: binding(\.prefix))
+                    TextField("后置词（每条用户消息后面加）", text: binding(\.suffix))
+                    HStack {
+                        Text("Temperature")
+                        Slider(value: binding(\.temperature), in: 0...2, step: 0.1)
+                        Text(String(format: "%.1f", a.temperature))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Top-P")
+                        Slider(value: binding(\.topP), in: 0...1, step: 0.05)
+                        Text(String(format: "%.2f", a.topP))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Stepper("上下文：最多带 \(a.contextLength == 0 ? "不限" : "\(a.contextLength) 条")历史消息",
+                            value: binding(\.contextLength), in: 0...100, step: 5)
+                    Toggle("满了自动压缩（截掉最旧的并打标记）", isOn: binding(\.autoCompress))
+                }
+                Section("工作文件夹") {
+                    TextField("文件夹，如：project-a（空=团队工作区）", text: binding(\.workDir))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    Toggle("私有智能体（只在自己的文件夹里工作）", isOn: binding(\.isPrivate))
+                    Text(a.isPrivate
+                         ? "私有智能体必须另指一个不重叠的文件夹，不能是主智能体、不能进群聊；换文件夹后下一轮在新文件夹开新的一段对话。"
+                         : "留空就是团队工作区，所有智能体共用。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if a.isPrivate && a.workDir.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("私有智能体要先填一个文件夹，不然还是落在团队工作区。")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }
+                Section {
+                    NavigationLink {
+                        MemoryView(agentId: a.id)
+                    } label: {
+                        Label("记忆", systemImage: "brain")
+                    }
+                }
                 Section("头像底色") {
                     Slider(value: binding(\.tintHue), in: 0...1) {
                         Text("色调")
