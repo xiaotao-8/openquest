@@ -20,9 +20,9 @@ struct PluginStoreView: View {
     }
 
     private let indexes: [(id: String, name: String, url: String)] = [
-        ("dsh-market", "dsh-market（第三方）",
+        ("dsh-market", "第三方插件索引 1",
          "https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json"),
-        ("dshfind", "dshfind（第三方）",
+        ("dshfind", "第三方插件索引 2",
          "https://api.dshfind.com/market/dsh-index.json"),
     ]
 
