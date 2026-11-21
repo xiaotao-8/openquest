@@ -896,13 +896,13 @@ struct WidgetGalleryView: View {
                     if typeSize.isAccessibilitySize {
                         ChoicePicker(selection: $kind, options: kinds)
                     } else {
-                        SegmentedChoice(selection: $kind, options: kinds.map { (value: $0.id, title: $0.label) })
+                        SegmentedChoice(options: kinds.map { (value: $0.id, title: $0.label) }, selection: $kind)
                     }
                     if kind == "usage", !providers.isEmpty {
                         if typeSize.isAccessibilitySize || providers.count > 3 {
                             ChoicePicker(selection: providerSelection, options: providers)
                         } else {
-                            SegmentedChoice(selection: providerSelection, options: providers.map { (value: $0.id, title: $0.label) })
+                            SegmentedChoice(options: providers.map { (value: $0.id, title: $0.label) }, selection: providerSelection)
                         }
                     }
                     if kind != "team" {
@@ -919,10 +919,10 @@ struct WidgetGalleryView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel(L("选一个外观"))
-                    SegmentedChoice(selection: Binding(
+                    SegmentedChoice(options: [("character", L("小人")), ("original", L("原始图标"))], selection: Binding(
                         get: { usageIconStyle },
                         set: { usageIconStyle = $0; WidgetCenter.shared.reloadTimelines(ofKind: "linGyUProviderUsage") }
-                    ), options: [("character", L("小人")), ("original", L("原始图标"))])
+                    ))
                     Text(L("对应用内和桌面小组件里的用量都生效。"))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }

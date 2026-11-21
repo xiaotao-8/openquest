@@ -30,7 +30,7 @@ struct StateView: View {
                 .buttonStyle(.iconButton)
                 .accessibilityLabel(L("用量"))
             ))
-            SegmentedChoice(selection: $segment, options: segments.enumerated().map { (value: $0.offset, title: $0.element) })
+            SegmentedChoice(options: segments.enumerated().map { (value: $0.offset, title: $0.element) }, selection: $segment)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             if !pendingEntries.isEmpty {
@@ -96,7 +96,7 @@ struct UsageView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(title: L("用量"), trailing: AnyView(
-                Button(action: dismiss) {
+                Button(action: { dismiss() }) {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(.iconButton)
