@@ -94,7 +94,7 @@ final class AppStore: ObservableObject {
 
     init() {
         language = UserDefaults.standard.string(forKey: L10n.languageKey) ?? "zh"
-        showThinkingDetails = UserDefaults.standard.bool(forKey: "cn.lingyu.showThinkingDetails")
+        showThinkingDetails = UserDefaults.standard.object(forKey: "cn.lingyu.showThinkingDetails") as? Bool ?? true
         reduceMotion = UserDefaults.standard.bool(forKey: "cn.lingyu.reduceMotion")
         appearance = UserDefaults.standard.string(forKey: "cn.lingyu.appearance") ?? "system"
         bypassAllApprovals = UserDefaults.standard.bool(forKey: "cn.lingyu.bypassAllApprovals")

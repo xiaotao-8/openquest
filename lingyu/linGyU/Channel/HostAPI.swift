@@ -38,6 +38,33 @@ struct BotDraft: Sendable {
     var members: [String]?
     var section: String?
 
+    /// Built-in language rules appended to every bot description sent to the
+    /// host, so replies default to Chinese and the reasoning (deep thinking)
+    /// is in Simplified Chinese. The block is stripped again when a bot is
+    /// loaded into the editor, so the user's own text stays clean and the
+    /// block is never duplicated on re-save.
+    static let builtInRules = "[系统规则]\n- 回复默认使用中文（代码除外）。\n- 深度思考（推理）过程使用简体中文。"
+
+    /// The description as the user wrote it, without the built-in block.
+    static func strippingBuiltInRules(_ text: String?) -> String? {
+        guard var text, !text.isEmpty else { return text }
+        if let range = text.range(of: "\n\n" + builtInRules) {
+            text.removeSubrange(range)
+        } else if text == builtInRules {
+            return ""
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A copy of this draft with the built-in rules appended to the
+    /// description, for sending to the host.
+    func withBuiltInRules() -> BotDraft {
+        var copy = self
+        let base = BotDraft.strippingBuiltInRules(description) ?? ""
+        copy.description = base.isEmpty ? BotDraft.builtInRules : base + "\n\n" + BotDraft.builtInRules
+        return copy
+    }
+
     func jsonDictionary(forUpdate: Bool) -> [String: Any] {
         var dict: [String: Any] = [:]
         func set(_ key: String, _ value: Any?) {
@@ -109,7 +136,7 @@ struct BotDraft: Sendable {
         draft.id = bot.id
         draft.kind = bot.kind
         draft.name = bot.name
-        draft.description = bot.description
+        draft.description = BotDraft.strippingBuiltInRules(bot.description)
         draft.avatarColor = bot.avatarColor
         draft.avatarShape = bot.avatarShape
         draft.backend = bot.backend
@@ -222,12 +249,12 @@ struct HostAPI: Sendable {
     }
 
     func createBot(draft: BotDraft) async throws -> Bot {
-        let data = try await connection.call(method: "createBot", body: try body(draft.jsonDictionary(forUpdate: false)))
+        let data = try await connection.call(method: "createBot", body: try body(draft.withBuiltInRules().jsonDictionary(forUpdate: false)))
         return try okBot(from: data)
     }
 
     func updateBot(draft: BotDraft) async throws -> Bot {
-        let data = try await connection.call(method: "updateBot", body: try body(draft.jsonDictionary(forUpdate: true)))
+        let data = try await connection.call(method: "updateBot", body: try body(draft.withBuiltInRules().jsonDictionary(forUpdate: true)))
         return try okBot(from: data)
     }
 

@@ -428,7 +428,11 @@ struct SettingsTab: View {
                             .foregroundStyle(Palette.secondary)
                         TextField(L("例如：审 PR 时从不直接推送。"), text: $instructions, axis: .vertical)
                             .lineLimit(3...8)
-                            .onChange(of: instructions) { _, _ in onChange() }
+                            .onAppear { instructions = draft.description ?? "" }
+                            .onChange(of: instructions) { _, _ in
+                                draft.description = instructions
+                                onChange()
+                            }
                     }
                 }
             }
