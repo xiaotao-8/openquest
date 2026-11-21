@@ -289,8 +289,10 @@ workflows:
           # 错写成 privacy grant … 时命令静默失败（被 || true 吞掉），框还在。
           xcrun simctl privacy "$SIM_UDID" grant microphone cn.lingyu
           # Index 22: 麦克风框没了，但通话又弹了语音识别框（SFSpeechRecognizer
-          # 是另一个权限）。两个一起预授权。
-          xcrun simctl privacy "$SIM_UDID" grant speech-recognition cn.lingyu
+          # 是另一个权限）。Index 23 试过授它，simctl 报 Failed to set access、
+          # 整步失败——这台 Xcode 的 simctl 授不了语音识别，改回尽力而为；
+          # 真正的兜底是把 PreviewCall 移到截图序列最后（见下），只盖住通话一张。
+          xcrun simctl privacy "$SIM_UDID" grant speech-recognition cn.lingyu || true
           # DIAG (Build #15/#16: app exits within seconds of every launch,
           # screenshots all home screen). Launch with console attached so a
           # Swift fatal error / dyld failure is captured, then dump the
@@ -393,16 +395,10 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-data-controls.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          # Phase 3 语音：语音服务页（设置 → 语音服务）与通话屏（seeded 聊天上自动打开）。
-          # 通话屏在模拟器首次运行时会先弹麦克风/语音识别授权框，6 秒时的截图
-          # 可能拍到授权框或失败态——那是真实状态，不是截图步骤的问题。
+          # Phase 3 语音：语音服务页（设置 → 语音服务）。
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewVoice
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-voice.png
-          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewChat -PreviewCall
-          sleep 6
-          xcrun simctl io "$SIM_UDID" screenshot preview-call.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           # Phase 3 电脑管理新页：扩展页 / host 网络页 / 用量页。
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewExtensions
@@ -444,6 +440,15 @@ workflows:
           else
             echo "WARNING: LINGYU_PREVIEW_PAIRING not set, skipping live-chat screenshots"
           fi
+          # 通话屏放最后：PreviewCall 会触发语音识别授权框（系统框一旦弹出、
+          # 无人点就一直留在屏幕上，会盖住之后所有截图）。Index 20–22 的教训：
+          # 麦克风框靠预授权消掉了，语音识别框 simctl 授不了（Index 23 报
+          # Failed to set access、整步失败），只能让它最后弹，只盖住通话这一张；
+          # 通话顶栏本身 Index 22 已验过是干净的。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewChat -PreviewCall
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-call.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-host-network.png preview-usage.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
