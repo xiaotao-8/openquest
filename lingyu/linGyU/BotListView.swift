@@ -1404,7 +1404,7 @@ private struct NewCloudComputerSheet: View {
     @State private var provider = "instabox"
     @State private var name = ""
     @State private var key = ""
-    @State private var error: String?
+    @State private var errorText: String?
     @State private var busy = false
 
     var body: some View {
@@ -1425,8 +1425,8 @@ private struct NewCloudComputerSheet: View {
                 .font(.footnote)
                 .foregroundStyle(Palette.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let error {
-                Text(error)
+            if let errorText {
+                Text(errorText)
                     .font(.footnote)
                     .foregroundStyle(Palette.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1466,11 +1466,11 @@ private struct NewCloudComputerSheet: View {
 
     private func create() async {
         guard let cloud = store.account.cloudClient() else {
-            error = L("操作失败，请重试。")
+            errorText = L("操作失败，请重试。")
             return
         }
         busy = true
-        error = nil
+        errorText = nil
         do {
             if !key.isEmpty {
                 _ = try await cloud.saveCloudKey(key, provider: provider)
@@ -1479,7 +1479,7 @@ private struct NewCloudComputerSheet: View {
             await store.refreshAccountCloud()
             dismiss()
         } catch {
-            error = (error as? CloudError)?.message ?? L("操作失败，请重试。")
+            errorText = (error as? CloudError)?.message ?? L("操作失败，请重试。")
         }
         busy = false
     }
