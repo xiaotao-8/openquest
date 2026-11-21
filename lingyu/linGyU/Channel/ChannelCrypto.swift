@@ -91,7 +91,12 @@ struct FrameSealer {
         var plaintext = Data([final ? 0x00 : 0x01])
         plaintext.append(chunk)
         let sealed = try ChaChaPoly.seal(plaintext, using: key, nonce: nonce, authenticating: aad)
-        let d = Base64URL.encode(sealed.combined)
+        // d is ciphertext || tag ONLY. ChaChaPoly.SealedBox.combined is
+        // nonce || ciphertext || tag — sending combined puts a 12-byte
+        // nonce prefix in front, the host decrypts it as ciphertext+tag,
+        // the tag check fails and the host closes 4002 (Build #10).
+        // The original client sends box.ciphertext + box.tag; do the same.
+        let d = Base64URL.encode(sealed.ciphertext + sealed.tag)
         return "{\"t\":\"f\",\"c\":\(counter),\"d\":\"\(d)\"}"
     }
 
@@ -124,7 +129,12 @@ struct FrameOpener {
         let sealed: ChaChaPoly.SealedBox
         let plaintext: Data
         do {
-            sealed = try ChaChaPoly.SealedBox(combined: ciphertext)
+            // The host sends d = ciphertext || tag (no nonce). Rebuild the
+            // box from components with the counter-derived nonce — do NOT
+            // use SealedBox(combined:), which expects a nonce prefix the
+            // host never sends (Build #10: inbound frames could never open).
+            sealed = try ChaChaPoly.SealedBox(
+                nonce: nonce, ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
             plaintext = try ChaChaPoly.open(sealed, using: key, authenticating: aad)
         } catch {
             throw ChannelCryptoError.decryptFailed

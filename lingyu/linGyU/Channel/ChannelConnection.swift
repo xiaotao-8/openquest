@@ -575,6 +575,12 @@ actor ChannelConnection {
         }
         let frames = try sealer.seal(message: data)
         self.sealer = sealer
+        // Diagnostic only (live preview): which frame counter and key the
+        // next inner message uses — the host closes 4002 on a counter
+        // mismatch, so the counter must be visible in the log.
+        if let first = frames.first {
+            report("frame c=\(first.counter) key=d2h")
+        }
         for frame in frames {
             continuation.yield(frame.json)
         }
