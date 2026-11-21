@@ -500,8 +500,6 @@ struct ComputersView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var forgettingComputer: Computer?
-    @State private var updatingComputerId: String?
-    @State private var updatingFromVersion: String?
     @State private var showingExtensions = false
     @State private var showingVoice = false
     @State private var showingNetwork = false
@@ -645,16 +643,6 @@ struct ComputersView: View {
             } else {
                 store.clearAccountCloud()
             }
-        }
-        .onChange(of: store.connector.hello?.version) { _, version in
-            if let version, updatingComputerId != nil, version != updatingFromVersion {
-                updatingComputerId = nil
-            }
-        }
-        .task(id: updatingComputerId) {
-            guard updatingComputerId != nil else { return }
-            try? await Task.sleep(for: .seconds(600))
-            updatingComputerId = nil
         }
         .codyncSheet(isPresented: $showingExtensions) {
             ExtensionsView()
@@ -1003,49 +991,25 @@ struct ComputersView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if updatingComputerId == computer.id {
-                    Spinner(size: 16)
-                } else if info.updateAvailable {
-                    Button(L("更新")) { requestUpdate(for: computer) }
-                        .buttonStyle(.primary)
-                }
             }
             .foregroundStyle(Palette.text)
         }
     }
 
-    private func versionInfo(_ hello: HelloReply) -> (detail: String, warns: Bool, updateAvailable: Bool) {
+    /// The version row shows the version only: the host update affordance
+    /// is not shown in the app (an in-app update would reinstall the
+    /// upstream host). A newer version therefore shows no detail line.
+    private func versionInfo(_ hello: HelloReply) -> (detail: String, warns: Bool) {
         if let unsupported = Compatibility.unsupportedMessage(for: hello) {
-            return (unsupported, true, false)
+            return (unsupported, true)
         }
         guard let latest = hello.latestVersion, !latest.isEmpty else {
-            return ("", false, false)
+            return ("", false)
         }
         guard Compatibility.compare(hello.version, latest) == .orderedAscending else {
-            return (L("已是最新版本"), false, false)
+            return (L("已是最新版本"), false)
         }
-        if hello.canUpdate {
-            return (L("%@ 版可用。", latest), false, true)
-        }
-        return (L("%@ 版可用。", latest), false, false)
-    }
-
-    /// Asks the host to update itself; the spinner clears when the hello
-    /// comes back with a new version, or after 10 minutes.
-    private func requestUpdate(for computer: Computer) {
-        updatingComputerId = computer.id
-        updatingFromVersion = store.connector.hello?.version
-        Task {
-            do {
-                guard let api = store.connector.api else {
-                    updatingComputerId = nil
-                    return
-                }
-                try await api.installHostUpdate()
-            } catch {
-                updatingComputerId = nil
-            }
-        }
+        return ("", false)
     }
 
     /// An account computer not paired on this phone (original
