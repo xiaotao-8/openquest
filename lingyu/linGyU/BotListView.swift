@@ -85,6 +85,7 @@ struct BotListView: View {
     @State private var showingAccount = false
     @State private var showingComputers = false
     @State private var showingNewGroup = false
+    @State private var showingIncognito = false
 
     private var mirror: EventMirror { store.connector.mirror }
 
@@ -152,6 +153,11 @@ struct BotListView: View {
                         Label(L("新建群聊"), systemImage: "person.2")
                     }
                     .disabled(!isOnline)
+                    Button {
+                        showingIncognito = true
+                    } label: {
+                        Label(L("新建私密会话"), systemImage: "lock")
+                    }
                 }
                 .disabled(!store.connector.isPaired)
             }
@@ -174,6 +180,9 @@ struct BotListView: View {
         }
         .codyncSheet(isPresented: $showingNewGroup) {
             NewGroupView()
+        }
+        .codyncSheet(isPresented: $showingIncognito) {
+            IncognitoBotPicker()
         }
     }
 

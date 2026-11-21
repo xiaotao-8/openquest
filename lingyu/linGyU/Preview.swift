@@ -19,6 +19,21 @@ enum PreviewMode: Equatable {
         var pairingPage: String?
         /// Show the computer-management sheet instead of the tabs.
         var computers = false
+        /// Seed Phase 2 demo data (Feed / Ideas / Goals / Spaces / audit)
+        /// and demo Soul / Memory / Identity files.
+        var phase2 = false
+        /// Open the corresponding sheet on the Settings tab.
+        var soul = false
+        var memory = false
+        var identity = false
+        var vault = false
+        var network = false
+        var dataControls = false
+        /// Open the audit log sheet on the State tab.
+        var audit = false
+        /// Scroll the State tab to the lower sections (Activity /
+        /// Approvals / Upcoming / audit) for the screenshot.
+        var stateLower = false
     }
 
     static func fromLaunchArguments() -> PreviewMode {
@@ -35,6 +50,15 @@ enum PreviewMode: Equatable {
         options.page = value(for: "-PreviewPage", in: args)
         options.pairingPage = value(for: "-PreviewPairingPage", in: args)
         options.computers = args.contains("-PreviewComputers")
+        options.phase2 = args.contains("-PreviewPhase2")
+        options.soul = args.contains("-PreviewSoul")
+        options.memory = args.contains("-PreviewMemory")
+        options.identity = args.contains("-PreviewIdentity")
+        options.vault = args.contains("-PreviewVault")
+        options.network = args.contains("-PreviewNetwork")
+        options.dataControls = args.contains("-PreviewDataControls")
+        options.audit = args.contains("-PreviewAudit")
+        options.stateLower = args.contains("-PreviewStateLower")
         return .seeded(options)
     }
 
@@ -82,7 +106,14 @@ enum PreviewRunner {
         if options.computers, let computer = demoComputer(), let hello = demoHello() {
             store.connector.seedPreview(computer: computer, hello: hello)
         }
-        if options.settings {
+        if options.phase2 {
+            seedPhase2(store: store)
+        }
+        if options.soul || options.memory || options.identity || options.vault || options.network || options.dataControls {
+            store.selectedTab = 3
+        } else if options.audit {
+            store.selectedTab = 2
+        } else if options.settings {
             store.selectedTab = 3
         } else if let page = options.page {
             store.selectedTab = page == "state" ? 2 : 1
@@ -93,6 +124,41 @@ enum PreviewRunner {
                 store.openBotId = lead.id
             }
         }
+    }
+
+    /// Phase 2 demo data (seeded mode only): one Feed post, one Idea, one
+    /// Goal with a progress entry, one Space request, two audit records,
+    /// and demo Soul / Memory / Identity files — so the new tabs can be
+    /// screenshotted with real-looking rows. Demo rows only; a real user
+    /// starts with all of these empty. Idempotent: the captures run
+    /// several phase2 launches in one simulator, and the rows must not
+    /// duplicate.
+    @MainActor
+    private static func seedPhase2(store: AppStore) {
+        if store.feed.posts.isEmpty {
+            store.feed.add(title: "本周值得看的几件事", body: "演示简报：登录测试已修复，文档已更新，本周聚焦在新功能的收尾上。", category: "工作", source: "generated")
+        }
+        if store.ideas.ideas.isEmpty {
+            store.ideas.add(title: "把每周简报固定在周一早上发", category: "工作", source: "typed")
+        }
+        if store.goals.goals.isEmpty {
+            store.goals.add(title: "每周读完一本书", type: GoalCategory.health.rawValue)
+            if let goal = store.goals.goals.first {
+                store.goals.addProgress(goalId: goal.id, text: "读完了第一章，做了三页笔记。")
+            }
+        }
+        if store.spaces.spaces.isEmpty {
+            store.spaces.add(title: "倒数日", description: "一个显示重要日子倒计时的桌面小工具。")
+        }
+        if store.audit.records.isEmpty {
+            store.audit.record(botId: "demo-lead", botName: "阿文", kind: .approval,
+                               title: "rm -rf /root/demo/node_modules/.cache", detail: "删除缓存目录", status: .allowed)
+            store.audit.record(botId: "demo-north", botName: "小北", kind: .decision,
+                               title: "登录测试修好后，要不要顺手把注册测试也跑一遍？", detail: "跑一遍", status: .done)
+        }
+        store.identity.saveSoul("演示 Soul：你是 linGyU 的智能体，中文回复，简洁直接。")
+        store.identity.saveMemory("演示记忆：用户喜欢简洁直接的回答。")
+        store.identity.saveIdentity(name: "阿文", vibe: "冷静、直接", tagline: "写代码、修 bug、跑测试。", body: "演示身份。")
     }
 
     private static func demoBots(now: Int64) -> [Bot] {

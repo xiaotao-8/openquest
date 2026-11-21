@@ -70,18 +70,16 @@ struct PermissionCard: View {
     /// auto-answered.
     private func autoAnswerIfBypassed() {
         guard store.bypassAllApprovals, isPending, !bypassAnswered,
-              answeringOptionId == nil,
-              let api = store.connector.api else { return }
+              answeringOptionId == nil else { return }
         let option = answerOptions.first(where: { $0.kind == "allow_once" })
             ?? answerOptions.first
         guard let option else { return }
         bypassAnswered = true
         answeringOptionId = option.optionId
         Task {
-            do {
-                try await api.respondPermission(entryId: entry.id, optionId: option.optionId)
+            if await store.answerApproval(entry: entry, option: option, note: L("全部跳过审批自动通过")) {
                 answeredOptionKind = option.kind
-            } catch {
+            } else {
                 answeringOptionId = nil
                 bypassAnswered = false
             }
@@ -217,13 +215,11 @@ struct PermissionCard: View {
     }
 
     private func answer(option: PermissionOption) {
-        guard let api = store.connector.api else { return }
         answeringOptionId = option.optionId
         Task {
-            do {
-                try await api.respondPermission(entryId: entry.id, optionId: option.optionId)
+            if await store.answerApproval(entry: entry, option: option) {
                 answeredOptionKind = option.kind
-            } catch {
+            } else {
                 answeringOptionId = nil
             }
         }
@@ -451,6 +447,9 @@ struct DecisionCard: View {
         Task {
             do {
                 try await api.respondDecision(entryId: entry.id, option: option)
+                store.audit.record(botId: entry.botId, botName: bot.name, kind: .decision,
+                                   title: data.question ?? L("提问"),
+                                   detail: option, status: .done)
             } catch {
                 answeringOption = nil
             }

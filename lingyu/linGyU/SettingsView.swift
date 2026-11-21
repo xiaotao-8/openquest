@@ -45,6 +45,13 @@ struct SettingsView: View {
     @State private var showingStartOverDialog = false
     @State private var showingDeleteDialog = false
     @State private var showingBypassDialog = false
+    @State private var showingSoul = false
+    @State private var showingMemory = false
+    @State private var showingIdentity = false
+    @State private var showingDataControls = false
+    @State private var showingVault = false
+    @State private var showingNetwork = false
+    @State private var didHandlePreview = false
     @State private var notificationStatus = ""
     @State private var iconBadge = false
     @State private var shareAnalytics = true
@@ -58,10 +65,12 @@ struct SettingsView: View {
                     .padding(.top, 20)
                 profileSection
                 accountSection
+                identitySection
                 appearanceSection
                 languageSection
                 thinkingSection
                 permissionsSection
+                dataSection
                 shortcutSection
                 notificationsSection
                 analyticsSection
@@ -90,6 +99,24 @@ struct SettingsView: View {
         .codyncSheet(isPresented: $showingAnalyticsInfo) {
             AnalyticsInfoView()
         }
+        .codyncSheet(isPresented: $showingSoul) {
+            NavigationStack { SoulView() }
+        }
+        .codyncSheet(isPresented: $showingMemory) {
+            NavigationStack { MemoryView() }
+        }
+        .codyncSheet(isPresented: $showingIdentity) {
+            NavigationStack { IdentityView() }
+        }
+        .codyncSheet(isPresented: $showingDataControls) {
+            NavigationStack { DataControlsView() }
+        }
+        .codyncSheet(isPresented: $showingVault) {
+            NavigationStack { CredentialVaultView() }
+        }
+        .codyncSheet(isPresented: $showingNetwork) {
+            NavigationStack { NetworkProtocolsView() }
+        }
         .codyncDialog(
             isPresented: $showingDeleteDialog,
             title: L("删除账号？"),
@@ -115,12 +142,7 @@ struct SettingsView: View {
             actions: [
                 CodyncDialogAction(title: L("取消")) {},
                 CodyncDialogAction(title: L("重新开始"), isDestructive: true) {
-                    Task { @MainActor in
-                        await store.account.signOutAll()
-                        store.connector.forgetAllComputers()
-                        store.clearAccountCloud()
-                        store.showingWelcome = true
-                    }
+                    Task { await store.startOver() }
                 },
             ]
         )
@@ -139,6 +161,15 @@ struct SettingsView: View {
             loadNotificationStatus()
             iconBadge = UserDefaults.standard.bool(forKey: "cn.lingyu.iconBadge")
             shareAnalytics = UserDefaults.standard.object(forKey: "cn.lingyu.shareAnalytics") as? Bool ?? true
+            if !didHandlePreview, case .seeded(let options) = store.previewMode {
+                didHandlePreview = true
+                if options.soul { showingSoul = true }
+                else if options.memory { showingMemory = true }
+                else if options.identity { showingIdentity = true }
+                else if options.vault { showingVault = true }
+                else if options.network { showingNetwork = true }
+                else if options.dataControls { showingDataControls = true }
+            }
         }
     }
 
@@ -344,6 +375,116 @@ struct SettingsView: View {
                         }
                     }
                 ))
+            }
+            Hairline()
+            CardRow {
+                Button {
+                    showingNetwork = true
+                } label: {
+                    HStack {
+                        Text(L("网络协议"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Identity (Soul / Memory / Identity)
+
+    /// The three-file user model: Soul (top-priority instructions),
+    /// Memory (what the agent remembers), Identity (who the agent is).
+    private var identitySection: some View {
+        CardSection(title: L("智能体"), footer: L("Soul 是最高优先级的指令，智能体必须完全服从；Memory 是它记住的关于你的事；Identity 是它自己是谁。")) {
+            CardRow {
+                Button {
+                    showingSoul = true
+                } label: {
+                    HStack {
+                        Text(L("Soul"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Hairline()
+            CardRow {
+                Button {
+                    showingMemory = true
+                } label: {
+                    HStack {
+                        Text(L("Memory"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Hairline()
+            CardRow {
+                Button {
+                    showingIdentity = true
+                } label: {
+                    HStack {
+                        Text(L("Identity"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Data & credentials
+
+    private var dataSection: some View {
+        CardSection(title: L("数据与凭证")) {
+            CardRow {
+                Button {
+                    showingDataControls = true
+                } label: {
+                    HStack {
+                        Text(L("数据控制"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Hairline()
+            CardRow {
+                Button {
+                    showingVault = true
+                } label: {
+                    HStack {
+                        Text(L("安全凭证库"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
             }
         }
     }

@@ -881,8 +881,7 @@ struct WidgetGalleryView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 24) {
                 HStack(spacing: 14) {
                     CharacterAvatar(shape: "hex", color: "gray", size: 42)
                         .frame(width: 58, height: 58)
@@ -990,7 +989,6 @@ struct WidgetGalleryView: View {
             .padding(18)
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
-        }
         .background(Palette.background)
         .navigationDestination(item: $page) { page in
             switch page {
@@ -1133,8 +1131,7 @@ struct ActivityGalleryView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle(isOn: $enabled) {
                         Text(island ? L("在灵动岛中显示") : L("显示实时活动"))
@@ -1191,7 +1188,6 @@ struct ActivityGalleryView: View {
                     .font(.footnote).foregroundStyle(Palette.secondary)
             }
             .padding(18).frame(maxWidth: 560).frame(maxWidth: .infinity)
-        }
         .background(Palette.background)
         .tint(Palette.accent)
         .task { await refreshAllowed() }

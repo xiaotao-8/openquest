@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The chat page (§4): lazy message list, bubbles, inline cards, tool-call
 /// rows, WorkingIndicator, FindBar, Composer, MiniWindow. The list is a
@@ -41,6 +42,18 @@ struct ChatView: View {
             messageList(bot: bot)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 6) {
+                        if store.incognitoBotId == botId {
+                            HStack(spacing: 6) {
+                                Image(systemName: "lock")
+                                    .font(.caption)
+                                Text(L("私密会话 · 本机不留存，内容仍经过电脑端处理"))
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Palette.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+                        }
                         if !bot.workSections.isIdle {
                             WorkCapsule(bot: bot, onStop: { showingStopDialog = true }, onTap: { showingWork = true })
                         }
@@ -428,10 +441,16 @@ struct ChatView: View {
     private var draftKey: String { "cn.lingyu.draft.\(botId)" }
 
     private func loadDraft() {
+        // Incognito chats never load (or keep) a draft on this phone.
+        if store.incognitoBotId == botId {
+            draftText = ""
+            return
+        }
         draftText = UserDefaults.standard.string(forKey: draftKey) ?? ""
     }
 
     private func saveDraft() {
+        if store.incognitoBotId == botId { return }
         UserDefaults.standard.set(draftText, forKey: draftKey)
     }
 }
@@ -567,6 +586,14 @@ struct AgentBubble: View {
     var bot: Bot
     var isGroupHead: Bool
     var author: Bot?
+    @EnvironmentObject private var store: AppStore
+
+    /// The message's first line, for use as a Feed/Idea title.
+    private var shortTitle: String {
+        let text = entry.data.text ?? ""
+        let firstLine = text.components(separatedBy: .newlines).first ?? text
+        return String(firstLine.prefix(40))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -585,6 +612,23 @@ struct AgentBubble: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = entry.data.text ?? ""
+                        } label: {
+                            Label(L("复制"), systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            store.feed.add(title: shortTitle, body: entry.data.text ?? "", category: L("对话"), source: "chat")
+                        } label: {
+                            Label(L("保存到简报"), systemImage: "newspaper")
+                        }
+                        Button {
+                            store.ideas.add(title: shortTitle, category: L("对话"), source: "chat")
+                        } label: {
+                            Label(L("保存为建议"), systemImage: "lightbulb")
+                        }
+                    }
                 Spacer(minLength: 40)
             }
             Text(RelativeTime.clock(entry.createdAt))
