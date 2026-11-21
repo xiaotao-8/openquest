@@ -67,7 +67,7 @@ final class LiveActivityManager {
         let state = LinGyUCallAttributes.ContentState(step: step, status: status,
                                                       startedAt: activity.contentState.startedAt,
                                                       muted: muted)
-        await activity.update(state)
+        await activity.update(using: state)
     }
 
     /// End the call activity when the call ends.
