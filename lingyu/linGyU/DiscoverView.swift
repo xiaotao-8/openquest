@@ -75,14 +75,14 @@ struct DiscoverView: View {
         case 0:
             EmptyState(
                 title: L("还没有简报"),
-                body: L("简报会按你的提示，从对话和已连数据里整理出每天值得看的内容。"),
+                message: L("简报会按你的提示，从对话和已连数据里整理出每天值得看的内容。"),
                 actionTitle: L("生成第一期"),
                 action: { showingFeedPrompt = true }
             )
         case 1:
             EmptyState(
                 title: L("还没有建议"),
-                body: L("建议从对话与已连数据生成：值得做的事、值得看的内容、值得试的用法。"),
+                message: L("建议从对话与已连数据生成：值得做的事、值得看的内容、值得试的用法。"),
                 actionTitle: nil,
                 action: nil
             )
@@ -93,7 +93,7 @@ struct DiscoverView: View {
         default:
             EmptyState(
                 title: L("内容库是空的"),
-                body: L("去聊天里让智能体写一个 artifact，它会出现在这里。"),
+                message: L("去聊天里让智能体写一个 artifact，它会出现在这里。"),
                 actionTitle: L("去聊天"),
                 action: { store.selectedTab = 0 }
             )
@@ -103,7 +103,7 @@ struct DiscoverView: View {
 
 struct EmptyState: View {
     var title: String
-    var body: String
+    var message: String
     var actionTitle: String?
     var action: (() -> Void)?
 
@@ -112,7 +112,7 @@ struct EmptyState: View {
             Text(title)
                 .font(.headline)
                 .foregroundStyle(Palette.text)
-            Text(body)
+            Text(message)
                 .font(.body)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -146,7 +146,7 @@ struct GoalsEmptyState: View {
         if goals.isEmpty {
             EmptyState(
                 title: L("还没有目标"),
-                body: L("定一个目标，智能体会帮你拆解、跟进进度。"),
+                message: L("定一个目标，智能体会帮你拆解、跟进进度。"),
                 actionTitle: L("新建目标"),
                 action: onCreate
             )
@@ -181,7 +181,7 @@ struct SpacesEmptyState: View {
         if spaces.isEmpty {
             EmptyState(
                 title: L("还没有小工具"),
-                body: L("描述一个你想要的小工具，它会为你搭出来。"),
+                message: L("描述一个你想要的小工具，它会为你搭出来。"),
                 actionTitle: L("描述一个来创建"),
                 action: onCreate
             )

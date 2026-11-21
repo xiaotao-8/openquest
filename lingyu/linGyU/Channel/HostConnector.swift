@@ -107,10 +107,10 @@ final class HostConnector: ObservableObject {
             throw HostCallError.failed(message)
         }
         let computer = Computer(from: link)
-        let checkCode = Self.checkCode(devicePub: identity.devicePublicKey, hostSignKey: link.signKeyData)
-        let pairing = ChannelConnection(computer: computer, identity: identity, pairingCode: link.code)
+        let checkCode = Self.checkCode(devicePub: identity.devicePublicKey, hostSignKey: link.signKey)
+        let pairing = ChannelConnection(computer: computer, identity: identity, pairingCode: link.codeBase64URL)
         pairing.stopAfterFirstServe = true
-        pairing.onStateChange = { [weak self] newState in
+        pairing.onStateChange = { [weak self] (newState: LinkState) in
             Task { @MainActor in
                 guard let self else { return }
                 if case .stopped(let reason) = newState {
@@ -145,7 +145,7 @@ final class HostConnector: ObservableObject {
         }
         pairingState = .waiting(checkCode: checkCode)
         let bodyData = try JSONSerialization.data(withJSONObject: [
-            "code": link.code,
+            "code": link.codeBase64URL,
             "name": deviceName,
             "platform": "ios",
         ] as [String: Any])

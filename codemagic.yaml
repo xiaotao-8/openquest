@@ -249,6 +249,8 @@ workflows:
     max_build_duration: 60
     environment:
       xcode: latest
+      groups:
+        - app_vars
     triggering:
       events:
         - push

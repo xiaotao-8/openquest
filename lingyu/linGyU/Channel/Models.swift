@@ -362,6 +362,61 @@ struct Bot: Codable, Equatable, Identifiable, Sendable {
         createdAt = container.lenient(Int64.self, forKey: .createdAt) ?? 0
     }
 
+    /// Explicit encode: synthesized Encodable is unavailable because
+    /// CodingKeys also carries decode-only aliases (maxAgents,
+    /// taskWorktrees) with no stored property behind them. Encodes only
+    /// the canonical stored properties.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(members, forKey: .members)
+        try container.encode(name, forKey: .name)
+        try container.encode(description, forKey: .description)
+        try container.encode(avatarColor, forKey: .avatarColor)
+        try container.encode(avatarShape, forKey: .avatarShape)
+        try container.encodeIfPresent(customIcon, forKey: .customIcon)
+        try container.encode(backend, forKey: .backend)
+        try container.encodeIfPresent(command, forKey: .command)
+        try container.encodeIfPresent(loginProfile, forKey: .loginProfile)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encode(managedWorkspace, forKey: .managedWorkspace)
+        try container.encode(permission, forKey: .permission)
+        try container.encodeIfPresent(mode, forKey: .mode)
+        try container.encodeIfPresent(model, forKey: .model)
+        try container.encode(modelOptions, forKey: .modelOptions)
+        try container.encode(fastMode, forKey: .fastMode)
+        try container.encode(fastModeSupport, forKey: .fastModeSupport)
+        try container.encodeIfPresent(fastModeIssue, forKey: .fastModeIssue)
+        try container.encodeIfPresent(fallbacks, forKey: .fallbacks)
+        try container.encodeIfPresent(selfFallbacks, forKey: .selfFallbacks)
+        try container.encode(pinned, forKey: .pinned)
+        try container.encode(lead, forKey: .lead)
+        try container.encode(position, forKey: .position)
+        try container.encodeIfPresent(section, forKey: .section)
+        try container.encode(hidden, forKey: .hidden)
+        try container.encodeIfPresent(notify, forKey: .notify)
+        try container.encode(connectors, forKey: .connectors)
+        try container.encode(skills, forKey: .skills)
+        try container.encode(computer, forKey: .computer)
+        try container.encodeIfPresent(manageTeam, forKey: .manageTeam)
+        try container.encodeIfPresent(createdBy, forKey: .createdBy)
+        try container.encode(rev, forKey: .rev)
+        try container.encode(status, forKey: .status)
+        try container.encode(activity, forKey: .activity)
+        try container.encodeIfPresent(startedAt, forKey: .startedAt)
+        try container.encodeIfPresent(workingChat, forKey: .workingChat)
+        try container.encodeIfPresent(agentStep, forKey: .agentStep)
+        try container.encode(work, forKey: .work)
+        try container.encodeIfPresent(maxThreads, forKey: .maxThreads)
+        try container.encodeIfPresent(threadWorktrees, forKey: .threadWorktrees)
+        try container.encode(unread, forKey: .unread)
+        try container.encode(waiting, forKey: .waiting)
+        try container.encodeIfPresent(lastMessage, forKey: .lastMessage)
+        try container.encode(lastAt, forKey: .lastAt)
+        try container.encode(createdAt, forKey: .createdAt)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, kind, members, name, description, avatarColor, avatarShape, customIcon
         case backend, command, loginProfile, cwd, managedWorkspace, permission, mode, model
