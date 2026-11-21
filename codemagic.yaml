@@ -317,13 +317,27 @@ workflows:
           # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_PAIRING
           # （preview-pairing.json 的 base64）须事先在 Codemagic 环境变量里配好
           # （未配则跳过这步，不让构建失败）。两张图：60 秒时聊天，150 秒时审批卡。
+          # 先探测构建机到 ECS 的连通性（只打长度、不打凭证值），再跑 live；
+          # 跑完把 App 沙盒里的 live-diag.log 取出 cat 进日志——live 的诊断
+          # 不能再只靠截图猜。
           if [ -n "$LINGYU_PREVIEW_PAIRING" ]; then
+            echo "--- live probe: builder -> ECS ---"
+            curl -sS -m 10 -o /tmp/ecs-health.json -w "health: http=%{http_code} time=%{time_total}s\n" http://47.238.160.204:19222/health || echo "health: curl FAILED"
+            head -c 200 /tmp/ecs-health.json 2>/dev/null || true; echo
+            echo "pairing blob length: ${#LINGYU_PREVIEW_PAIRING}"
             xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewPairing "$LINGYU_PREVIEW_PAIRING"
             sleep 60
             xcrun simctl io "$SIM_UDID" screenshot preview-live.png
             sleep 90
             xcrun simctl io "$SIM_UDID" screenshot preview-live-approval.png
             xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+            CONTAINER=$(xcrun simctl get_app_container "$SIM_UDID" cn.lingyu data 2>/dev/null || true)
+            if [ -n "$CONTAINER" ] && [ -f "$CONTAINER/Documents/live-diag.log" ]; then
+              echo "--- live-diag.log ---"
+              cat "$CONTAINER/Documents/live-diag.log"
+            else
+              echo "live-diag.log NOT FOUND (container: ${CONTAINER:-none})"
+            fi
           else
             echo "WARNING: LINGYU_PREVIEW_PAIRING not set, skipping live-chat screenshots"
           fi

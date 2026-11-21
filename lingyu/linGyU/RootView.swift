@@ -44,6 +44,11 @@ struct RootView: View {
                     .tag(3)
             }
             .tint(Palette.text)
+            .overlay(alignment: .top) {
+                if store.showLiveDiag {
+                    LiveDiagOverlayView(diag: store.liveDiag)
+                }
+            }
             .codyncSheet(isPresented: $store.showingPairing) {
                 PairingView()
             }

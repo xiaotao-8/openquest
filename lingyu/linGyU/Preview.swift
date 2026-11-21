@@ -137,22 +137,26 @@ enum PreviewRunner {
     /// "Allow once" at ~+120 s so the ~150 s screenshot shows it answered.
     @MainActor
     static func runLive(store: AppStore) async {
+        store.liveDiag.record("runLive started")
         store.connector.mirror.reset()
+        store.liveDiag.record("mirror reset")
         guard let blob = PreviewMode.pairingBlob(),
               let parsed = try? JSONDecoder().decode(PreviewPairing.self, from: blob),
               let seed = Base64URL.decode(parsed.deviceKey), seed.count == 32,
               let signKey = Base64URL.decode(parsed.signKey), signKey.count == 32,
               let boxKey = Base64URL.decode(parsed.boxKey), boxKey.count == 32 else {
-            LogStore.record("live preview: bad pairing blob")
+            store.liveDiag.record("live preview: bad pairing blob")
             return
         }
+        store.liveDiag.record("blob ok bytes=\(blob.count) urls=\(parsed.urls.count) bot=\(parsed.botName ?? "?")")
         let identity: PreviewIdentity
         do {
             identity = try DeviceIdentity.preview(deviceSeed: seed)
         } catch {
-            LogStore.record("live preview: bad device seed")
+            store.liveDiag.record("live preview: bad device seed")
             return
         }
+        store.liveDiag.record("identity ok")
         // Build the Computer through the pairing-link path so the record is
         // exactly what a real pairing would store.
         let link = PairingLink(
@@ -162,6 +166,7 @@ enum PreviewRunner {
         )
         let paired = Computer(from: link)
         let connector = store.connector
+        store.liveDiag.record("connect() called")
         await connector.connect(computer: paired, identity: identity)
         // Wait for the channel + hello (bounded). 60 s, not 20 s: a cold
         // simulator reaching a cross-region host can need several race +
@@ -171,41 +176,68 @@ enum PreviewRunner {
             if connector.hello != nil { break }
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
-        guard connector.hello != nil else {
-            LogStore.record("live preview: hello timed out")
+        guard let hello = connector.hello else {
+            store.liveDiag.record("live preview: hello timed out after 60s state=\(connector.state)")
             return
         }
+        store.liveDiag.record("hello ok host v\(hello.version) schema=\(hello.schema)")
         // The 150 s budget below measures the conversation, not the
         // connection: start the clock once the chat is open.
         let start = Date()
         store.selectedTab = 0
         store.navigationPath.append(parsed.botId)
         store.openBotId = parsed.botId
-        guard let api = connector.api else { return }
+        guard let api = connector.api else {
+            store.liveDiag.record("api nil after hello — abort")
+            return
+        }
+        store.liveDiag.record("chat opened")
         // 1. Intro message in Chinese.
         let introNonce = UUID().uuidString
         let intro = Entry(localText: "你好，请用中文介绍一下你自己。", botId: parsed.botId, clientNonce: introNonce)
         connector.mirror.addLocalEntry(intro)
-        _ = try? await api.send(botId: parsed.botId, text: "你好，请用中文介绍一下你自己。", clientNonce: introNonce)
+        do {
+            _ = try await api.send(botId: parsed.botId, text: "你好，请用中文介绍一下你自己。", clientNonce: introNonce)
+            store.liveDiag.record("intro sent")
+        } catch {
+            store.liveDiag.record("intro send failed: \(error)")
+        }
         // 2. A file-listing request — the preview bot has permission "ask",
         // so the tool call surfaces a real approval card.
         try? await Task.sleep(nanoseconds: 20_000_000_000)
         let listNonce = UUID().uuidString
         let list = Entry(localText: "列出你工作区里的文件。", botId: parsed.botId, clientNonce: listNonce)
         connector.mirror.addLocalEntry(list)
-        _ = try? await api.send(botId: parsed.botId, text: "列出你工作区里的文件。", clientNonce: listNonce)
+        do {
+            _ = try await api.send(botId: parsed.botId, text: "列出你工作区里的文件。", clientNonce: listNonce)
+            store.liveDiag.record("list request sent")
+        } catch {
+            store.liveDiag.record("list send failed: \(error)")
+        }
         // 3. Watch for a pending card; answer "Allow once" at ~+120 s.
+        var cardSeen = false
         while Date().timeIntervalSince(start) < 150 {
             let pending = connector.mirror.entries(for: parsed.botId).first { $0.isWaitingCard }
-            if let pending, Date().timeIntervalSince(start) >= 120 {
-                if let option = pending.data.options?.first(where: { $0.kind == "allow_once" }) {
-                    try? await api.respondPermission(entryId: pending.id, optionId: option.optionId)
-                    LogStore.record("live preview: answered approval once")
-                    return
+            if let pending {
+                if !cardSeen {
+                    cardSeen = true
+                    store.liveDiag.record("approval card seen")
+                }
+                if Date().timeIntervalSince(start) >= 120 {
+                    if let option = pending.data.options?.first(where: { $0.kind == "allow_once" }) {
+                        do {
+                            try await api.respondPermission(entryId: pending.id, optionId: option.optionId)
+                            store.liveDiag.record("live preview: answered approval once")
+                        } catch {
+                            store.liveDiag.record("approval answer failed: \(error)")
+                        }
+                        return
+                    }
                 }
             }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
+        store.liveDiag.record("window ended without approval answer")
     }
 
     private struct PreviewPairing: Decodable {

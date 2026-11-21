@@ -44,6 +44,21 @@ final class AppStore: ObservableObject {
     // MARK: - Preview
 
     let previewMode: PreviewMode
+    /// Live-preview diagnostics (on-screen card + log file). Created before
+    /// init records the launch arguments, so the card can prove the mode
+    /// even if start() never runs.
+    let liveDiag = LiveDiag()
+
+    /// True when this launch is (or was meant to be) a live preview run:
+    /// either the mode parsed as live, or a `-PreviewPairing` argument is
+    /// present in any form. The overlay shows in both cases so a parsing
+    /// miss is visible instead of silent.
+    var showLiveDiag: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return previewMode == .live
+            || args.contains("-PreviewPairing")
+            || args.contains { $0.hasPrefix("-PreviewPairing=") }
+    }
 
     init() {
         language = UserDefaults.standard.string(forKey: L10n.languageKey) ?? "zh"
@@ -51,6 +66,9 @@ final class AppStore: ObservableObject {
         reduceMotion = UserDefaults.standard.bool(forKey: "cn.lingyu.reduceMotion")
         appearance = UserDefaults.standard.string(forKey: "cn.lingyu.appearance") ?? "system"
         previewMode = PreviewMode.fromLaunchArguments()
+        let args = ProcessInfo.processInfo.arguments
+        let pairingArg = args.contains("-PreviewPairing") || args.contains { $0.hasPrefix("-PreviewPairing=") }
+        liveDiag.record("init mode=\(previewMode) argc=\(args.count) pairingArg=\(pairingArg) paired=\(connector.isPaired)")
     }
 
     var colorScheme: ColorScheme? {
@@ -66,6 +84,7 @@ final class AppStore: ObservableObject {
     }
 
     func start() {
+        liveDiag.record("start() mode=\(previewMode)")
         switch previewMode {
         case .none:
             if connector.isPaired {
@@ -76,6 +95,7 @@ final class AppStore: ObservableObject {
         case .seeded(let options):
             PreviewRunner.seed(store: self, options: options)
         case .live:
+            liveDiag.record("dispatch runLive")
             Task {
                 await PreviewRunner.runLive(store: self)
             }
