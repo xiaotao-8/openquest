@@ -25,6 +25,14 @@ final class HostConnector: ObservableObject {
     private var runTask: Task<Void, Never>?
     private let computerKey = "cn.lingyu.computer.v1"
 
+    /// Live-preview dial reporter: forwarded to the channel so each dial
+    /// attempt is logged to the diagnostics card. Nil in normal use.
+    private(set) var dialReporter: (@Sendable (String) -> Void)?
+
+    func setDialReporter(_ reporter: (@Sendable (String) -> Void)?) {
+        dialReporter = reporter
+    }
+
     init() {
         computer = loadComputer()
     }
@@ -40,6 +48,7 @@ final class HostConnector: ObservableObject {
         let connection = ChannelConnection(computer: computer, identity: identity)
         self.connection = connection
         self.api = HostAPI(connection: connection)
+        await connection.setDialReporter(dialReporter)
         await connection.setStateChangeHandler { [weak self] newState in
             Task { @MainActor in
                 self?.state = newState

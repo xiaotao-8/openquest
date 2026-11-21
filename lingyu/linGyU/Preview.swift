@@ -140,6 +140,7 @@ enum PreviewRunner {
         store.liveDiag.record("runLive started")
         store.connector.mirror.reset()
         store.liveDiag.record("mirror reset")
+        recordRoster(store: store, tag: "after-reset")
         guard let blob = PreviewMode.pairingBlob(),
               let parsed = try? JSONDecoder().decode(PreviewPairing.self, from: blob),
               let seed = Base64URL.decode(parsed.deviceKey), seed.count == 32,
@@ -166,6 +167,11 @@ enum PreviewRunner {
         )
         let paired = Computer(from: link)
         let connector = store.connector
+        // Dial instrumentation: every WS attempt is logged to the diag card.
+        store.connector.setDialReporter { [weak store] line in
+            Task { @MainActor in store?.liveDiag.record(line) }
+        }
+        await preflightHealth(store: store, urls: parsed.urls)
         store.liveDiag.record("connect() called")
         await connector.connect(computer: paired, identity: identity)
         // Wait for the channel + hello (bounded). 60 s, not 20 s: a cold
@@ -181,6 +187,7 @@ enum PreviewRunner {
             return
         }
         store.liveDiag.record("hello ok host v\(hello.version) schema=\(hello.schema)")
+        recordRoster(store: store, tag: "after-hello")
         // The 150 s budget below measures the conversation, not the
         // connection: start the clock once the chat is open.
         let start = Date()
@@ -214,6 +221,7 @@ enum PreviewRunner {
         } catch {
             store.liveDiag.record("list send failed: \(error)")
         }
+        recordRoster(store: store, tag: "after-list")
         // 3. Watch for a pending card; answer "Allow once" at ~+120 s.
         var cardSeen = false
         while Date().timeIntervalSince(start) < 150 {
@@ -238,6 +246,45 @@ enum PreviewRunner {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
         store.liveDiag.record("window ended without approval answer")
+    }
+
+    /// Roster truth for the verification question "did the seeded bots
+    /// leave and the real bot arrive": bot count + first few names.
+    /// Names are not secrets.
+    @MainActor
+    private static func recordRoster(store: AppStore, tag: String) {
+        let bots = store.connector.mirror.bots
+        let names = Array(bots.prefix(5)).map(\.name).joined(separator: ",")
+        store.liveDiag.record("roster \(tag) bots=\(bots.count) [\(names)]")
+    }
+
+    /// In-app reachability check before the WS dial: a plain HTTP GET to
+    /// the first blob URL's /health, logged with the code or the error.
+    /// Distinguishes "this process cannot reach the host at all" from
+    /// "reached but the WebSocket handshake failed". Best effort and
+    /// bounded (5 s) — the WS dial always runs afterwards regardless.
+    @MainActor
+    private static func preflightHealth(store: AppStore, urls: [String]) async {
+        guard let first = urls.first, var parts = URLComponents(string: first) else {
+            store.liveDiag.record("preflight: no url")
+            return
+        }
+        parts.path = "/health"
+        parts.query = nil
+        guard let url = parts.url else {
+            store.liveDiag.record("preflight: bad url")
+            return
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            store.liveDiag.record("preflight \(parts.host ?? "?") http=\(code)")
+        } catch {
+            let ns = error as NSError
+            store.liveDiag.record("preflight failed (\(ns.domain) \(ns.code))")
+        }
     }
 
     private struct PreviewPairing: Decodable {

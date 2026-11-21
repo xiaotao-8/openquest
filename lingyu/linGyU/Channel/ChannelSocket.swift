@@ -16,6 +16,11 @@ protocol ChannelSocket: AnyObject {
 final class URLSessionChannelSocket: ChannelSocket, @unchecked Sendable {
     private let task: URLSessionWebSocketTask
 
+    /// Short description of the last transport failure (e.g. ATS -1022),
+    /// for diagnostics. Set when send/receive fails; read by the dial
+    /// attempt right after. Diagnostic only — never a secret.
+    var lastTransportError: String?
+
     var closeCode: Int {
         let code = task.closeCode
         if code == .invalid { return 1006 }
@@ -39,6 +44,7 @@ final class URLSessionChannelSocket: ChannelSocket, @unchecked Sendable {
         do {
             try await task.send(.string(text))
         } catch {
+            lastTransportError = Self.describe(error)
             throw SocketClosed(code: closeCode)
         }
     }
@@ -60,8 +66,18 @@ final class URLSessionChannelSocket: ChannelSocket, @unchecked Sendable {
         } catch let closed as SocketClosed {
             throw closed
         } catch {
+            lastTransportError = Self.describe(error)
             throw SocketClosed(code: closeCode)
         }
+    }
+
+    /// "(domain code) description", truncated — the transport error is
+    /// otherwise swallowed by the SocketClosed wrapper.
+    private static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        var s = "(\(ns.domain) \(ns.code)) \(ns.localizedDescription)"
+        if s.count > 140 { s = String(s.prefix(140)) }
+        return s
     }
 
     func close(code: Int) {

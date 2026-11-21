@@ -59,6 +59,15 @@ actor ChannelConnection {
         onHelloReply = handler
     }
 
+    /// Reports one dial attempt (host, ms, outcome, transport error) for
+    /// live diagnostics. Set by the connector only in live preview mode;
+    /// nil in normal use, so nothing is logged and nothing changes.
+    var onDialEvent: (@Sendable (String) -> Void)?
+
+    func setDialReporter(_ reporter: (@Sendable (String) -> Void)?) {
+        onDialEvent = reporter
+    }
+
     private var isStopped = false
     private var socket: URLSessionChannelSocket?
     private var sealer: FrameSealer?
@@ -214,20 +223,28 @@ actor ChannelConnection {
     }
 
     /// One dial + handshake attempt. Returns nil on any failure.
+    /// Every outcome is reported (host, ms, transport error) so the live
+    /// diagnostics can tell "no route" from "policy-blocked" from
+    /// "handshake failed" — the three look identical from the outside.
     private func attempt(url: String) async -> (URLSessionChannelSocket, FrameSealer, FrameOpener)? {
+        let label = Self.dialLabel(url)
+        let started = Date()
         let socket: URLSessionChannelSocket
         do {
             socket = try Dialer.dial(url)
         } catch {
+            reportDial("\(label) dial failed \(Self.describe(error)) \(Self.elapsed(started))")
             return nil
         }
         do {
             let (sealer, opener) = try await performHandshake(socket: socket)
+            reportDial("\(label) ok \(Self.elapsed(started))")
             return (socket, sealer, opener)
         } catch ChannelHandshakeError.identityChanged {
             // Terminal for the whole transport, not just this address.
             markIdentityChanged()
             socket.close(code: 4001)
+            reportDial("\(label) rejected identityChanged \(Self.elapsed(started))")
             return nil
         } catch ChannelHandshakeError.rejected(let code) {
             socket.close(code: 1000)
@@ -236,11 +253,42 @@ actor ChannelConnection {
                 // or the host refused this device.
                 markPairingRejected(code: code)
             }
+            reportDial("\(label) rejected \(code ?? "?") \(Self.elapsed(started))")
+            return nil
+        } catch ChannelHandshakeError.timeout {
+            socket.close(code: 1000)
+            reportDial("\(label) handshake timeout \(Self.transport(socket)) \(Self.elapsed(started))")
             return nil
         } catch {
             socket.close(code: 1000)
+            reportDial("\(label) handshake failed \(Self.transport(socket)) \(Self.elapsed(started))")
             return nil
         }
+    }
+
+    private func reportDial(_ line: String) {
+        onDialEvent?("dial \(line)")
+    }
+
+    /// "host:port" for a blob URL — no path, no secret, safe to log.
+    private static func dialLabel(_ url: String) -> String {
+        guard let parts = URLComponents(string: url), let host = parts.host else { return "?" }
+        if let port = parts.port { return "\(host):\(port)" }
+        return host
+    }
+
+    private static func elapsed(_ since: Date) -> String {
+        "\(Int(Date().timeIntervalSince(since) * 1000))ms"
+    }
+
+    /// The transport error the socket recorded, if any (e.g. ATS -1022).
+    private static func transport(_ socket: URLSessionChannelSocket) -> String {
+        socket.lastTransportError ?? "-"
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        return "(\(ns.domain) \(ns.code))"
     }
 
     private func markIdentityChanged() {
