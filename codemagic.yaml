@@ -314,6 +314,15 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-page-state.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPairingPage=install
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-pairing-install.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPairingPage=scan
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-pairing-scan.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_PAIRING
           # （preview-pairing.json 的 base64）须事先在 Codemagic 环境变量里配好
           # （未配则跳过这步，不让构建失败）。两张图：60 秒时聊天，150 秒时审批卡。
@@ -362,6 +371,8 @@ workflows:
       - lingyu/preview-settings.png
       - lingyu/preview-page-discover.png
       - lingyu/preview-page-state.png
+      - lingyu/preview-pairing-install.png
+      - lingyu/preview-pairing-scan.png
       - lingyu/preview-live.png
       - lingyu/preview-live-approval.png
       - lingyu/linGyU-unsigned.ipa
