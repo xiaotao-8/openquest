@@ -122,6 +122,7 @@ final class AppStore: ObservableObject {
         // cloud computers in the background. Failures are silent — a
         // token that isn't fresh yet heals on the next refresh.
         Task {
+            account.ensureConfigured()
             _ = await account.waitUntilReady(timeout: .seconds(10))
             if account.isSignedIn {
                 await refreshAccountCloud()

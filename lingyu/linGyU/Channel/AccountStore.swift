@@ -11,9 +11,18 @@ import Foundation
 /// pairing and device key, so signing back in needs no new scan.
 @MainActor
 final class AccountStore: ObservableObject {
-    private let clerk: Clerk?
+    private var clerk: Clerk?
     @Published private(set) var isBusy = false
     @Published var errorMessage: String?
+
+    /// The Clerk publishable key, if the build ships one. The SDK is NOT
+    /// configured in init: configuring it does network + Keychain work at
+    /// launch, and a failure there kills the app before the first frame
+    /// (Build #15: every launch exited within seconds, no log line ever
+    /// written). Configure lazily on first real use instead.
+    private let publishableKey: String?
+    private let callbackScheme: String
+    private var didConfigure = false
 
     /// The account cloud (accounts and the computer lists); nil in builds
     /// without one.
@@ -27,7 +36,9 @@ final class AccountStore: ObservableObject {
     }
 
     var userID: String? { clerk?.session?.status == .active ? clerk?.user?.id : nil }
-    var isConfigured: Bool { clerk != nil }
+    /// True when the build ships an account key (sign-in is offered).
+    /// Separate from whether the SDK has been configured yet.
+    var isConfigured: Bool { publishableKey != nil }
     /// Clerk restores the persisted Keychain session during configuration.
     /// Don't offer a fresh sign-in until that restore has completed, or an
     /// update can briefly look like a signed-out install.
@@ -54,14 +65,21 @@ final class AccountStore: ObservableObject {
             .flatMap { $0.scheme == "https" && $0.host != nil ? $0 : nil }
         let key = (env["CODYNC_CLERK_PUBLISHABLE_KEY"] ?? config?.clerkPublishableKey ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.hasPrefix("pk_test_") || key.hasPrefix("pk_live_") else {
-            clerk = nil
-            return
-        }
-        let scheme = Bundle.main.bundleIdentifier ?? "cn.lingyu"
+        publishableKey = (key.hasPrefix("pk_test_") || key.hasPrefix("pk_live_")) ? key : nil
+        callbackScheme = Bundle.main.bundleIdentifier ?? "cn.lingyu"
+    }
+
+    /// Configures the Clerk SDK once, on first real use. Never called from
+    /// init: the SDK must not run at launch. Called from the post-launch
+    /// restore task (AppStore.start) and from every sign-in/token entry
+    /// point, so a persisted session still restores without a tap.
+    func ensureConfigured() {
+        guard !didConfigure else { return }
+        didConfigure = true
+        guard let key = publishableKey else { return }
         clerk = Clerk.configure(publishableKey: key, options: .init(
             telemetryEnabled: false,
-            redirectConfig: .init(redirectUrl: "\(scheme)://callback", callbackUrlScheme: scheme)
+            redirectConfig: .init(redirectUrl: "\(callbackScheme)://callback", callbackUrlScheme: callbackScheme)
         ))
         // Clerk's own launch refresh tries three times within a few seconds, then only logs.
         Task { restoreGaveUp = !(await waitUntilReady(timeout: .seconds(10))) }
@@ -90,6 +108,7 @@ final class AccountStore: ObservableObject {
     /// The signed-in session's JWT for the account cloud (Clerk caches it
     /// for about a minute). Fetched fresh on every call; never stored.
     func sessionToken() async throws -> String {
+        ensureConfigured()
         guard let clerk, isSignedIn, let token = try await clerk.auth.getToken() else { throw SessionError.signedOut }
         return token
     }
@@ -112,6 +131,7 @@ final class AccountStore: ObservableObject {
 
     func signIn(provider: SignInProvider) async {
         guard !isBusy else { return }
+        ensureConfigured()
         guard let clerk else { return }
         isBusy = true
         errorMessage = nil
@@ -157,7 +177,9 @@ final class AccountStore: ObservableObject {
     /// stay on this phone, so signing back in needs no new scan; the
     /// account's computers just stop sending this phone alerts until then.
     func signOut() async {
-        guard !isBusy, let clerk, let sessionID = clerk.session?.id else { return }
+        guard !isBusy else { return }
+        ensureConfigured()
+        guard let clerk, let sessionID = clerk.session?.id else { return }
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
@@ -171,6 +193,7 @@ final class AccountStore: ObservableObject {
     /// Every account on this device, for starting over. Local computers are
     /// forgotten separately by the caller; this only ends the sessions.
     func signOutAll() async {
+        ensureConfigured()
         guard let clerk else { return }
         isBusy = true
         errorMessage = nil
@@ -184,6 +207,7 @@ final class AccountStore: ObservableObject {
     /// Clerk's `user.deleted`). Throws when Clerk refused or couldn't be
     /// reached, and then nothing changed.
     func deleteUser() async throws {
+        ensureConfigured()
         guard let clerk, let user = clerk.user, let sessionID = clerk.session?.id else { throw SessionError.signedOut }
         isBusy = true
         errorMessage = nil
@@ -195,6 +219,7 @@ final class AccountStore: ObservableObject {
 
     /// Finishes a sign-in that came back through the app's callback URL.
     func handle(_ url: URL) async {
+        ensureConfigured()
         guard let clerk else { return }
         do { try await clerk.handle(url) }
         catch { errorMessage = L("无法完成登录，请重试。") }
