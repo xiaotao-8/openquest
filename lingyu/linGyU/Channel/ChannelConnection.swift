@@ -167,7 +167,11 @@ actor ChannelConnection {
     }
 
     /// Races all direct URLs in parallel; the first completed handshake
-    /// within 1.5 s wins. A `reject` only fails that one address.
+    /// within 5 s wins. A `reject` only fails that one address.
+    /// 5 s, not 1.5 s: a cold simulator reaching a cross-region host can
+    /// need more than 1.5 s for TCP + WS upgrade + handshake, and a
+    /// spurious timeout here burns the whole hello budget in retries.
+    /// The race still returns the moment the first handshake wins.
     private func race(urls: [String]) async -> (URLSessionChannelSocket, FrameSealer, FrameOpener)? {
         await withTaskGroup(of: RaceResult.self) { group in
             for url in urls {
@@ -179,7 +183,7 @@ actor ChannelConnection {
                 }
             }
             group.addTask {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
                 return RaceResult.timedOut
             }
             var remaining = urls.count

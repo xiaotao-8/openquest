@@ -19,7 +19,7 @@ enum PreviewMode: Equatable {
 
     static func fromLaunchArguments() -> PreviewMode {
         let args = ProcessInfo.processInfo.arguments
-        if let index = args.firstIndex(of: "-PreviewPairing"), index + 1 < args.count {
+        if value(for: "-PreviewPairing", in: args) != nil {
             return .live
         }
         guard args.contains("-PreviewSeed") else { return .none }
@@ -28,18 +28,32 @@ enum PreviewMode: Equatable {
         options.approval = args.contains("-PreviewApproval")
         options.ask = args.contains("-PreviewAsk")
         options.settings = args.contains("-PreviewSettings")
-        if let index = args.firstIndex(of: "-PreviewPage"), index + 1 < args.count {
-            options.page = args[index + 1]
-        }
+        options.page = value(for: "-PreviewPage", in: args)
         return .seeded(options)
+    }
+
+    /// Reads a launch-argument value in either form: two separate arguments
+    /// (`-PreviewPage discover`) or one `=`-joined argument
+    /// (`-PreviewPage=discover`, as codemagic.yaml passes it).
+    static func value(for flag: String, in args: [String]) -> String? {
+        if let index = args.firstIndex(of: flag), index + 1 < args.count {
+            return args[index + 1]
+        }
+        let prefix = flag + "="
+        for arg in args where arg.hasPrefix(prefix) {
+            return String(arg.dropFirst(prefix.count))
+        }
+        return nil
     }
 
     static func pairingBlob() -> Data? {
         let args = ProcessInfo.processInfo.arguments
-        guard let index = args.firstIndex(of: "-PreviewPairing"), index + 1 < args.count else {
+        guard let raw = value(for: "-PreviewPairing", in: args)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty else {
             return nil
         }
-        return Data(base64Encoded: args[index + 1])
+        return Data(base64Encoded: raw)
     }
 }
 
@@ -149,9 +163,11 @@ enum PreviewRunner {
         let paired = Computer(from: link)
         let connector = store.connector
         await connector.connect(computer: paired, identity: identity)
-        let start = Date()
-        // Wait for the channel + hello (bounded).
-        for _ in 0..<100 {
+        // Wait for the channel + hello (bounded). 60 s, not 20 s: a cold
+        // simulator reaching a cross-region host can need several race +
+        // backoff cycles before the first hello lands, and the 60 s
+        // screenshot only needs the chat to be open by then.
+        for _ in 0..<300 {
             if connector.hello != nil { break }
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
@@ -159,6 +175,9 @@ enum PreviewRunner {
             LogStore.record("live preview: hello timed out")
             return
         }
+        // The 150 s budget below measures the conversation, not the
+        // connection: start the clock once the chat is open.
+        let start = Date()
         store.selectedTab = 0
         store.navigationPath.append(parsed.botId)
         store.openBotId = parsed.botId
