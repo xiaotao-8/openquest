@@ -4,7 +4,7 @@ import Security
 
 /// Per-install device identity: one Ed25519 device key + one X25519 push key.
 /// Private keys live in the Keychain and never leave this file's boundary
-/// (only signatures and public keys escape). Fresh service names for linGyU —
+/// (only signatures and public keys escape). Fresh service names for Codync —
 /// never the other app's Keychain service strings.
 struct DeviceIdentity: Sendable {
     let devicePublicKey: Data // 32 bytes, Ed25519 public key (dk)

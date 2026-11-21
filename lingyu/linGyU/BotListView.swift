@@ -348,7 +348,7 @@ struct ComputerFilterHeader: View {
 
 /// A computer's badge: 28pt, its icon in a light rounded square.
 /// The icon follows the original ComputerBadge symbol map by device;
-/// linux uses the `computer-linux` asset — linGyU has no such asset yet,
+/// linux uses the `computer-linux` asset — Codync has no such asset yet,
 /// so linux falls back to `desktopcomputer` until one is added.
 struct ComputerBadge: View {
     var computer: Computer?
@@ -979,8 +979,7 @@ struct ComputersView: View {
 
     /// The host version (original CodyncVersionRow): this app's own
     /// name plus the real version from the hello handshake, plus update
-    /// state. The original shows its brand word here; this build's host
-    /// is the linGyU host, so the name is linGyU, never the original's.
+    /// state. The version row shows the app name Codync, same as the original.
     private func versionRow(_ computer: Computer, hello: HelloReply) -> some View {
         let info = versionInfo(hello)
         return CardRow {
@@ -990,7 +989,7 @@ struct ComputersView: View {
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text(L("linGyU"))
+                        Text(L("Codync"))
                         Text(verbatim: hello.version)
                             .foregroundStyle(Palette.secondary)
                             .monospacedDigit()
@@ -1108,7 +1107,7 @@ struct ComputersView: View {
     /// does not appear in the UI.
     private var cloudSection: some View {
         CardSection(
-            title: L("linGyU Cloud"),
+            title: L("Codync Cloud"),
             footer: L("运行在你自己的云端供应商账户上，供应商按它醒着的时间向你收费。闲置时休眠，你发消息时唤醒。"),
             accessory: AnyView(cloudAccessory)
         ) {

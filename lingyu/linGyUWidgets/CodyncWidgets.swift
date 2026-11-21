@@ -6,12 +6,12 @@ import WidgetKit
 /// the widgets read the App Group snapshot the app writes, and the
 /// Live Activities are driven from the app by `LiveActivityManager`.
 @main
-struct LinGyUWidgets: WidgetBundle {
+struct CodyncWidgets: WidgetBundle {
     var body: some Widget {
         RosterWidget()
         NewConversationWidget()
         MiniAppsWidget()
-        LinGyUCallActivity()
-        LinGyUApprovalActivity()
+        CodyncCallActivity()
+        CodyncApprovalActivity()
     }
 }

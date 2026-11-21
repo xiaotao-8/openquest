@@ -1,11 +1,11 @@
-# linGyU — 全新原生 App（Phase 1 起点，FUSION_PLAN.md §6）
+# Codync — 全新原生 App（Phase 1 起点，FUSION_PLAN.md §6）
 #
 # 规矩（用户 2026-11-21 定）：从零重写，零复用 native/（openquest-native）
-# 任何代码；显示名 linGyU，bundle id cn.lingyu；最低 iOS 26。
+# 任何代码；显示名 Codync，bundle id cn.lingyu；最低 iOS 26。
 # 本目录在 Phase 1 准备阶段只放本文件；Swift 源码由 app coder 写入 linGyU/。
 # 生成工程：cd lingyu && xcodegen generate（.xcodeproj 不进仓库，CI 现场生成）。
 
-name: linGyU
+name: Codync
 options:
   deploymentTarget:
     iOS: "26.0"
@@ -14,7 +14,7 @@ packages:
     url: https://github.com/clerk/clerk-ios
     exactVersion: 1.5.6
 targets:
-  linGyU:
+  Codync:
     type: application
     platform: iOS
     # Phase 1：只做主 App，不做 widget 扩展（小组件 Phase 3 再定）。
@@ -24,13 +24,13 @@ targets:
       # project-additions.yml；WidgetL10n 只进扩展，不在这里）。
       - path: linGyUWidgets/WidgetSnapshotStore.swift
       - path: linGyUWidgets/WidgetDeepLinks.swift
-      - path: linGyUWidgets/LinGyUActivities.swift
+      - path: linGyUWidgets/CodyncActivities.swift
       - path: linGyUWidgets/OpenBotIntent.swift
       - path: linGyUWidgets/CallControlIntents.swift
     dependencies:
       - package: Clerk
         product: ClerkKit
-      - target: linGyUWidgets
+      - target: CodyncWidgets
         embed: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: cn.lingyu
@@ -41,7 +41,7 @@ targets:
       # 与 Info.plist 里的 NSSupportsLiveActivities=true 同值，双保险：
       # 扩展只注册在主 App 声明支持 Live Activity 时才生效。
       INFOPLIST_KEY_NSSupportsLiveActivities: YES
-  linGyUWidgets:
+  CodyncWidgets:
     type: app-extension
     platform: iOS
     sources:
@@ -53,7 +53,7 @@ targets:
       - sdk: ActivityKit.framework
     settings:
       base:
-        PRODUCT_NAME: linGyUWidgets
+        PRODUCT_NAME: CodyncWidgets
         PRODUCT_BUNDLE_IDENTIFIER: cn.lingyu.LiveActivity
         INFOPLIST_FILE: linGyUWidgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: linGyUWidgets/linGyUWidgets.entitlements

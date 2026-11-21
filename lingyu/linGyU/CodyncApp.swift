@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct LinGyUApp: App {
+struct CodyncApp: App {
     @StateObject private var store = AppStore()
 
     var body: some Scene {

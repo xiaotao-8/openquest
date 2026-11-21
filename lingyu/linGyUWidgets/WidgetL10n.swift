@@ -32,7 +32,7 @@ enum WidgetL10n {
         "进行中": "In progress",
         "就绪": "Ready",
         "还没有智能体": "No agents yet",
-        "在 linGyU 里新建第一个智能体。": "Create your first agent in linGyU.",
+        "在 Codync 里新建第一个智能体。": "Create your first agent in Codync.",
         "连接一台电脑": "Connect a computer",
         "查看": "View",
         "小工具": "Widgets",

@@ -3,7 +3,7 @@ import VisionKit
 
 /// Pair with a computer running codync-host, one thing per page: install it,
 /// then scan its code. Mirrors the original's PairingView (install → scan),
-/// with linGyU copy and no account (no email line, no cloud button).
+/// with Codync copy and no account (no email line, no cloud button).
 /// The computer is the user's cloud host (ECS, Linux), so Linux shows first.
 struct PairingView: View {
     enum Step { case install, scan }
@@ -190,14 +190,14 @@ private struct InstallPage: View {
                     .padding(.top, 8)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(L("在电脑上\n安装 linGyU")).pageTitle()
+                        Text(L("在电脑上\n安装 Codync")).pageTitle()
                         Text(L("智能体在那台电脑上运行。这台 iPhone 用来和它们对话。"))
                             .font(.body)
                             .foregroundStyle(Palette.secondary)
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Hint(L("在电脑上打开网站来下载 linGyU"))
+                        Hint(L("在电脑上打开网站来下载 Codync"))
                         Button {
                             copyToClipboard(Self.websiteLink, copied: $linkCopied)
                         } label: {
@@ -225,7 +225,7 @@ private struct InstallPage: View {
                             CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install")
                         }
                         Text(os == .mac
-                             ? L("打开 linGyU，它会自己装好服务端。")
+                             ? L("打开 Codync，它会自己装好服务端。")
                              : L("装好后它一直在后台运行。"))
                             .font(.subheadline)
                             .foregroundStyle(Palette.secondary)
@@ -314,7 +314,7 @@ private struct ScanPage: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(L("扫描配对码")).pageTitle()
                     Text(os == .mac
-                         ? L("在 Mac 上，点菜单栏里的 linGyU，再点「配对手机」。")
+                         ? L("在 Mac 上，点菜单栏里的 Codync，再点「配对手机」。")
                          : L("在电脑上，在终端里运行："))
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
@@ -388,7 +388,7 @@ private struct ScanPage: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(L("直连：配对后这台 iPhone 直接连电脑，不经过中转。"), systemImage: "lock.fill")
                     if tailscaleOn {
-                        Label(L("Tailscale 已开启：linGyU 直接通过它连接。"), systemImage: "checkmark.circle.fill")
+                        Label(L("Tailscale 已开启：Codync 直接通过它连接。"), systemImage: "checkmark.circle.fill")
                     } else {
                         Button {
                             openURL(Tailscale.downloadURL)

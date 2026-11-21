@@ -34,9 +34,9 @@ enum WidgetActivityStatus {
 /// A voice call with a bot: the bot, the call's length, the current
 /// step, and mute / end buttons. The buttons run intents in the app
 /// (see `CallControlIntents`); the extension never touches the call.
-struct LinGyUCallActivity: Widget {
+struct CodyncCallActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: LinGyUCallAttributes.self) { context in
+        ActivityConfiguration(for: CodyncCallAttributes.self) { context in
             callCard(context: context)
                 .activityBackgroundTint(WidgetPalette.surface)
                 .activitySystemActionForegroundColor(WidgetPalette.text)
@@ -72,7 +72,7 @@ struct LinGyUCallActivity: Widget {
         }
     }
 
-    private func callTitle(context: ActivityViewContext<LinGyUCallAttributes>) -> some View {
+    private func callTitle(context: ActivityViewContext<CodyncCallAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(context.state.startedAt, style: .timer)
                 .font(.system(size: 14).monospacedDigit())
@@ -84,7 +84,7 @@ struct LinGyUCallActivity: Widget {
         }
     }
 
-    private func callButtons(context: ActivityViewContext<LinGyUCallAttributes>, fill: Color) -> some View {
+    private func callButtons(context: ActivityViewContext<CodyncCallAttributes>, fill: Color) -> some View {
         HStack(spacing: 10) {
             Button(intent: MuteCallIntent(botId: context.attributes.botId)) {
                 Image(systemName: context.state.muted ? "mic.slash" : "mic")
@@ -106,7 +106,7 @@ struct LinGyUCallActivity: Widget {
         .buttonStyle(.plain)
     }
 
-    private func callCard(context: ActivityViewContext<LinGyUCallAttributes>) -> some View {
+    private func callCard(context: ActivityViewContext<CodyncCallAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 WidgetAvatar(name: context.attributes.name, color: context.attributes.avatarColor,
@@ -130,9 +130,9 @@ struct LinGyUCallActivity: Widget {
 /// that opens the approvals page in the app. The decision is always
 /// made in the app; the island never approves or denies by itself
 /// (that would need the pairing key in the shared container).
-struct LinGyUApprovalActivity: Widget {
+struct CodyncApprovalActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: LinGyUApprovalAttributes.self) { context in
+        ActivityConfiguration(for: CodyncApprovalAttributes.self) { context in
             approvalCard(context: context)
                 .activityBackgroundTint(WidgetPalette.surface)
                 .activitySystemActionForegroundColor(WidgetPalette.text)
@@ -196,7 +196,7 @@ struct LinGyUApprovalActivity: Widget {
         .buttonStyle(.plain)
     }
 
-    private func approvalCard(context: ActivityViewContext<LinGyUApprovalAttributes>) -> some View {
+    private func approvalCard(context: ActivityViewContext<CodyncApprovalAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 approvalMark

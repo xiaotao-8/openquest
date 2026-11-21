@@ -252,7 +252,7 @@ struct CharacterAvatar: View {
 
 /// A coding agent's logo, by ACP registry id (original AgentIcon): the
 /// `agent-<registry>` logo asset when one exists, else the SF `terminal`
-/// glyph — never `cpu`. No `agent-*` assets ship in linGyU yet, so it
+/// glyph — never `cpu`. No `agent-*` assets ship in Codync yet, so it
 /// renders `terminal` until logo assets are added.
 struct AgentIcon: View {
     let registry: String?

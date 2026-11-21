@@ -244,7 +244,7 @@ workflows:
       - native/OpenQuestNative-unsigned.ipa
 
   lingyu-native:
-    name: linGyU Native iOS (SwiftUI, unsigned + simulator preview)
+    name: Codync Native iOS (SwiftUI, unsigned + simulator preview)
     instance_type: mac_mini_m1
     max_build_duration: 60
     environment:
@@ -278,9 +278,9 @@ workflows:
           echo "SIM=$SIM_UDID"
           xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b
-          xcodebuild build -project linGyU.xcodeproj -scheme linGyU \
+          xcodebuild build -project Codync.xcodeproj -scheme Codync \
             -destination "id=$SIM_UDID" -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO
-          APP=$(find build-sim/Build/Products -name "linGyU.app" -maxdepth 3 | head -1)
+          APP=$(find build-sim/Build/Products -name "Codync.app" -maxdepth 3 | head -1)
           xcrun simctl install "$SIM_UDID" "$APP"
           # Index 20: PreviewCall 首次触发麦克风授权框，之后 6 张截图全被
           # 该系统框盖住。预先授权，截图里不再弹框。
@@ -297,17 +297,17 @@ workflows:
           # screenshots all home screen). Launch with console attached so a
           # Swift fatal error / dyld failure is captured, then dump the
           # simulator crash report and a liveness check into the log.
-          xcrun simctl launch --console "$SIM_UDID" cn.lingyu > lingyu-console.log 2>&1 &
+          xcrun simctl launch --console "$SIM_UDID" cn.lingyu > codync-console.log 2>&1 &
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-empty.png
-          echo "--- lingyu console (first 60 lines) ---"
-          head -60 lingyu-console.log || true
+          echo "--- codync console (first 60 lines) ---"
+          head -60 codync-console.log || true
           echo "--- crash reports ---"
           ls -lt ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -6 || true
-          LATEST=$(ls -t ~/Library/Logs/DiagnosticReports/linGyU-*.ips 2>/dev/null | head -1)
+          LATEST=$(ls -t ~/Library/Logs/DiagnosticReports/Codync-*.ips 2>/dev/null | head -1)
           if [ -n "$LATEST" ]; then echo "== $LATEST"; head -100 "$LATEST"; fi
           echo "--- app alive? ---"
-          xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | grep -i lingyu || echo "not running"
+          xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | grep -i codync || echo "not running"
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed
           sleep 6
@@ -445,12 +445,8 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-learning.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          # Phase 4 H：IM 桥接 / 操控手机 / 导入智能体 / 电脑操作四页。
+          # Phase 4 H：操控手机 / 导入智能体 / 电脑操作三页。
           # 操控手机在模拟器上一定显示“未安装”（模拟器里没有 iCTRL），是预期状态。
-          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewIMBridge
-          sleep 6
-          xcrun simctl io "$SIM_UDID" screenshot preview-im-bridge.png
-          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPhoneControl
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-phone-control.png
@@ -499,18 +495,18 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-call.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-cloud.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-extensions-cordis.png preview-extensions-detail.png preview-host-network.png preview-usage.png preview-candidates.png preview-genui.png preview-viewcard.png preview-learning.png preview-im-bridge.png preview-phone-control.png preview-bot-import.png preview-computer-use.png preview-live.png preview-live-approval.png || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-cloud.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-extensions-cordis.png preview-extensions-detail.png preview-host-network.png preview-usage.png preview-candidates.png preview-genui.png preview-viewcard.png preview-learning.png preview-phone-control.png preview-bot-import.png preview-computer-use.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
           set -e
           cd lingyu
-          xcodebuild build -project linGyU.xcodeproj -scheme linGyU \
+          xcodebuild build -project Codync.xcodeproj -scheme Codync \
             -destination "generic/platform=iOS" -configuration Release -derivedDataPath build-dev CODE_SIGNING_ALLOWED=NO
-          rm -rf Payload linGyU-unsigned.ipa
+          rm -rf Payload Codync-unsigned.ipa
           mkdir -p Payload
-          cp -R build-dev/Build/Products/Release-iphoneos/linGyU.app Payload/
-          zip -qry linGyU-unsigned.ipa Payload
-          ls -lh linGyU-unsigned.ipa
+          cp -R build-dev/Build/Products/Release-iphoneos/Codync.app Payload/
+          zip -qry Codync-unsigned.ipa Payload
+          ls -lh Codync-unsigned.ipa
     artifacts:
       - lingyu/preview-empty.png
       - lingyu/preview-list.png
@@ -545,10 +541,9 @@ workflows:
       - lingyu/preview-genui.png
       - lingyu/preview-viewcard.png
       - lingyu/preview-learning.png
-      - lingyu/preview-im-bridge.png
       - lingyu/preview-phone-control.png
       - lingyu/preview-bot-import.png
       - lingyu/preview-computer-use.png
       - lingyu/preview-live.png
       - lingyu/preview-live-approval.png
-      - lingyu/linGyU-unsigned.ipa
+      - lingyu/Codync-unsigned.ipa

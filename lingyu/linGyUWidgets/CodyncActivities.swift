@@ -10,7 +10,7 @@ import Foundation
 
 /// A voice call with a bot: the bot, how long the call has run, and
 /// the current step. `link` opens the call view in the app.
-struct LinGyUCallAttributes: ActivityAttributes {
+struct CodyncCallAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable, Sendable {
         /// The call's current step, or "" to show the state title.
         var step: String
@@ -31,7 +31,7 @@ struct LinGyUCallAttributes: ActivityAttributes {
 /// A pending approval: the entry's title and which bot asked. Tapping
 /// "查看" opens the approvals page in the app; the activity ends when
 /// the entry is answered or withdrawn.
-struct LinGyUApprovalAttributes: ActivityAttributes {
+struct CodyncApprovalAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable, Sendable {
         /// One line of detail under the title, or "" for title only.
         var detail: String

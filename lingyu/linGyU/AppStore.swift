@@ -24,11 +24,6 @@ final class AppStore: ObservableObject {
     /// The routines cache (one listing per bot). Refreshed on connect,
     /// when a new bot appears, and when a routine-related entry arrives.
     let routines = RoutineStore()
-    /// The IM sign-in flow (Feishu / DingTalk / Slack OAuth via the
-    /// companion service). Owns the auth session and the per-provider
-    /// setup table the bridge page reads.
-    let imAuth = IMAuthStore()
-
     /// Whether the sign-in sheet is showing (from Settings).
     @Published var showingSignIn = false
 
@@ -123,9 +118,6 @@ final class AppStore: ObservableObject {
             Task { @MainActor [weak self] in self?.writeWidgetSnapshot() }
         }.store(in: &cancellables)
         account.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor [weak self] in self?.objectWillChange.send() }
-        }.store(in: &cancellables)
-        imAuth.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
         identity.objectWillChange.sink { [weak self] _ in
@@ -294,11 +286,6 @@ final class AppStore: ObservableObject {
                 // "mute" / "end" query action is not acted on yet.
                 openChat(botId: id)
             }
-        case "oauth":
-            // cn.lingyu://oauth/<platform>?code=...&state=... — the
-            // fallback for an IM sign-in whose auth session was torn down;
-            // the session's own completion handler is the normal path.
-            _ = imAuth.handleCallback(url)
         default: break
         }
     }

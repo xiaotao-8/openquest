@@ -125,7 +125,7 @@ struct DataControlsView: View {
         }
         let text = parts.joined(separator: "\n\n")
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("lingyu-data-\(date).md")
+            .appendingPathComponent("codync-data-\(date).md")
         try? text.write(to: url, atomically: true, encoding: .utf8)
         exportURL = url
         showingExporter = true

@@ -17,8 +17,6 @@ struct RootView: View {
             NetworkView()
         } else if case .seeded(let options) = store.previewMode, options.usage {
             HostUsageView()
-        } else if case .seeded(let options) = store.previewMode, options.imBridge {
-            IMBridgeView()
         } else if case .seeded(let options) = store.previewMode, options.phoneControl {
             PhoneControlView()
         } else if case .seeded(let options) = store.previewMode, options.botImport {

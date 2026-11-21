@@ -175,7 +175,7 @@ enum SessionShareImageRenderer {
             lineColor.setFill()
             context.fill(CGRect(x: margin, y: y, width: contentWidth, height: 1))
             y += 1 + 16
-            drawText("linGyU · \(dateText)", font: footerFont, color: secondary, rect: CGRect(x: margin, y: y, width: contentWidth, height: footerFont.lineHeight))
+            drawText("Codync · \(dateText)", font: footerFont, color: secondary, rect: CGRect(x: margin, y: y, width: contentWidth, height: footerFont.lineHeight))
             y += footerFont.lineHeight + 8
             if truncated {
                 drawText(L("仅显示最近 %d 条", renderedCount), font: footerFont, color: secondary, rect: CGRect(x: margin, y: y, width: contentWidth, height: footerFont.lineHeight))

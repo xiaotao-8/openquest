@@ -451,7 +451,7 @@ struct BotActivityPreview: View {
 /// A usage provider's icon (original ProviderMascot): the provider's logo
 /// asset when the style is "original" and one exists, else the provider's
 /// first-letter disc — never `chart.bar`. No `agent-*` logo assets ship in
-/// linGyU yet, so the "original" style renders the first-letter disc until
+/// Codync yet, so the "original" style renders the first-letter disc until
 /// logo assets are added. The logo name follows the original: claude/codex
 /// run through ACP adapters (`agent-<id>-acp`), others go by their own id.
 struct ProviderMascot: View {
@@ -640,7 +640,7 @@ struct BotsWidgetCard: View {
                     .transition(.activityRow)
             }
             if bots.isEmpty {
-                Text(L("在 linGyU 里新建第一个智能体。"))
+                Text(L("在 Codync 里新建第一个智能体。"))
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
             }
         }
@@ -959,7 +959,7 @@ struct WidgetGalleryView: View {
                         .frame(width: 58, height: 58)
                         .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 16))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(L("linGyU，一目了然。"))
+                        Text(L("Codync，一目了然。"))
                             .font(.title3.weight(.semibold)).tracking(-0.4)
                         Text(L("你的智能体和用量，处处可见。"))
                             .font(.footnote).foregroundStyle(Palette.secondary)
@@ -974,7 +974,7 @@ struct WidgetGalleryView: View {
                     VStack(spacing: 0) {
                         setupRow(L("连接一台电脑"), complete: store.connector.isPaired)
                         Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, 42)
-                        setupRow(L("添加一个 linGyU 小组件"), complete: hasWidget == true,
+                        setupRow(L("添加一个 Codync 小组件"), complete: hasWidget == true,
                                  status: hasWidget == nil ? (widgetCheckFailed ? L("无法检查") : L("检查中")) : nil)
                         Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, 42)
                         Button(action: turnOnNotifications) {
@@ -1021,7 +1021,7 @@ struct WidgetGalleryView: View {
                         previewDescription
                         Button { showWidgetSteps.toggle() } label: {
                             HStack {
-                                Text(L("怎么添加 linGyU 小组件"))
+                                Text(L("怎么添加 Codync 小组件"))
                                     .font(.footnote.weight(.medium))
                                 Spacer()
                                 Image(systemName: showWidgetSteps ? "chevron.up" : "chevron.down")
@@ -1079,7 +1079,7 @@ struct WidgetGalleryView: View {
                     sectionLabel(L("添加小组件"))
                     WidgetSetupDemo(bots: bots)
                 }
-                Text(L("小组件显示最新上报。打开 linGyU 看实时更新和审批。"))
+                Text(L("小组件显示最新上报。打开 Codync 看实时更新和审批。"))
                     .font(.caption2).foregroundStyle(Palette.tertiary)
             }
             .padding(18)
@@ -1294,7 +1294,7 @@ struct ActivityGalleryView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(forms, id: \.self) { explanation($0) }
                 }
-                Text(L("iOS 会根据你的设备和其他正在进行的任务来决定显示方式。这些预览不会真的启动一个实时活动。审批在 linGyU 里面处理。"))
+                Text(L("iOS 会根据你的设备和其他正在进行的任务来决定显示方式。这些预览不会真的启动一个实时活动。审批在 Codync 里面处理。"))
                     .font(.footnote).foregroundStyle(Palette.secondary)
             }
             .padding(18).frame(maxWidth: 560).frame(maxWidth: .infinity)
@@ -1347,7 +1347,7 @@ struct LockWidgetGalleryView: View {
                             .environment(\.colorScheme, .dark)
                     }
                 }
-                Text(L("长按锁屏 → 自定 → 锁屏。点小组件区域，选 linGyU。行内小组件放在时钟上方的日期行里。"))
+                Text(L("长按锁屏 → 自定 → 锁屏。点小组件区域，选 Codync。行内小组件放在时钟上方的日期行里。"))
                     .font(.footnote).foregroundStyle(Palette.secondary)
                 Text(L("选智能体看任务状态，选用量上限看上报的最高限额。iOS 会套用你锁屏的颜色和样式。"))
                     .font(.footnote).foregroundStyle(Palette.secondary)
@@ -1376,7 +1376,7 @@ extension EnvironmentValues {
 }
 
 /// "Add a widget", acted out on a drawn iPhone: hold the Home Screen,
-/// Edit, Add Widget, find linGyU, add it, Done. Every frame is a pure
+/// Edit, Add Widget, find Codync, add it, Done. Every frame is a pure
 /// function of one clock, so it loops, pauses and scrubs.
 struct WidgetSetupDemo: View {
     let bots: [Bot]
@@ -1398,7 +1398,7 @@ struct WidgetSetupDemo: View {
                 VStack(spacing: 14) {
                     DemoPhone(bots: bots, t: t)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(L("怎么添加 linGyU 小组件"))
+                        .accessibilityLabel(L("怎么添加 Codync 小组件"))
                         .accessibilityValue(Self.step(at: t).text)
                     Text(Self.step(at: t).text)
                         .font(.footnote.weight(.medium))
@@ -1496,7 +1496,7 @@ struct WidgetSetupDemo: View {
     static let steps: [Step] = [
         Step(index: 0, start: 0, text: L("长按主屏幕上的空白处")),
         Step(index: 1, start: 1.8, text: L("点编辑，再点添加小组件")),
-        Step(index: 2, start: 3.0, text: L("在列表里找到 linGyU")),
+        Step(index: 2, start: 3.0, text: L("在列表里找到 Codync")),
         Step(index: 3, start: 4.5, text: L("点添加小组件")),
         Step(index: 4, start: 6.0, text: L("点完成")),
     ]
@@ -1713,7 +1713,7 @@ private struct DemoPhone: View {
             .padding(.bottom, 10)
             listRow(L("电池"), Image(systemName: "battery.100percent"), tint: .green)
             listRow(L("日历"), Image(systemName: "calendar"), tint: .red)
-            listRow("linGyU", nil, tint: .clear, highlighted: pressed(near: 4.3))
+            listRow("Codync", nil, tint: .clear, highlighted: pressed(near: 4.3))
             listRow(L("健身"), Image(systemName: "figure.run"), tint: .orange)
             listRow(L("天气"), Image(systemName: "cloud.sun.fill"), tint: .blue)
         }
@@ -1744,7 +1744,7 @@ private struct DemoPhone: View {
             Capsule().fill(.white.opacity(0.3)).frame(width: 28, height: 3).padding(.top, 6)
             HStack(spacing: 6) {
                 CharacterAvatar(shape: "hex", color: "gray", size: 18)
-                Text("linGyU").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                Text("Codync").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
             }
             Text(L("看谁需要你、谁还在干活。"))
                 .font(.system(size: 8)).foregroundStyle(.white.opacity(0.6))

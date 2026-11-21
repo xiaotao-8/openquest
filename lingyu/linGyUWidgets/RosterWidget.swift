@@ -180,7 +180,7 @@ struct RosterWidgetView: View {
                 botRow(bot)
             }
             if bots.isEmpty {
-                Text(L("在 linGyU 里新建第一个智能体。"))
+                Text(L("在 Codync 里新建第一个智能体。"))
                     .font(.system(size: 12)).foregroundStyle(WidgetPalette.secondary)
             }
         }

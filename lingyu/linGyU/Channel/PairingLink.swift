@@ -2,7 +2,7 @@ import Foundation
 
 /// Pairing link (`codync://pair?v=3…`) parse + validation, short-code
 /// normalisation, offer id and the 6-digit pair-check code.
-/// Short codes resolve via a cloud service linGyU Phase 1 does not have, so
+/// Short codes resolve via a cloud service Codync Phase 1 does not have, so
 /// a bare short code is never expanded locally — the UI must offer the
 /// full-link path instead (see PairingProblem.unresolvableShortCode).
 struct PairingLink {

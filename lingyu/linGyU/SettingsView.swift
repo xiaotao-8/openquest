@@ -52,7 +52,6 @@ struct SettingsView: View {
     @State private var showingVault = false
     @State private var showingNetwork = false
     @State private var showingVoice = false
-    @State private var showingIMBridge = false
     @State private var showingPhoneControl = false
     @State private var didHandlePreview = false
     @State private var notificationStatus = ""
@@ -124,9 +123,6 @@ struct SettingsView: View {
         }
         .codyncSheet(isPresented: $showingVoice) {
             NavigationStack { VoiceSettingsView() }
-        }
-        .codyncSheet(isPresented: $showingIMBridge) {
-            NavigationStack { IMBridgeView() }
         }
         .codyncSheet(isPresented: $showingPhoneControl) {
             NavigationStack { PhoneControlView() }
@@ -532,31 +528,11 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - External connections (IM bridge, phone control)
+    // MARK: - External connections (phone control)
 
-    /// Phase 4: IM bridge (credentials saved on this phone, engine not
-    /// connected) and phone control (iCTRL status, unverified on device).
+    /// Phone control (iCTRL status, unverified on device).
     private var connectionsSection: some View {
         CardSection(title: L("外部连接")) {
-            CardRow {
-                Button {
-                    showingIMBridge = true
-                } label: {
-                    HStack {
-                        Text(L("IM 桥接"))
-                            .foregroundStyle(Palette.text)
-                        Spacer()
-                        Text(L("未接通"))
-                            .font(.subheadline)
-                            .foregroundStyle(Palette.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Palette.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            Hairline()
             CardRow {
                 Button {
                     showingPhoneControl = true

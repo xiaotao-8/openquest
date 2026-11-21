@@ -69,9 +69,16 @@ struct ExtensionsView: View {
 
     private var installedCount: Int { connectors.count + skills.count }
 
+    /// Per-tab source line, as the original shows it under each section.
+    private var sourceText: String {
+        if tab == 0 { return L("智能体来自 ACP registry，安装在 Codync 上。") }
+        if tab == 1 { return L("连接器来自官方 MCP Registry，安装在 Codync 上。") }
+        return L("技能来自 Anthropic，安装在 Codync 上。")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            ModalHeader(title: L("扩展 linGyU"), trailing: AnyView(
+            ModalHeader(title: L("扩展 Codync"), trailing: AnyView(
                 Button(L("凭证")) { showingCredentials = true }
                     .font(.body)
                     .foregroundStyle(Palette.text)
@@ -94,6 +101,10 @@ struct ExtensionsView: View {
                     }
                     SearchField(text: $search, placeholder: L("搜索扩展…"))
                     TabChoice(titles: [L("智能体"), L("连接器"), L("技能")], selection: $tab)
+                    Text(sourceText)
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     if tab == 0 {
                         agentsTab
                     } else if tab == 1 {

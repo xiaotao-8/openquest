@@ -62,8 +62,6 @@ enum PreviewMode: Equatable {
         var cordis = false
         /// Open the first demo market connector's detail sheet over the Extensions page.
         var connectorDetail = false
-        /// Show the IM bridge page instead of the tabs.
-        var imBridge = false
         /// Show the phone-control (iCTRL) page instead of the tabs.
         var phoneControl = false
         /// Show the bot-import page instead of the tabs.
@@ -111,7 +109,6 @@ enum PreviewMode: Equatable {
         options.learning = args.contains("-PreviewLearning")
         options.cordis = args.contains("-PreviewCordis")
         options.connectorDetail = args.contains("-PreviewConnectorDetail")
-        options.imBridge = args.contains("-PreviewIMBridge")
         options.phoneControl = args.contains("-PreviewPhoneControl")
         options.botImport = args.contains("-PreviewBotImport")
         options.computerUse = args.contains("-PreviewComputerUse")
@@ -231,7 +228,7 @@ enum PreviewRunner {
             store.audit.record(botId: "demo-north", botName: "小北", kind: .decision,
                                title: "登录测试修好后，要不要顺手把注册测试也跑一遍？", detail: "跑一遍", status: .done)
         }
-        store.identity.saveSoul("演示 Soul：你是 linGyU 的智能体，中文回复，简洁直接。")
+        store.identity.saveSoul("演示 Soul：你是 Codync 的智能体，中文回复，简洁直接。")
         store.identity.saveMemory("演示记忆：用户喜欢简洁直接的回答。")
         store.identity.saveIdentity(name: "阿文", vibe: "冷静、直接", tagline: "写代码、修 bug、跑测试。", body: "演示身份。")
     }
@@ -301,7 +298,7 @@ enum PreviewRunner {
     /// the original's cloud section) for the cloud preview, in-memory only.
     private static func demoCloudMachine() -> CloudMachine? {
         try? JSONDecoder().decode(CloudMachine.self, from: Data("""
-        {"cloudComputerId":"demo-cloud-1","name":"linGyU","computerId":"demo-cloud-computer","snapshots":true,"provider":"instabox","providerName":"InstaBox","region":"US","state":"running"}
+        {"cloudComputerId":"demo-cloud-1","name":"Codync","computerId":"demo-cloud-computer","snapshots":true,"provider":"instabox","providerName":"InstaBox","region":"US","state":"running"}
         """.utf8))
     }
 
@@ -447,10 +444,10 @@ enum PreviewRunner {
         // listing never would: nothing there needs approving).
         try? await Task.sleep(nanoseconds: 20_000_000_000)
         let writeNonce = UUID().uuidString
-        let write = Entry(localText: "在工作区新建文件 linGyU-live-test.txt，写一行 hello。", botId: parsed.botId, clientNonce: writeNonce)
+        let write = Entry(localText: "在工作区新建文件 codync-live-test.txt，写一行 hello。", botId: parsed.botId, clientNonce: writeNonce)
         connector.mirror.addLocalEntry(write)
         do {
-            _ = try await api.send(botId: parsed.botId, text: "在工作区新建文件 linGyU-live-test.txt，写一行 hello。", clientNonce: writeNonce)
+            _ = try await api.send(botId: parsed.botId, text: "在工作区新建文件 codync-live-test.txt，写一行 hello。", clientNonce: writeNonce)
             store.liveDiag.record("write request sent")
         } catch {
             store.liveDiag.record("write send failed: \(error)")
