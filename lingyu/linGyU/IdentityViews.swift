@@ -160,7 +160,7 @@ struct IdentityView: View {
     @State private var name = ""
     @State private var vibe = ""
     @State private var tagline = ""
-    @State private var body = ""
+    @State private var bodyText = ""
     @State private var showingAudit = false
 
     var body: some View {
@@ -176,14 +176,14 @@ struct IdentityView: View {
             }
             Section {
                 ZStack(alignment: .topLeading) {
-                    if body.isEmpty {
+                    if bodyText.isEmpty {
                         Text(L("更长的自我介绍…"))
                             .font(.body)
                             .foregroundStyle(Palette.tertiary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 8)
                     }
-                    TextEditor(text: $body)
+                    TextEditor(text: $bodyText)
                         .font(.body)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 140)
@@ -228,13 +228,13 @@ struct IdentityView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(L("保存")) {
-                    store.identity.saveIdentity(name: name, vibe: vibe, tagline: tagline, body: body)
+                    store.identity.saveIdentity(name: name, vibe: vibe, tagline: tagline, body: bodyText)
                 }
                 .font(.headline)
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                           && vibe.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                           && tagline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                          && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                          && bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .codyncSheet(isPresented: $showingAudit) {
@@ -244,7 +244,7 @@ struct IdentityView: View {
             name = store.identity.identityName
             vibe = store.identity.identityVibe
             tagline = store.identity.identityTagline
-            body = store.identity.identityBody
+            bodyText = store.identity.identityBody
         }
     }
 }
