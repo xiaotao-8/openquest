@@ -65,8 +65,12 @@ final class URLSessionChannelSocket: ChannelSocket, @unchecked Sendable {
     }
 
     func close(code: Int) {
-        let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code)
-        task.cancel(with: closeCode, reason: nil)
+        // CloseCode(rawValue:) is failable; unknown codes close plainly.
+        if let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code) {
+            task.cancel(with: closeCode, reason: nil)
+        } else {
+            task.cancel()
+        }
     }
 }
 

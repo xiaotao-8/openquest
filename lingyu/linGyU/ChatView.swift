@@ -222,7 +222,7 @@ struct ChatView: View {
                 .padding(.horizontal, 16)
             }
             .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.viewportSize.height >= geometry.contentSize.height - 100
+                geometry.visibleRect.maxY >= geometry.contentSize.height - 100
             } action: { _, atBottom in
                 isAtBottom = atBottom
             }

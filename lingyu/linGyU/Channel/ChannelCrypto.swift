@@ -86,7 +86,7 @@ struct FrameSealer {
     }
 
     private func sealChunk(chunk: Data, counter: UInt64, final: Bool) throws -> String {
-        let nonce = makeNonce(counter: counter)
+        let nonce = Self.makeNonce(counter: counter)
         let aad = Data(ChannelCrypto.frameLabel.utf8) + U64.bigEndian(counter)
         var plaintext = Data([final ? 0x00 : 0x01])
         plaintext.append(chunk)
@@ -108,6 +108,13 @@ struct FrameOpener {
     let limit: Int
     private(set) var counter: UInt64 = 0
     private var buffer = Data()
+
+    /// Explicit init: the memberwise init is private because `buffer` is
+    /// a private stored property.
+    init(key: SymmetricKey, limit: Int) {
+        self.key = key
+        self.limit = limit
+    }
 
     mutating func open(counter: UInt64, ciphertext: Data) throws -> Data? {
         guard counter == self.counter else { throw ChannelCryptoError.badCounter }

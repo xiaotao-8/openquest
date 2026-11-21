@@ -101,16 +101,16 @@ enum PreviewRunner {
             entryJSON("""
             {"id":"demo-e2","seq":2,"botId":"\(lead)","rev":2,"kind":"agent","turn":1,"data":{"text":"搞定了，登录测试已修复，跑了三遍都通过。","final":true,"author":"\(lead)"},"createdAt":\(now - 60_000),"updatedAt":\(now - 60_000)}
             """),
-        ]
+        ].compactMap { $0 }
         if approval {
-            entries.append(entryJSON("""
+            if let entry = entryJSON("""
             {"id":"demo-e3","seq":3,"botId":"\(lead)","rev":3,"kind":"permission","turn":2,"data":{"title":"rm -rf /root/demo/node_modules/.cache","toolKind":"execute","command":"rm -rf /root/demo/node_modules/.cache","cwd":"/root/demo","status":"pending","options":[{"optionId":"allow_once","name":"仅允许一次","kind":"allow_once"},{"optionId":"allow_always","name":"始终允许","kind":"allow_always"},{"optionId":"deny","name":"拒绝","kind":"reject_once"}]},"createdAt":\(now - 30_000),"updatedAt":\(now - 30_000)}
-            """))
+            """) { entries.append(entry) }
         }
         if ask {
-            entries.append(entryJSON("""
+            if let entry = entryJSON("""
             {"id":"demo-e4","seq":4,"botId":"\(lead)","rev":4,"kind":"permission","turn":2,"data":{"question":"登录测试修好后，要不要顺手把注册测试也跑一遍？","choices":["跑一遍","只跑登录测试","先不跑"],"recommended":0,"status":"pending"},"createdAt":\(now - 10_000),"updatedAt":\(now - 10_000)}
-            """))
+            """) { entries.append(entry) }
         }
         return entries.compactMap { $0 }
     }

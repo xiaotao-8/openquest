@@ -164,10 +164,8 @@ struct BotListView: View {
             }
         }
         .refreshable {
-            await MainActor.run {
-                store.connector.disconnect()
-                await store.connector.connectIfPaired()
-            }
+            await store.connector.disconnect()
+            await store.connector.connectIfPaired()
         }
         .codyncSheet(isPresented: $showingComputers) {
             ComputersView()

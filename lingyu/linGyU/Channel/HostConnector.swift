@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-enum PairingState {
+enum PairingState: Equatable {
     case idle
     case waiting(checkCode: String)
     case failed(String)

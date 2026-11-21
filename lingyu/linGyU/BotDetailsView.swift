@@ -114,7 +114,7 @@ struct BotDetailsView: View {
             try? await store.connector.api?.deleteBot(botId: bot.id)
             await MainActor.run {
                 dismiss()
-                store.navigationPath.removeAll()
+                store.navigationPath = NavigationPath()
             }
         }
     }

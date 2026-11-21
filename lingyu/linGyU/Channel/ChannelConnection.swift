@@ -163,7 +163,7 @@ actor ChannelConnection {
         if isStopped {
             return .stop(.unauthorized(L("这台电脑的身份变了。请重新配对。")))
         }
-        return await serve(socket: winner.socket, sealer: winner.sealer, opener: winner.opener)
+        return await serve(socket: winner.0, sealer: winner.1, opener: winner.2)
     }
 
     /// Races all direct URLs in parallel; the first completed handshake
@@ -382,7 +382,7 @@ actor ChannelConnection {
                 lastReceived = Date()
                 try dispatchInbound(text)
             } catch let closed as SocketClosed {
-                outcome = outcome(forCloseCode: closed.code)
+                outcome = self.outcome(forCloseCode: closed.code)
                 break
             } catch {
                 outcome = .retry(L("连接断开了。正在重连。"))

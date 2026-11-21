@@ -13,9 +13,9 @@ enum AvatarShape: String, CaseIterable {
         case .pebble:
             return PebbleShape().path(in: rect)
         case .squircle:
-            return Path(RoundedRectangle(cornerRadius: rect.width * 0.28, style: .continuous).path(in: rect))
+            return RoundedRectangle(cornerRadius: rect.width * 0.28, style: .continuous).path(in: rect)
         case .tablet:
-            return Path(Capsule().path(in: rect))
+            return Capsule().path(in: rect)
         case .wedge:
             return WedgeShape().path(in: rect)
         case .hex:
