@@ -339,6 +339,41 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-computers.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 2 captures: Discover + State with seeded Phase 2 data,
+          # and the new Settings/State sheets (Soul / Identity / Audit /
+          # Vault / Network / Data controls).
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPage=discover -PreviewPhase2
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-discover-full.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPage=state -PreviewPhase2 -PreviewStateLower
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-state-full.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewSoul -PreviewPhase2
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-soul.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewIdentity -PreviewPhase2
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-identity.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewAudit -PreviewPhase2
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-audit.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewVault
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-vault.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewNetwork
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-network.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewDataControls
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-data-controls.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_PAIRING
           # （preview-pairing.json 的 base64）须事先在 Codemagic 环境变量里配好
           # （未配则跳过这步，不让构建失败）。两张图：60 秒时聊天，150 秒时审批卡。
@@ -366,7 +401,7 @@ workflows:
           else
             echo "WARNING: LINGYU_PREVIEW_PAIRING not set, skipping live-chat screenshots"
           fi
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-live.png preview-live-approval.png || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -390,6 +425,14 @@ workflows:
       - lingyu/preview-pairing-install.png
       - lingyu/preview-pairing-scan.png
       - lingyu/preview-computers.png
+      - lingyu/preview-discover-full.png
+      - lingyu/preview-state-full.png
+      - lingyu/preview-soul.png
+      - lingyu/preview-identity.png
+      - lingyu/preview-audit.png
+      - lingyu/preview-vault.png
+      - lingyu/preview-network.png
+      - lingyu/preview-data-controls.png
       - lingyu/preview-live.png
       - lingyu/preview-live-approval.png
       - lingyu/linGyU-unsigned.ipa
