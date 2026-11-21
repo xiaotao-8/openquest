@@ -481,41 +481,51 @@ struct UnreadBadge: View {
     }
 }
 
-/// The paired computer(s), connection state, and forget/pair actions.
+/// The computer-management sheet, matching the original's ComputersView:
+/// one card per paired computer (summary + notifications + auto-order +
+/// connection + host version), the account's unpaired computers, the pair
+/// button, and the cloud section — all from real data only. No extensions,
+/// voice, screen or network rows yet: those destinations do not exist in
+/// linGyU, so the rows are omitted rather than leading nowhere.
 struct ComputersView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var forgettingComputer: Computer?
-    @State private var showingSignIn = false
+    @State private var showingNewCloudDialog = false
+    @State private var updatingComputerId: String?
+    @State private var updatingFromVersion: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            ModalHeader(title: L("电脑")) {
+            ModalHeader(title: L("电脑管理")) {
                 dismiss()
             }
             ScrollView {
                 VStack(spacing: 24) {
-                    if store.connector.computers.isEmpty {
-                        CardSection(title: L("电脑")) {
-                            CardRow {
-                                Text(L("还没有配对电脑。"))
-                                    .foregroundStyle(Palette.secondary)
-                            }
-                        }
-                    } else {
-                        CardSection(title: L("已配对")) {
-                            ForEach(store.connector.computers) { computer in
-                                computerRow(computer)
-                                if computer.id != store.connector.computers.last?.id {
-                                    Hairline()
-                                }
-                            }
+                    ForEach(store.connector.computers) { computer in
+                        CardSection {
+                            computerCard(computer)
                         }
                     }
-                    cloudSection
-                    PrimaryActionButton(title: L("配对新电脑")) {
-                        dismiss()
-                        store.showingPairing = true
+                    ForEach(accountOnlyComputers) { account in
+                        CardSection {
+                            accountComputerRow(account)
+                        }
+                    }
+                    CardSection(footer: pairFooter) {
+                        Button {
+                            dismiss()
+                            store.showingPairing = true
+                        } label: {
+                            Label(L("配对一台电脑"), systemImage: "qrcode.viewfinder")
+                                .foregroundStyle(Palette.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if store.cloudAvailable || !store.cloudMachines.isEmpty {
+                        cloudSection
                     }
                 }
                 .padding(.horizontal, 20)
@@ -540,9 +550,14 @@ struct ComputersView: View {
                 },
             ]
         )
-        .codyncSheet(isPresented: $showingSignIn) {
-            SignInSheet()
-        }
+        .codyncDialog(
+            isPresented: $showingNewCloudDialog,
+            title: L("新建云电脑"),
+            message: L("新建云电脑稍后推出。现在可以先用已有的云电脑。"),
+            actions: [
+                CodyncDialogAction(title: L("好")) {},
+            ]
+        )
         .onAppear {
             if store.account.isSignedIn {
                 Task { await store.refreshAccountCloud() }
@@ -551,131 +566,392 @@ struct ComputersView: View {
         .onChange(of: store.account.isSignedIn) { _, signedIn in
             if signedIn {
                 Task { await store.refreshAccountCloud() }
+            } else {
+                store.clearAccountCloud()
             }
+        }
+        .onChange(of: store.connector.hello?.version) { _, version in
+            if let version, updatingComputerId != nil, version != updatingFromVersion {
+                updatingComputerId = nil
+            }
+        }
+        .task(id: updatingComputerId) {
+            guard updatingComputerId != nil else { return }
+            try? await Task.sleep(for: .seconds(600))
+            updatingComputerId = nil
         }
     }
 
-    /// One paired own computer: tap to make it current, forget on its own row.
-    private func computerRow(_ computer: Computer) -> some View {
+    /// The account's computers that are not paired on this phone, for the
+    /// information-only cards between the paired computers and the pair
+    /// button (original AccountComputerRows).
+    private var accountOnlyComputers: [AccountComputer] {
+        store.accountComputers.filter { account in
+            !store.connector.computers.contains { $0.id == account.computerId }
+        }
+    }
+
+    /// One paired computer: summary, notifications, auto-order (current
+    /// computer only, when the host reports it), connection, host version.
+    private func computerCard(_ computer: Computer) -> some View {
         let isCurrent = store.connector.computer?.id == computer.id
-        return CardRow {
-            VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    guard !isCurrent else { return }
-                    Task { await store.connector.selectComputer(computer) }
-                } label: {
-                    HStack {
-                        ComputerBadge.icon(for: computer, size: 17)
-                            .foregroundStyle(Palette.secondary)
-                        Text(computer.name)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(Palette.text)
-                        Spacer()
-                        if isCurrent {
-                            Text(connectionText)
-                                .font(.subheadline)
-                                .foregroundStyle(connectionColor)
-                            Image(systemName: "checkmark")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Palette.secondary)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                Text(computer.urls.first ?? "")
-                    .font(.caption)
-                    .foregroundStyle(Palette.secondary)
-                Button(L("忘记这台电脑"), role: .destructive) {
-                    forgettingComputer = computer
-                }
-                .font(.subheadline)
-                .foregroundStyle(Palette.danger)
+        let hello = isCurrent ? store.connector.hello : nil
+        return Group {
+            summaryRow(computer)
+            Hairline()
+            notificationsRow(computer)
+            if hello.flatMap({ $0.autoOrder }) != nil {
+                Hairline()
+                autoOrderRow
+            }
+            Hairline()
+            connectionRow
+            if let hello {
+                Hairline()
+                versionRow(computer, hello: hello)
             }
         }
     }
 
-    /// The account's cloud computers. Signed out, the pre-set display item
-    /// shows with an unknown state. Signed in, the list comes from the
-    /// account cloud: real online state, region and machine state — and no
-    /// bot count, because the cloud reports none.
-    private var cloudSection: some View {
-        CardSection(title: L("云电脑"), footer: L("一个账号最多可加 %d 台云电脑。", CloudComputer.accountLimit)) {
-            ForEach(store.connector.cloudComputers) { cloud in
-                CardRow {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Image(systemName: "cloud")
-                                .foregroundStyle(Palette.secondary)
-                            Text(cloud.name)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(Palette.text)
-                            Spacer()
-                            let status = cloudStatus(cloud)
-                            Text(status.text)
-                                .font(.subheadline)
-                                .foregroundStyle(status.color)
-                        }
-                        Text(cloudSubtitle(cloud))
-                            .font(.caption)
-                            .foregroundStyle(Palette.secondary)
+    /// Name, account checkmark, cloud hosting line, and the live
+    /// connection detail (original ComputerRows.summary).
+    private func summaryRow(_ computer: Computer) -> some View {
+        CardRow {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    ComputerBadge(computer: computer)
+                    Text(computer.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Palette.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if isInAccount(computer.id) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .foregroundStyle(Palette.tertiary)
                     }
                 }
-                if cloud.id != store.connector.cloudComputers.last?.id {
+                if let hosting = accountHosting(for: computer.id) {
+                    Text(L("运行于 %@ · %@", hosting.providerName, hosting.region))
+                        .font(.footnote)
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                }
+                Text(detailText(for: computer))
+                    .font(.footnote)
+                    .foregroundStyle(detailColor(for: computer))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .contentShape(Rectangle())
+            .contextActions {
+                [MenuItem(L("忘记这台电脑"), icon: "trash", destructive: true) {
+                    forgettingComputer = computer
+                }]
+            }
+        }
+    }
+
+    private func isInAccount(_ computerId: String) -> Bool {
+        store.accountComputers.contains { $0.computerId == computerId }
+    }
+
+    private func accountHosting(for computerId: String) -> AccountComputer.Cloud? {
+        store.accountComputers.first { $0.computerId == computerId }?.cloud
+    }
+
+    /// The live connection detail under the name (original
+    /// ComputerStatus.statusText): bots + direct route when online, the
+    /// connection state otherwise. A computer that is not current is
+    /// honestly "未连接" — this app keeps one connection.
+    private func detailText(for computer: Computer) -> String {
+        let isCurrent = store.connector.computer?.id == computer.id
+        guard isCurrent else { return L("未连接") }
+        switch store.connector.state {
+        case .ready:
+            return L("%d 个智能体 · 直连", store.connector.mirror.bots.count)
+        case .connecting:
+            return L("连接中…")
+        case .waiting:
+            return L("重连中…")
+        case .stopped:
+            return L("离线")
+        case .offline:
+            return L("未连接")
+        }
+    }
+
+    private func detailColor(for computer: Computer) -> Color {
+        let isCurrent = store.connector.computer?.id == computer.id
+        guard isCurrent else { return Palette.secondary }
+        switch store.connector.state {
+        case .ready, .connecting, .waiting:
+            return Palette.secondary
+        case .stopped, .offline:
+            return Palette.warning
+        }
+    }
+
+    /// Push notifications, stored per computer, default on (original
+    /// ComputerNotifications).
+    private func notificationsRow(_ computer: Computer) -> some View {
+        CardRow {
+            Toggle(isOn: Binding(
+                get: { computer.notifications ?? true },
+                set: { store.connector.setNotifications($0, for: computer.id) }
+            )) {
+                ComputerRowLabel(text: L("推送通知"), systemImage: "bell")
+            }
+            .toggleStyle(.codync)
+        }
+    }
+
+    /// Bots with new messages move to the top (original AutoOrderRow): a
+    /// host setting, written with one inner RPC and optimistically
+    /// updated. Only when the host reported a value.
+    private var autoOrderRow: some View {
+        CardRow {
+            Toggle(isOn: Binding(
+                get: { store.connector.hello?.autoOrder ?? false },
+                set: { enabled in Task { await store.connector.setAutoOrder(enabled) } }
+            )) {
+                ComputerRowLabel(text: L("将有新动态的机器人移到最前面"), systemImage: "arrow.up")
+            }
+            .toggleStyle(.codync)
+        }
+    }
+
+    /// The connection (original ConnectionRow): this build has no relay
+    /// transport, so the only mode is direct — shown as a static row, no
+    /// menu, exactly like the original renders a computer without cloud.
+    private var connectionRow: some View {
+        CardRow {
+            ComputerRowLabel(text: L("连接"), systemImage: "arrow.triangle.branch", value: L("自动"))
+        }
+    }
+
+    /// The host version (original CodyncVersionRow), labelled neutrally:
+    /// the real version from the hello handshake, plus update state.
+    private func versionRow(_ computer: Computer, hello: HelloReply) -> some View {
+        let info = versionInfo(hello)
+        return CardRow {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 17))
+                    .frame(width: 26)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(L("服务端"))
+                        Text(verbatim: hello.version)
+                            .foregroundStyle(Palette.secondary)
+                            .monospacedDigit()
+                    }
+                    if !info.detail.isEmpty {
+                        Text(info.detail)
+                            .font(.footnote)
+                            .foregroundStyle(info.warns ? Palette.warning : Palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if updatingComputerId == computer.id {
+                    Spinner(size: 16)
+                } else if info.updateAvailable {
+                    Button(L("更新")) { requestUpdate(for: computer) }
+                        .buttonStyle(.primary)
+                }
+            }
+            .foregroundStyle(Palette.text)
+        }
+    }
+
+    private func versionInfo(_ hello: HelloReply) -> (detail: String, warns: Bool, updateAvailable: Bool) {
+        if let unsupported = Compatibility.unsupportedMessage(for: hello) {
+            return (unsupported, true, false)
+        }
+        guard let latest = hello.latestVersion, !latest.isEmpty else {
+            return ("", false, false)
+        }
+        guard Compatibility.compare(hello.version, latest) == .orderedAscending else {
+            return (L("已是最新版本"), false, false)
+        }
+        if hello.canUpdate {
+            return (L("%@ 版可用。", latest), false, true)
+        }
+        return (L("%@ 版可用。", latest), false, false)
+    }
+
+    /// Asks the host to update itself; the spinner clears when the hello
+    /// comes back with a new version, or after 10 minutes.
+    private func requestUpdate(for computer: Computer) {
+        updatingComputerId = computer.id
+        updatingFromVersion = store.connector.hello?.version
+        Task {
+            do {
+                guard let api = store.connector.api else {
+                    updatingComputerId = nil
+                    return
+                }
+                try await api.installHostUpdate()
+            } catch {
+                updatingComputerId = nil
+            }
+        }
+    }
+
+    /// An account computer not paired on this phone (original
+    /// AccountComputerRow): dimmed badge, name, status line, hosting
+    /// line. Information only — the access-request API is not in this
+    /// build, so there is no action button (open gap).
+    private func accountComputerRow(_ account: AccountComputer) -> some View {
+        CardRow {
+            HStack(spacing: 12) {
+                Image(systemName: ComputerBadge.symbol(account.device))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .opacity(0.5)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Palette.text)
+                    Text(accountDetail(account))
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(2)
+                    if let cloud = account.cloud {
+                        Text(L("运行于 %@ · %@", cloud.providerName, cloud.region))
+                            .font(.footnote)
+                            .foregroundStyle(Palette.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func accountDetail(_ account: AccountComputer) -> String {
+        if let cloud = account.cloud, cloud.isAsleep {
+            return L("休眠 · 发消息时唤醒")
+        }
+        let online = account.online ? L("在线") : L("离线")
+        return L("%@ · 在你的账户里", online)
+    }
+
+    /// The pair section's footer (original ComputersView): the wording
+    /// depends on sign-in state.
+    private var pairFooter: String {
+        store.account.isSignedIn
+            ? L("账户里的电脑要先在电脑上同意，这台 iPhone 才能使用。")
+            : L("每个智能体都在自己的电脑上运行。登录后可以看到账户里的电脑。")
+    }
+
+    /// The cloud section (original CloudComputerSection): only real
+    /// machines from the account cloud, shown when the account can have
+    /// one or has any. Never a preset, never a dependency of the local
+    /// computers above.
+    private var cloudSection: some View {
+        CardSection(
+            title: L("云电脑"),
+            footer: L("运行在你自己的云端供应商账户上，供应商按它醒着的时间向你收费。闲置时休眠，你发消息时唤醒。"),
+            accessory: AnyView(cloudAccessory)
+        ) {
+            ForEach(store.cloudMachines) { machine in
+                cloudMachineRow(machine)
+                if machine.id != store.cloudMachines.last?.id {
                     Hairline()
                 }
             }
-            if !store.account.isSignedIn {
-                Hairline()
-                CardRow {
-                    Button(L("登录账号")) {
-                        showingSignIn = true
-                    }
-                    .foregroundStyle(Palette.text)
+        }
+    }
+
+    private var cloudAccessory: some View {
+        HStack(spacing: 4) {
+            Text(L("测试版"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Palette.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Palette.bubbleAgent, in: Capsule())
+            if store.cloudAvailable {
+                Button {
+                    showingNewCloudDialog = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Palette.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
     }
 
-    /// The cloud's own state words first (a sleeping machine is not
-    /// offline); otherwise the host's heartbeat; unknown when unfetched.
-    private func cloudStatus(_ cloud: CloudComputer) -> (text: String, color: Color) {
-        switch cloud.state {
-        case "starting": return (L("启动中"), Palette.warning)
-        case "stopped", "stopping": return (L("休眠"), Palette.warning)
-        case "failed": return (L("异常"), Palette.danger)
-        default: break
-        }
-        if cloud.online == true { return (L("在线"), Palette.secondary) }
-        if cloud.online == false { return (L("离线"), Palette.warning) }
-        return (L("未知"), Palette.warning)
-    }
-
-    /// Region, plus the bot count only for the pre-set display item that
-    /// carries one. Account computers have no bot count to show.
-    private func cloudSubtitle(_ cloud: CloudComputer) -> String {
-        if let botCount = cloud.botCount {
-            return L("%@ · %d 个智能体", cloud.region, botCount)
-        }
-        return cloud.region
-    }
-
-    private var connectionText: String {
-        switch store.connector.state {
-        case .ready: return L("已连接")
-        case .connecting: return L("连接中…")
-        case .waiting: return L("重连中…")
-        case .stopped: return L("离线")
-        case .offline: return L("未连接")
+    private func cloudMachineRow(_ machine: CloudMachine) -> some View {
+        CardRow {
+            HStack(spacing: 12) {
+                ProviderMascot(providerId: machine.provider, providerName: machine.providerName, size: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: machine.name)
+                        .foregroundStyle(Palette.text)
+                        .lineLimit(1)
+                    Text("\(machine.providerName) · \(machine.region) · \(machineStateText(machine))")
+                        .font(.caption)
+                        .foregroundStyle(machine.state == "failed" ? Palette.danger : Palette.secondary)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
-    private var connectionColor: Color {
-        switch store.connector.state {
-        case .ready: return Palette.secondary
-        default: return Palette.warning
+    /// The machine's live state (original CloudComputerSection.status):
+    /// a preparing machine reports that first, otherwise its state word.
+    private func machineStateText(_ machine: CloudMachine) -> String {
+        if machine.computerId == nil, machine.state != "failed" {
+            return L("正在准备云电脑…")
+        }
+        switch machine.state {
+        case "starting": return L("启动中")
+        case "running": return L("运行中")
+        case "stopping": return L("休眠中")
+        case "stopped": return L("休眠")
+        case "failed": return L("异常")
+        default: return L("未知")
         }
     }
 }
+
+/// A computer-management row label (original RowLabel): 17pt icon in a
+/// 26pt slot, text, optional trailing value, optional chevron.
+private struct ComputerRowLabel: View {
+    var text: String
+    var systemImage: String
+    var value: String? = nil
+    var chevron: Bool = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17))
+                .frame(width: 26)
+            Text(text)
+            Spacer(minLength: 8)
+            if let value {
+                Text(value)
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(1)
+            }
+            if chevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Palette.tertiary)
+            }
+        }
+        .foregroundStyle(Palette.text)
+    }
+}
+
 
 /// All live/waiting work across bots (the Work button sheet, §3.6).
 /// Closes itself when there is nothing left to show.

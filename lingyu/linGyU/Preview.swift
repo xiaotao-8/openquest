@@ -17,6 +17,8 @@ enum PreviewMode: Equatable {
         var page: String?
         /// Show the pairing flow instead of the tabs: "install" or "scan".
         var pairingPage: String?
+        /// Show the computer-management sheet instead of the tabs.
+        var computers = false
     }
 
     static func fromLaunchArguments() -> PreviewMode {
@@ -32,6 +34,7 @@ enum PreviewMode: Equatable {
         options.settings = args.contains("-PreviewSettings")
         options.page = value(for: "-PreviewPage", in: args)
         options.pairingPage = value(for: "-PreviewPairingPage", in: args)
+        options.computers = args.contains("-PreviewComputers")
         return .seeded(options)
     }
 
@@ -76,6 +79,9 @@ enum PreviewRunner {
         for entry in demoEntries(bots: bots, now: now, approval: options.approval, ask: options.ask) {
             mirror.apply(.entry(entry))
         }
+        if options.computers, let computer = demoComputer(), let hello = demoHello() {
+            store.connector.seedPreview(computer: computer, hello: hello)
+        }
         if options.settings {
             store.selectedTab = 3
         } else if let page = options.page {
@@ -104,6 +110,22 @@ enum PreviewRunner {
             {"id":"demo-group","kind":"group","members":["demo-lead","demo-north"],"name":"工作组","description":"","avatarColor":"violet","avatarShape":"teardrop","backend":"","cwd":"","managedWorkspace":false,"permission":"ask","model":null,"modelOptions":{},"rev":1,"status":"idle","activity":"","unread":1,"waiting":0,"lastMessage":"小北：文档已按你的要求改好。","lastAt":\(now - 7200_000),"createdAt":\(now)}
             """),
         ].compactMap { $0 }
+    }
+
+    /// One demo computer + hello with the ECS host's real values, for the
+    /// computer-management sheet preview (in-memory only, never persisted).
+    /// The hello reports an update (2.51.0) so the version row's update
+    /// state is visible too.
+    private static func demoComputer() -> Computer? {
+        try? JSONDecoder().decode(Computer.self, from: Data("""
+        {"id":"demo-computer","name":"ECS","signKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","boxKey":null,"urls":["http://47.238.160.204:19222"],"cloud":null,"device":"linux","color":null,"route":"direct","notifications":null}
+        """.utf8))
+    }
+
+    private static func demoHello() -> HelloReply? {
+        try? JSONDecoder().decode(HelloReply.self, from: Data("""
+        {"hostId":"demo-host","computerId":"demo-computer","name":"ECS","version":"2.50.0","schema":8,"canUpdate":true,"latestVersion":"2.51.0","autoOrder":false,"urls":["http://47.238.160.204:19222"],"rev":1}
+        """.utf8))
     }
 
     private static func demoEntries(bots: [Bot], now: Int64, approval: Bool, ask: Bool) -> [Entry] {

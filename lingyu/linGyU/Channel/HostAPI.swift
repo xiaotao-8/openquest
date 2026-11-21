@@ -245,6 +245,17 @@ struct HostAPI: Sendable {
         _ = try await connection.call(method: "updateBot", body: try body(dict))
     }
 
+    /// Whether a bot with a new message moves to the top of the roster
+    /// (original HostClient.setAutoOrder — the host does the sorting).
+    func setAutoOrder(_ enabled: Bool) async throws {
+        _ = try await connection.call(method: "setAutoOrder", body: try body(["enabled": enabled]))
+    }
+
+    /// Asks the computer to update itself (original HostClient.installHostUpdate).
+    func installHostUpdate() async throws {
+        _ = try await connection.call(method: "installHostUpdate", body: try body([:]))
+    }
+
     /// Uploads one file in 384 KiB chunks; `data` here is standard padded
     /// base64 (inner-RPC rule), unlike channel `d`. Returns the upload id.
     func upload(botId: String, name: String, data: Data) async throws -> String {

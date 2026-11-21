@@ -102,31 +102,6 @@ struct Computer: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-// MARK: - Cloud computer
-//
-// A computer rented from the account's cloud service (as opposed to a
-// computer the user paired themselves). It is listed, never paired with a
-// code: connecting one needs the account sign-in, which is a later phase.
-// The record is display-only data — no live state is invented for it.
-
-struct CloudComputer: Codable, Equatable, Sendable, Identifiable {
-    var id: String
-    var name: String
-    var region: String
-    /// How many bots run on it — only the pre-set display item carries
-    /// one. The account cloud reports no bot count, so a computer fetched
-    /// from the account has nil here and no number is shown for it.
-    var botCount: Int?
-    /// Live state from the account cloud, when fetched: online is the
-    /// host's heartbeat, state is the cloud machine's state
-    /// (starting/running/stopping/stopped/failed). Nil means unknown.
-    var online: Bool?
-    var state: String?
-
-    /// The account allows at most this many cloud computers.
-    static let accountLimit = 3
-}
-
 // MARK: - HelloReply
 
 struct HelloReply: Codable, Sendable {

@@ -9,6 +9,8 @@ struct RootView: View {
     var body: some View {
         if case .seeded(let options) = store.previewMode, let pairingPage = options.pairingPage {
             PairingView(initialStep: pairingPage == "scan" ? .scan : .install)
+        } else if case .seeded(let options) = store.previewMode, options.computers {
+            ComputersView()
         } else if store.showingWelcome && !store.connector.isPaired && !store.isPreview {
             WelcomeView(onSkip: {
                 store.showingWelcome = false

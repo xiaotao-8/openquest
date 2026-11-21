@@ -19,9 +19,6 @@ final class HostConnector: ObservableObject {
     @Published private(set) var computers: [Computer] = []
     /// The id of the current computer.
     @Published private(set) var selectedComputerId: String?
-    /// Cloud computers on the account (display list; connection needs the
-    /// account sign-in, a later phase).
-    @Published private(set) var cloudComputers: [CloudComputer] = []
     @Published private(set) var hello: HelloReply?
     @Published private(set) var pairingState: PairingState = .idle
     @Published private(set) var pairingError: String?
@@ -42,7 +39,6 @@ final class HostConnector: ObservableObject {
     private var runTask: Task<Void, Never>?
     private let computersKey = "cn.lingyu.computers.v1"
     private let selectedKey = "cn.lingyu.selectedComputer.v1"
-    private let cloudComputersKey = "cn.lingyu.cloudComputers.v1"
     /// The pre-list single-computer key; read once for migration, then
     /// dropped. Never written again.
     private let legacyComputerKey = "cn.lingyu.computer.v1"
@@ -58,40 +54,42 @@ final class HostConnector: ObservableObject {
     init() {
         computers = loadComputers()
         selectedComputerId = UserDefaults.standard.string(forKey: selectedKey)
-        cloudComputers = loadCloudComputers()
     }
 
     var isPaired: Bool { !computers.isEmpty }
 
-    /// Whether another cloud computer may be added (account limit is 3).
-    var canAddCloudComputer: Bool { cloudComputers.count < CloudComputer.accountLimit }
+    /// Stores this computer's push-notification preference (original
+    /// ComputerNotifications: per-computer, default on). No host call —
+    /// the host has no such setting; the app filters locally.
+    func setNotifications(_ enabled: Bool, for computerId: String) {
+        guard let index = computers.firstIndex(where: { $0.id == computerId }) else { return }
+        computers[index].notifications = enabled
+        saveComputers()
+    }
 
-    /// Adds a cloud computer to the list. Returns false — and adds nothing
-    /// — once the account limit of 3 is reached.
-    @discardableResult
-    func addCloudComputer(_ computer: CloudComputer) -> Bool {
-        guard canAddCloudComputer,
-              !cloudComputers.contains(where: { $0.id == computer.id }) else {
-            return false
+    /// Asks the host to move bots with new messages to the top of the
+    /// roster (original HostClient.setAutoOrder), optimistically updating
+    /// the hello record and reverting if the call fails. No-op when the
+    /// host never reported an autoOrder value.
+    func setAutoOrder(_ enabled: Bool) async {
+        guard let api, hello.flatMap({ $0.autoOrder }) != nil else { return }
+        let previous = hello?.autoOrder
+        hello?.autoOrder = enabled
+        do {
+            try await api.setAutoOrder(enabled)
+        } catch {
+            hello?.autoOrder = previous
         }
-        cloudComputers.append(computer)
-        saveCloudComputers()
-        return true
     }
 
-    /// Replaces the cloud list with computers fetched from the account
-    /// (only cloud-hosted ones are shown here). Callers map the account
-    /// response into display records; no bot count is invented.
-    func updateCloudComputers(_ list: [CloudComputer]) {
-        cloudComputers = list
-        saveCloudComputers()
-    }
-
-    /// Drops account-fetched cloud computers and restores the pre-login
-    /// display item (unknown state). Used on sign-out and account deletion.
-    func resetCloudComputers() {
-        cloudComputers = Self.seededCloudComputers
-        saveCloudComputers()
+    /// Preview-only injection: puts one demo computer + hello in memory
+    /// (never persisted) so the computer-management sheet can be
+    /// screenshot-verified without a live host.
+    func seedPreview(computer: Computer, hello: HelloReply) {
+        computers = [computer]
+        selectedComputerId = computer.id
+        self.hello = hello
+        state = .ready
     }
 
     // MARK: - Normal mode
@@ -352,34 +350,6 @@ final class HostConnector: ObservableObject {
             return list
         }
         return []
-    }
-
-    private func saveCloudComputers() {
-        if let data = try? JSONEncoder().encode(cloudComputers) {
-            UserDefaults.standard.set(data, forKey: cloudComputersKey)
-        }
-    }
-
-    /// The pre-login display item: the account's one cloud computer
-    /// (United States, 1 bot). Its state is unknown until the account
-    /// sign-in lands — never shown as online.
-    private static let seededCloudComputers = [
-        CloudComputer(id: "cloud-1", name: "云电脑", region: "美国", botCount: 1)
-    ]
-
-    /// Loads the stored cloud list, seeding the account's one cloud
-    /// computer (United States, 1 bot) the first time. Its state is
-    /// unknown until the account sign-in lands — never shown as online.
-    private func loadCloudComputers() -> [CloudComputer] {
-        if let data = UserDefaults.standard.data(forKey: cloudComputersKey),
-           let list = try? JSONDecoder().decode([CloudComputer].self, from: data) {
-            return list
-        }
-        let seeded = Self.seededCloudComputers
-        if let data = try? JSONEncoder().encode(seeded) {
-            UserDefaults.standard.set(data, forKey: cloudComputersKey)
-        }
-        return seeded
     }
 
     private func hostErrorMessage(_ error: Error) -> String {

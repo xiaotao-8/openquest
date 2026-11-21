@@ -100,7 +100,7 @@ struct SettingsView: View {
                     Task { @MainActor in
                         do {
                             try await store.account.deleteUser()
-                            store.connector.resetCloudComputers()
+                            store.clearAccountCloud()
                         } catch {
                             store.account.errorMessage = L("删除失败，请重试。")
                         }
@@ -118,7 +118,7 @@ struct SettingsView: View {
                     Task { @MainActor in
                         await store.account.signOutAll()
                         store.connector.forgetAllComputers()
-                        store.connector.resetCloudComputers()
+                        store.clearAccountCloud()
                         store.showingWelcome = true
                     }
                 },
