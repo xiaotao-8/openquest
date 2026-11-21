@@ -481,9 +481,9 @@ enum ZipExportReader {
             wrapped.withUnsafeBytes { inPtr in
                 compression_decode_buffer(
                     outPtr.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                    UInt(expectedSize),
+                    expectedSize,
                     inPtr.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                    UInt(wrapped.count),
+                    wrapped.count,
                     nil,
                     COMPRESSION_ZLIB
                 )
