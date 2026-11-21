@@ -45,6 +45,20 @@ actor ChannelConnection {
     /// Pairing transports stop after the first serve instead of reconnecting.
     var stopAfterFirstServe = false
 
+    /// Isolated setters: the connector runs on the main actor and must not
+    /// mutate actor state directly. Register handlers before `run()`.
+    func enableStopAfterFirstServe() {
+        stopAfterFirstServe = true
+    }
+
+    func setStateChangeHandler(_ handler: (@Sendable (LinkState) -> Void)?) {
+        onStateChange = handler
+    }
+
+    func setHelloReplyHandler(_ handler: (@Sendable (HelloReply) -> Void)?) {
+        onHelloReply = handler
+    }
+
     private var isStopped = false
     private var socket: URLSessionChannelSocket?
     private var sealer: FrameSealer?

@@ -33,19 +33,19 @@ final class HostConnector: ObservableObject {
 
     // MARK: - Normal mode
 
-    func connect(computer: Computer, identity: any SigningIdentity) {
+    func connect(computer: Computer, identity: any SigningIdentity) async {
         disconnect()
         self.computer = computer
         saveComputer(computer)
         let connection = ChannelConnection(computer: computer, identity: identity)
         self.connection = connection
         self.api = HostAPI(connection: connection)
-        connection.onStateChange = { [weak self] newState in
+        await connection.setStateChangeHandler { [weak self] newState in
             Task { @MainActor in
                 self?.state = newState
             }
         }
-        connection.onHelloReply = { [weak self] reply in
+        await connection.setHelloReplyHandler { [weak self] reply in
             Task { @MainActor in
                 guard let self else { return }
                 self.hello = reply
@@ -60,11 +60,11 @@ final class HostConnector: ObservableObject {
     }
 
     /// Connects with the stored computer, if one is paired.
-    func connectIfPaired() {
+    func connectIfPaired() async {
         guard let computer else { return }
         do {
             let identity = try DeviceIdentity.loadOrCreate()
-            connect(computer: computer, identity: identity)
+            await connect(computer: computer, identity: identity)
         } catch {
             state = .stopped(.failed(L("读取设备密钥失败。请重新配对。")))
         }
@@ -109,8 +109,8 @@ final class HostConnector: ObservableObject {
         let computer = Computer(from: link)
         let checkCode = Self.checkCode(devicePub: identity.devicePublicKey, hostSignKey: link.signKey)
         let pairing = ChannelConnection(computer: computer, identity: identity, pairingCode: link.codeBase64URL)
-        pairing.stopAfterFirstServe = true
-        pairing.onStateChange = { [weak self] (newState: LinkState) in
+        await pairing.enableStopAfterFirstServe()
+        await pairing.setStateChangeHandler { [weak self] (newState: LinkState) in
             Task { @MainActor in
                 guard let self else { return }
                 if case .stopped(let reason) = newState {
@@ -177,7 +177,7 @@ final class HostConnector: ObservableObject {
         }
         await pairing.stop()
         pairingState = .paired
-        connect(computer: computer, identity: identity)
+        await connect(computer: computer, identity: identity)
         return computer
     }
 

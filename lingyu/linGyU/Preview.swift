@@ -148,7 +148,7 @@ enum PreviewRunner {
         )
         let paired = Computer(from: link)
         let connector = store.connector
-        connector.connect(computer: paired, identity: identity)
+        await connector.connect(computer: paired, identity: identity)
         let start = Date()
         // Wait for the channel + hello (bounded).
         for _ in 0..<100 {

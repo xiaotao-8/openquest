@@ -69,7 +69,7 @@ final class AppStore: ObservableObject {
         switch previewMode {
         case .none:
             if connector.isPaired {
-                connector.connectIfPaired()
+                Task { await connector.connectIfPaired() }
             } else {
                 showingWelcome = true
             }
