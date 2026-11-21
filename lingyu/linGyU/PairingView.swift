@@ -6,8 +6,12 @@ import VisionKit
 /// with linGyU copy and no account (no email line, no cloud button).
 /// The computer is the user's cloud host (ECS, Linux), so Linux shows first.
 struct PairingView: View {
+    enum Step { case install, scan }
+
     /// Adding another computer from the computers sheet: has a close button; closes once paired.
     var inModal = false
+    /// Preview only: which step to show first (`-PreviewPairingPage`).
+    var initialStep: Step = .install
     /// On the install page (onboarding only): back to the welcome.
     var onBack: (() -> Void)? = nil
     /// Finish onboarding without pairing; modal pairing simply closes when skipped.
@@ -17,9 +21,17 @@ struct PairingView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
 
-    private enum Step { case install, scan }
-    @State private var step = Step.install
+    @State private var step: Step
     @State private var os = ComputerOS.linux
+
+    init(inModal: Bool = false, initialStep: Step = .install, onBack: (() -> Void)? = nil, onSkip: (() -> Void)? = nil, onDone: (() -> Void)? = nil) {
+        self.inModal = inModal
+        self.initialStep = initialStep
+        self.onBack = onBack
+        self.onSkip = onSkip
+        self.onDone = onDone
+        self._step = State(initialValue: initialStep)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -307,19 +319,49 @@ private struct ScanPage: View {
 
                 viewfinder
 
-                HStack {
-                    TextField(L("配对链接或配对码"), text: $pasted)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.callout.monospaced())
-                        .onSubmit { pair(pasted) }
-                    IconButton(L("配对"), systemImage: "arrow.right") { pair(pasted) }
-                        .disabled(pasted.isEmpty || pairing)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top) {
+                        TextField(L("配对链接或配对码"), text: $pasted, axis: .vertical)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.callout.monospaced())
+                            .lineLimit(1...6)
+                            .onSubmit { pair(pasted) }
+                        IconButton(L("配对"), systemImage: "arrow.right") { pair(pasted) }
+                            .disabled(pasted.isEmpty || pairing)
+                    }
+                    .padding(.leading, 14)
+                    .padding(.trailing, 4)
+                    .padding(.vertical, 4)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+
+                    // The full link is long: show all of it below the field
+                    // so a paste can be checked for truncation at a glance.
+                    if !pasted.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(L("已粘贴的链接"))
+                                    .font(.caption)
+                                    .foregroundStyle(Palette.secondary)
+                                Spacer()
+                                Button(L("粘贴")) { pasteFromClipboard() }
+                                    .font(.caption.weight(.medium))
+                                Button(L("清除"), role: .destructive) { pasted = "" }
+                                    .font(.caption.weight(.medium))
+                            }
+                            Text(pasted)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(Palette.text)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(L("共 %d 个字符", pasted.count))
+                                .font(.caption2)
+                                .foregroundStyle(Palette.tertiary)
+                        }
+                        .padding(12)
+                        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+                    }
                 }
-                .padding(.leading, 14)
-                .padding(.trailing, 4)
-                .padding(.vertical, 4)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
 
                 if let error {
                     VStack(alignment: .leading, spacing: 6) {
@@ -413,15 +455,23 @@ private struct ScanPage: View {
         return "\(first)\u{00A0}\(second)"
     }
 
+    private func pasteFromClipboard() {
+        if let string = UIPasteboard.general.string, !string.isEmpty {
+            pasted = string
+        }
+    }
+
     private func pair(_ text: String) {
         // A short code works once: Return pressed again while it resolves mustn't spend it twice.
         guard !pairing else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A bare short code cannot be resolved by the app alone (no cloud
-        // client in Phase 1): offer the full-link path instead.
+        // A bare short code cannot be resolved by the app alone: looking
+        // it up needs the account sign-in, which this version does not
+        // have yet. Say so plainly, with the working path, instead of a
+        // bare refusal.
         if PairingLink.normaliseShortCode(trimmed) != nil {
             withAnimation(.easeInOut(duration: 0.2)) {
-                error = L("只凭配对码连不上。请在电脑上出示完整链接，粘贴到上面。")
+                error = L("只输配对码还配不上：配对码要登录账号才能查到完整信息。请扫电脑上的二维码，或粘贴电脑显示的完整链接。")
                 unreachable = false
             }
             attempt += 1

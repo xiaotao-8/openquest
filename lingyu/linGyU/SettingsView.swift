@@ -43,6 +43,7 @@ struct SettingsView: View {
     @State private var showingLog = false
     @State private var showingAnalyticsInfo = false
     @State private var showingStartOverDialog = false
+    @State private var showingBypassDialog = false
     @State private var notificationStatus = ""
     @State private var iconBadge = false
     @State private var shareAnalytics = true
@@ -58,6 +59,7 @@ struct SettingsView: View {
                 appearanceSection
                 languageSection
                 thinkingSection
+                permissionsSection
                 shortcutSection
                 notificationsSection
                 analyticsSection
@@ -90,8 +92,19 @@ struct SettingsView: View {
             actions: [
                 CodyncDialogAction(title: L("取消")) {},
                 CodyncDialogAction(title: L("重新开始"), isDestructive: true) {
-                    store.connector.forgetComputer()
+                    store.connector.forgetAllComputers()
                     store.showingWelcome = true
+                },
+            ]
+        )
+        .codyncDialog(
+            isPresented: $showingBypassDialog,
+            title: L("开启全部跳过审批？"),
+            message: L("开启后，智能体无需确认即可运行命令、修改文件和访问网络。只在你完全信任这台电脑上的智能体时开启，随时可以关掉。"),
+            actions: [
+                CodyncDialogAction(title: L("取消")) {},
+                CodyncDialogAction(title: L("开启"), isDestructive: true) {
+                    store.bypassAllApprovals = true
                 },
             ]
         )
@@ -206,6 +219,29 @@ struct SettingsView: View {
             CardRow {
                 Toggle(L("显示思考过程"), isOn: $store.showThinkingDetails)
                     .toggleStyle(.codync)
+            }
+        }
+    }
+
+    // MARK: - Permissions
+
+    /// Skip-all-approvals sits at the top of Permissions, off by default.
+    /// Turning it on asks once for an explicit risk confirmation; turning
+    /// it off restores per-item approval at once. Ask cards (questions)
+    /// are never covered by this switch.
+    private var permissionsSection: some View {
+        CardSection(title: L("权限"), footer: L("开启后，智能体执行操作不再逐项请示你；提问卡不受影响，问题还是会问你。")) {
+            CardRow {
+                SwitchRow(label: L("全部跳过审批"), detail: L("智能体无需确认即可运行命令、修改文件和访问网络。"), isOn: Binding(
+                    get: { store.bypassAllApprovals },
+                    set: { newValue in
+                        if newValue {
+                            showingBypassDialog = true
+                        } else {
+                            store.bypassAllApprovals = false
+                        }
+                    }
+                ))
             }
         }
     }

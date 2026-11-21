@@ -27,6 +27,14 @@ final class AppStore: ObservableObject {
         didSet { UserDefaults.standard.set(appearance, forKey: "cn.lingyu.appearance") }
     }
 
+    /// Skip-all-approvals ("complete permission"): when on, pending
+    /// approval cards are answered Allow-once automatically instead of
+    /// being shown. Default off. Never covers ask cards (questions),
+    /// which always still ask.
+    @Published var bypassAllApprovals: Bool {
+        didSet { UserDefaults.standard.set(bypassAllApprovals, forKey: "cn.lingyu.bypassAllApprovals") }
+    }
+
     // MARK: - Navigation
 
     /// 0 Bots, 1 Discover, 2 State, 3 Settings.
@@ -68,6 +76,7 @@ final class AppStore: ObservableObject {
         showThinkingDetails = UserDefaults.standard.bool(forKey: "cn.lingyu.showThinkingDetails")
         reduceMotion = UserDefaults.standard.bool(forKey: "cn.lingyu.reduceMotion")
         appearance = UserDefaults.standard.string(forKey: "cn.lingyu.appearance") ?? "system"
+        bypassAllApprovals = UserDefaults.standard.bool(forKey: "cn.lingyu.bypassAllApprovals")
         previewMode = PreviewMode.fromLaunchArguments()
         // The UI observes only the store, but reads connector/mirror state
         // through it (roster, chat, connection badge) — no view observes

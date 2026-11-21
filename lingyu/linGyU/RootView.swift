@@ -7,7 +7,9 @@ struct RootView: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        if store.showingWelcome && !store.connector.isPaired && !store.isPreview {
+        if case .seeded(let options) = store.previewMode, let pairingPage = options.pairingPage {
+            PairingView(initialStep: pairingPage == "scan" ? .scan : .install)
+        } else if store.showingWelcome && !store.connector.isPaired && !store.isPreview {
             WelcomeView(onSkip: {
                 store.showingWelcome = false
             })

@@ -10,6 +10,9 @@ struct PermissionCard: View {
     @State private var detailsExpanded = false
     @State private var answeringOptionId: String?
     @State private var answeredOptionKind: String?
+    /// Set once this card has been auto-answered under skip-all-approvals,
+    /// so it never answers twice.
+    @State private var bypassAnswered = false
 
     private var data: EntryData { entry.data }
     private var isPending: Bool { data.status == "pending" }
@@ -57,6 +60,32 @@ struct PermissionCard: View {
         .frame(maxWidth: 420, alignment: .leading)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22))
         .padding(.trailing, 40)
+        .onAppear { autoAnswerIfBypassed() }
+        .onChange(of: store.bypassAllApprovals) { _, _ in autoAnswerIfBypassed() }
+    }
+
+    /// Skip-all-approvals: a pending approval card is answered Allow-once
+    /// by itself instead of waiting on the user. Ask cards never reach
+    /// this view (they render as DecisionCard), so questions are never
+    /// auto-answered.
+    private func autoAnswerIfBypassed() {
+        guard store.bypassAllApprovals, isPending, !bypassAnswered,
+              answeringOptionId == nil,
+              let api = store.connector.api else { return }
+        let option = answerOptions.first(where: { $0.kind == "allow_once" })
+            ?? answerOptions.first
+        guard let option else { return }
+        bypassAnswered = true
+        answeringOptionId = option.optionId
+        Task {
+            do {
+                try await api.respondPermission(entryId: entry.id, optionId: option.optionId)
+                answeredOptionKind = option.kind
+            } catch {
+                answeringOptionId = nil
+                bypassAnswered = false
+            }
+        }
     }
 
     private var titleForToolKind: String {

@@ -15,6 +15,8 @@ enum PreviewMode: Equatable {
         var ask = false
         var settings = false
         var page: String?
+        /// Show the pairing flow instead of the tabs: "install" or "scan".
+        var pairingPage: String?
     }
 
     static func fromLaunchArguments() -> PreviewMode {
@@ -29,6 +31,7 @@ enum PreviewMode: Equatable {
         options.ask = args.contains("-PreviewAsk")
         options.settings = args.contains("-PreviewSettings")
         options.page = value(for: "-PreviewPage", in: args)
+        options.pairingPage = value(for: "-PreviewPairingPage", in: args)
         return .seeded(options)
     }
 

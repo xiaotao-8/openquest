@@ -54,7 +54,7 @@ extension KeyedDecodingContainer {
 
 // MARK: - Computer
 
-struct Computer: Codable, Equatable, Sendable {
+struct Computer: Codable, Equatable, Sendable, Identifiable {
     var id: String
     var name: String
     var signKey: String
@@ -100,6 +100,23 @@ struct Computer: Codable, Equatable, Sendable {
         route = container.lenient(String.self, forKey: .route)
         notifications = container.lenient(Bool.self, forKey: .notifications)
     }
+}
+
+// MARK: - Cloud computer
+//
+// A computer rented from the account's cloud service (as opposed to a
+// computer the user paired themselves). It is listed, never paired with a
+// code: connecting one needs the account sign-in, which is a later phase.
+// The record is display-only data — no live state is invented for it.
+
+struct CloudComputer: Codable, Equatable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var region: String
+    var botCount: Int
+
+    /// The account allows at most this many cloud computers.
+    static let accountLimit = 3
 }
 
 // MARK: - HelloReply

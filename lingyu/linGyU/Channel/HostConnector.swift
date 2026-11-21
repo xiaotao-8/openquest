@@ -8,22 +8,44 @@ enum PairingState: Equatable {
     case paired
 }
 
-/// Owns the channel, the computer record, and the mirror. One connector per
-/// app launch; the UI observes `state`, `computer`, and `mirror`.
+/// Owns the channel, the computers, and the mirror. One connector per
+/// app launch; the UI observes `state`, `computers`, `computer`, and
+/// `mirror`. Several own computers may be paired; exactly one is current
+/// and the connection, roster, and chat all follow it.
 @MainActor
 final class HostConnector: ObservableObject {
     @Published private(set) var state: LinkState = .offline
-    @Published private(set) var computer: Computer?
+    /// All paired own computers, in pairing order.
+    @Published private(set) var computers: [Computer] = []
+    /// The id of the current computer.
+    @Published private(set) var selectedComputerId: String?
+    /// Cloud computers on the account (display list; connection needs the
+    /// account sign-in, a later phase).
+    @Published private(set) var cloudComputers: [CloudComputer] = []
     @Published private(set) var hello: HelloReply?
     @Published private(set) var pairingState: PairingState = .idle
     @Published private(set) var pairingError: String?
+
+    /// The current computer: the selected one, or the first paired one.
+    var computer: Computer? {
+        if let id = selectedComputerId,
+           let found = computers.first(where: { $0.id == id }) {
+            return found
+        }
+        return computers.first
+    }
 
     let mirror = EventMirror()
 
     private(set) var connection: ChannelConnection?
     private(set) var api: HostAPI?
     private var runTask: Task<Void, Never>?
-    private let computerKey = "cn.lingyu.computer.v1"
+    private let computersKey = "cn.lingyu.computers.v1"
+    private let selectedKey = "cn.lingyu.selectedComputer.v1"
+    private let cloudComputersKey = "cn.lingyu.cloudComputers.v1"
+    /// The pre-list single-computer key; read once for migration, then
+    /// dropped. Never written again.
+    private let legacyComputerKey = "cn.lingyu.computer.v1"
 
     /// Live-preview dial reporter: forwarded to the channel so each dial
     /// attempt is logged to the diagnostics card. Nil in normal use.
@@ -34,17 +56,36 @@ final class HostConnector: ObservableObject {
     }
 
     init() {
-        computer = loadComputer()
+        computers = loadComputers()
+        selectedComputerId = UserDefaults.standard.string(forKey: selectedKey)
+        cloudComputers = loadCloudComputers()
     }
 
-    var isPaired: Bool { computer != nil }
+    var isPaired: Bool { !computers.isEmpty }
+
+    /// Whether another cloud computer may be added (account limit is 3).
+    var canAddCloudComputer: Bool { cloudComputers.count < CloudComputer.accountLimit }
+
+    /// Adds a cloud computer to the list. Returns false — and adds nothing
+    /// — once the account limit of 3 is reached.
+    @discardableResult
+    func addCloudComputer(_ computer: CloudComputer) -> Bool {
+        guard canAddCloudComputer,
+              !cloudComputers.contains(where: { $0.id == computer.id }) else {
+            return false
+        }
+        cloudComputers.append(computer)
+        saveCloudComputers()
+        return true
+    }
 
     // MARK: - Normal mode
 
     func connect(computer: Computer, identity: any SigningIdentity) async {
         disconnect()
-        self.computer = computer
-        saveComputer(computer)
+        upsertComputer(computer)
+        selectedComputerId = computer.id
+        saveComputers()
         let connection = ChannelConnection(computer: computer, identity: identity)
         self.connection = connection
         self.api = HostAPI(connection: connection)
@@ -68,9 +109,25 @@ final class HostConnector: ObservableObject {
         }
     }
 
-    /// Connects with the stored computer, if one is paired.
+    /// Connects with the current computer, if one is paired.
     func connectIfPaired() async {
         guard let computer else { return }
+        do {
+            let identity = try DeviceIdentity.loadOrCreate()
+            await connect(computer: computer, identity: identity)
+        } catch {
+            state = .stopped(.failed(L("读取设备密钥失败。请重新配对。")))
+        }
+    }
+
+    /// Switches the current computer and connects to it. The roster and
+    /// chat follow the newly selected computer.
+    func selectComputer(_ computer: Computer) async {
+        guard computers.contains(where: { $0.id == computer.id }) else { return }
+        await connectIfPairedTo(computer)
+    }
+
+    private func connectIfPairedTo(_ computer: Computer) async {
         do {
             let identity = try DeviceIdentity.loadOrCreate()
             await connect(computer: computer, identity: identity)
@@ -90,12 +147,31 @@ final class HostConnector: ObservableObject {
         Task { await connection?.stop() }
     }
 
-    /// Forgets the computer locally. The host still lists this device until
-    /// the user revokes it on the computer.
-    func forgetComputer() {
+    /// Forgets one computer locally. The host still lists this device
+    /// until the user revokes it on the computer. If it was the current
+    /// computer, the next paired one becomes current and connects.
+    func forgetComputer(_ computer: Computer) {
+        let wasCurrent = self.computer?.id == computer.id
+        if wasCurrent { disconnect() }
+        computers.removeAll { $0.id == computer.id }
+        if selectedComputerId == computer.id {
+            selectedComputerId = computers.first?.id
+        }
+        saveComputers()
+        if wasCurrent, computers.first != nil {
+            Task { await connectIfPaired() }
+        }
+    }
+
+    /// Forgets every paired computer locally (start over). The hosts still
+    /// list this device until the user revokes it on each computer.
+    func forgetAllComputers() {
         disconnect()
-        computer = nil
-        UserDefaults.standard.removeObject(forKey: computerKey)
+        computers = []
+        selectedComputerId = nil
+        UserDefaults.standard.removeObject(forKey: computersKey)
+        UserDefaults.standard.removeObject(forKey: selectedKey)
+        UserDefaults.standard.removeObject(forKey: legacyComputerKey)
         KeychainStore.deleteAll()
     }
 
@@ -214,23 +290,69 @@ final class HostConnector: ObservableObject {
         if !validUrls.isEmpty { computer.urls = Array(validUrls.prefix(16)) }
         if let cloud = reply.cloud, !cloud.isEmpty { computer.cloud = cloud }
         if let device = reply.device { computer.device = device }
-        self.computer = computer
-        saveComputer(computer)
+        upsertComputer(computer)
+        saveComputers()
     }
 
-    private func saveComputer(_ computer: Computer) {
-        if let data = try? JSONEncoder().encode(computer) {
-            UserDefaults.standard.set(data, forKey: computerKey)
+    /// Inserts the computer, or replaces the stored record with the same id.
+    private func upsertComputer(_ computer: Computer) {
+        if let index = computers.firstIndex(where: { $0.id == computer.id }) {
+            computers[index] = computer
+        } else {
+            computers.append(computer)
         }
     }
 
-    private func loadComputer() -> Computer? {
-        guard let data = UserDefaults.standard.data(forKey: computerKey),
-              let computer = try? JSONDecoder().decode(Computer.self, from: data),
-              !computer.id.isEmpty, !computer.signKey.isEmpty else {
-            return nil
+    private func saveComputers() {
+        if let data = try? JSONEncoder().encode(computers) {
+            UserDefaults.standard.set(data, forKey: computersKey)
         }
-        return computer
+        if let id = selectedComputerId {
+            UserDefaults.standard.set(id, forKey: selectedKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: selectedKey)
+        }
+    }
+
+    /// Loads the stored list, migrating the old single-computer record
+    /// into a one-item list (pairing survives the upgrade).
+    private func loadComputers() -> [Computer] {
+        if let data = UserDefaults.standard.data(forKey: computersKey),
+           let list = try? JSONDecoder().decode([Computer].self, from: data) {
+            return list.filter { !$0.id.isEmpty && !$0.signKey.isEmpty }
+        }
+        if let data = UserDefaults.standard.data(forKey: legacyComputerKey),
+           let computer = try? JSONDecoder().decode(Computer.self, from: data),
+           !computer.id.isEmpty, !computer.signKey.isEmpty {
+            let list = [computer]
+            UserDefaults.standard.removeObject(forKey: legacyComputerKey)
+            if let data = try? JSONEncoder().encode(list) {
+                UserDefaults.standard.set(data, forKey: computersKey)
+            }
+            return list
+        }
+        return []
+    }
+
+    private func saveCloudComputers() {
+        if let data = try? JSONEncoder().encode(cloudComputers) {
+            UserDefaults.standard.set(data, forKey: cloudComputersKey)
+        }
+    }
+
+    /// Loads the stored cloud list, seeding the account's one cloud
+    /// computer (United States, 1 bot) the first time. Its state is
+    /// unknown until the account sign-in lands — never shown as online.
+    private func loadCloudComputers() -> [CloudComputer] {
+        if let data = UserDefaults.standard.data(forKey: cloudComputersKey),
+           let list = try? JSONDecoder().decode([CloudComputer].self, from: data) {
+            return list
+        }
+        let seeded = [CloudComputer(id: "cloud-1", name: "云电脑", region: "美国", botCount: 1)]
+        if let data = try? JSONEncoder().encode(seeded) {
+            UserDefaults.standard.set(data, forKey: cloudComputersKey)
+        }
+        return seeded
     }
 
     private func hostErrorMessage(_ error: Error) -> String {

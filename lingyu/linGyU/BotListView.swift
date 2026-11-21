@@ -295,12 +295,18 @@ struct ComputerFilterHeader: View {
             Toggle(isOn: .constant(true)) {
                 Label(L("所有电脑"), systemImage: "desktopcomputer")
             }
-            if let computer = store.connector.computer {
-                Toggle(isOn: .constant(true)) {
+            ForEach(store.connector.computers) { computer in
+                Button {
+                    Task { await store.connector.selectComputer(computer) }
+                } label: {
                     Label {
                         Text(computer.name)
                     } icon: {
-                        ComputerBadge()
+                        if store.connector.computer?.id == computer.id {
+                            Image(systemName: "checkmark")
+                        } else {
+                            ComputerBadge()
+                        }
                     }
                 }
             }
@@ -450,7 +456,8 @@ struct UnreadBadge: View {
 struct ComputersView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
-    @State private var showingForgetDialog = false
+    @State private var forgettingComputer: Computer?
+    @State private var showingCloudLoginInfo = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -459,42 +466,24 @@ struct ComputersView: View {
             }
             ScrollView {
                 VStack(spacing: 24) {
-                    if let computer = store.connector.computer {
-                        CardSection(title: L("已配对")) {
-                            CardRow {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Image(systemName: "desktopcomputer")
-                                            .foregroundStyle(Palette.secondary)
-                                        Text(computer.name)
-                                            .font(.body.weight(.semibold))
-                                            .foregroundStyle(Palette.text)
-                                        Spacer()
-                                        Text(connectionText)
-                                            .font(.subheadline)
-                                            .foregroundStyle(connectionColor)
-                                    }
-                                    Text(computer.urls.first ?? "")
-                                        .font(.caption)
-                                        .foregroundStyle(Palette.secondary)
-                                }
-                            }
-                            Hairline()
-                            CardRow {
-                                Button(L("忘记这台电脑"), role: .destructive) {
-                                    showingForgetDialog = true
-                                }
-                                .foregroundStyle(Palette.danger)
-                            }
-                        }
-                    } else {
+                    if store.connector.computers.isEmpty {
                         CardSection(title: L("电脑")) {
                             CardRow {
                                 Text(L("还没有配对电脑。"))
                                     .foregroundStyle(Palette.secondary)
                             }
                         }
+                    } else {
+                        CardSection(title: L("已配对")) {
+                            ForEach(store.connector.computers) { computer in
+                                computerRow(computer)
+                                if computer.id != store.connector.computers.last?.id {
+                                    Hairline()
+                                }
+                            }
+                        }
                     }
+                    cloudSection
                     PrimaryActionButton(title: L("配对新电脑")) {
                         dismiss()
                         store.showingPairing = true
@@ -506,17 +495,107 @@ struct ComputersView: View {
         }
         .background(Palette.background)
         .codyncDialog(
-            isPresented: $showingForgetDialog,
+            isPresented: Binding(
+                get: { forgettingComputer != nil },
+                set: { if !$0 { forgettingComputer = nil } }
+            ),
             title: L("忘记这台电脑？"),
             message: L("这部手机将断开与这台电脑的连接。电脑上仍会列出这部设备，需要时请在电脑上撤销。"),
             actions: [
                 CodyncDialogAction(title: L("取消")) {},
                 CodyncDialogAction(title: L("忘记"), isDestructive: true) {
-                    store.connector.forgetComputer()
-                    dismiss()
+                    if let computer = forgettingComputer {
+                        store.connector.forgetComputer(computer)
+                    }
+                    forgettingComputer = nil
                 },
             ]
         )
+        .codyncDialog(
+            isPresented: $showingCloudLoginInfo,
+            title: L("云电脑"),
+            message: L("云电脑需要登录账号后连接，后续版本支持。现在可以先用配对码加自己搭的电脑。"),
+            actions: [
+                CodyncDialogAction(title: L("知道了")) {},
+            ]
+        )
+    }
+
+    /// One paired own computer: tap to make it current, forget on its own row.
+    private func computerRow(_ computer: Computer) -> some View {
+        let isCurrent = store.connector.computer?.id == computer.id
+        return CardRow {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    guard !isCurrent else { return }
+                    Task { await store.connector.selectComputer(computer) }
+                } label: {
+                    HStack {
+                        Image(systemName: "desktopcomputer")
+                            .foregroundStyle(Palette.secondary)
+                        Text(computer.name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        if isCurrent {
+                            Text(connectionText)
+                                .font(.subheadline)
+                                .foregroundStyle(connectionColor)
+                            Image(systemName: "checkmark")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Palette.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                Text(computer.urls.first ?? "")
+                    .font(.caption)
+                    .foregroundStyle(Palette.secondary)
+                Button(L("忘记这台电脑"), role: .destructive) {
+                    forgettingComputer = computer
+                }
+                .font(.subheadline)
+                .foregroundStyle(Palette.danger)
+            }
+        }
+    }
+
+    /// The account's cloud computers. Display only for now: a cloud
+    /// computer connects through the account sign-in, which lands later,
+    /// so no online state is claimed for it.
+    private var cloudSection: some View {
+        CardSection(title: L("云电脑"), footer: L("一个账号最多可加 %d 台云电脑。", CloudComputer.accountLimit)) {
+            ForEach(store.connector.cloudComputers) { cloud in
+                CardRow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "cloud")
+                                .foregroundStyle(Palette.secondary)
+                            Text(cloud.name)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Palette.text)
+                            Spacer()
+                            Text(L("未知"))
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.warning)
+                        }
+                        Text(L("%@ · %d 个智能体", cloud.region, cloud.botCount))
+                            .font(.caption)
+                            .foregroundStyle(Palette.secondary)
+                    }
+                }
+                if cloud.id != store.connector.cloudComputers.last?.id {
+                    Hairline()
+                }
+            }
+            Hairline()
+            CardRow {
+                Button(L("登录账号")) {
+                    showingCloudLoginInfo = true
+                }
+                .foregroundStyle(Palette.text)
+            }
+        }
     }
 
     private var connectionText: String {
