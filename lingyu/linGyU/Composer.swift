@@ -25,6 +25,10 @@ struct Composer: View {
     var onStop: () -> Void
 
     @State private var attachments: [PendingAttachment] = []
+    @State private var showingPhotoPicker = false
+    @State private var showingDocumentPicker = false
+    @State private var errorMessage: String?
+    @FocusState private var fieldFocused: Bool
     @State private var showingCallLater = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
