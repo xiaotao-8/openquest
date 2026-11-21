@@ -124,9 +124,7 @@ struct ChatView: View {
             AllWorkView()
         }
         .codyncSheet(isPresented: $showingCall) {
-            if let bot {
-                CallView(bot: bot, store: store, onEnd: endCall)
-            }
+            CallView(bot: bot, store: store, onEnd: endCall)
         }
         .stopWorkDialog(isPresented: $showingStopDialog) {
             Task {
