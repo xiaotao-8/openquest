@@ -282,9 +282,21 @@ workflows:
             -destination "id=$SIM_UDID" -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO
           APP=$(find build-sim/Build/Products -name "linGyU.app" -maxdepth 3 | head -1)
           xcrun simctl install "$SIM_UDID" "$APP"
-          xcrun simctl launch "$SIM_UDID" cn.lingyu
+          # DIAG (Build #15/#16: app exits within seconds of every launch,
+          # screenshots all home screen). Launch with console attached so a
+          # Swift fatal error / dyld failure is captured, then dump the
+          # simulator crash report and a liveness check into the log.
+          xcrun simctl launch --console "$SIM_UDID" cn.lingyu > lingyu-console.log 2>&1 &
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-empty.png
+          echo "--- lingyu console (first 60 lines) ---"
+          head -60 lingyu-console.log || true
+          echo "--- crash reports ---"
+          ls -lt ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -6 || true
+          LATEST=$(ls -t ~/Library/Logs/DiagnosticReports/linGyU-*.ips 2>/dev/null | head -1)
+          if [ -n "$LATEST" ]; then echo "== $LATEST"; head -100 "$LATEST"; fi
+          echo "--- app alive? ---"
+          xcrun simctl spawn "$SIM_UDID" launchctl list 2>/dev/null | grep -i lingyu || echo "not running"
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed
           sleep 6
