@@ -2,20 +2,19 @@ import AVFoundation
 import SwiftUI
 
 /// Settings → Voice service: which engine carries calls and dictation,
-/// which on-device Chinese voice reads replies, and whether replies are
-/// read aloud. Only the on-device engine works: the computer's credential
-/// store is locked (voiceStatus, probed 2026-11-22, still errors), so no
-/// voice key can be saved on the computer and the realtime / Live engines
-/// and the Speech-mode providers stay disabled with the reason shown —
-/// they never pretend to work.
+/// and one switch for reading replies aloud (Edge Xiaoxiao, free online
+/// voice, off by default; recognition runs on this device). Only the
+/// on-device engine works: the computer's credential store is locked
+/// (voiceStatus, probed 2026-11-22, still errors), so no voice key can be
+/// saved on the computer and the realtime / Live engines and the
+/// Speech-mode providers stay disabled with the reason shown — they never
+/// pretend to work.
 struct VoiceSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(VoicePrefs.engine) private var engine = "device"
-    @AppStorage(VoicePrefs.voiceIdentifier) private var voiceIdentifier = ""
     @AppStorage(VoicePrefs.rate) private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
     @AppStorage(VoicePrefs.pause) private var pause = 1.5
-    @AppStorage(VoicePrefs.autoReadAloud) private var autoReadAloud = true
-    @State private var voices: [AVSpeechSynthesisVoice] = []
+    @AppStorage(VoicePrefs.autoReadAloud) private var autoReadAloud = false
     @State private var disabledReason: String?
 
     /// The host's own words for the locked vault (a diagnostic, shown
@@ -42,9 +41,6 @@ struct VoiceSettingsView: View {
             }
         }
         .background(Palette.background)
-        .onAppear {
-            voices = VoiceStore.chineseVoices()
-        }
         .codyncDialog(
             isPresented: Binding(
                 get: { disabledReason != nil },
@@ -59,7 +55,7 @@ struct VoiceSettingsView: View {
     // MARK: - Engine
 
     private var engineSection: some View {
-        CardSection(title: L("语音引擎"), footer: L("识别与朗读都在这台设备上完成。实时语音与 Live 须把语音 Key 存在电脑端，电脑端凭证库未解锁，暂时不可用。")) {
+        CardSection(title: L("语音引擎"), footer: L("识别在这台设备上完成；朗读走 Edge 在线语音（晓晓，免费，无需 Key），断网时不读。实时语音与 Live 须把语音 Key 存在电脑端，电脑端凭证库未解锁，暂时不可用。")) {
             CardRow {
                 ValueRow(label: L("通话引擎")) {
                     ChoicePicker(selection: $engine, options: engineOptions, disabled: ["openai", "gemini"])
@@ -138,20 +134,7 @@ struct VoiceSettingsView: View {
     // MARK: - Voice
 
     private var voiceSection: some View {
-        CardSection(title: L("声音"), footer: L("朗读通话回复用的声音，取自这台设备上已安装的中文语音。")) {
-            CardRow {
-                if voices.isEmpty {
-                    Text(L("这台设备上没有可用的中文语音。"))
-                        .foregroundStyle(Palette.secondary)
-                } else {
-                    ValueRow(label: L("朗读声音")) {
-                        ChoicePicker(selection: $voiceIdentifier, options: voices.map {
-                            ($0.identifier, "\($0.name) · \($0.language)")
-                        })
-                    }
-                }
-            }
-            Hairline()
+        CardSection(title: L("声音"), footer: L("朗读只用晓晓。免费在线语音，无需 Key。断网时不朗读。")) {
             CardRow {
                 ValueRow(label: L("朗读速度")) {
                     ChoicePicker(selection: $rate, options: [
@@ -179,7 +162,7 @@ struct VoiceSettingsView: View {
     private var readAloudSection: some View {
         CardSection(title: L("朗读"), footer: L("关掉后，通话里智能体的回复只显示文字，不自动读出来。")) {
             CardRow {
-                SwitchRow(label: L("自动朗读回复"), detail: L("通话中智能体的回复自动读出来。"), isOn: $autoReadAloud)
+                SwitchRow(label: L("自动朗读回复"), detail: L("通话中智能体的回复用晓晓读出来。"), isOn: $autoReadAloud)
             }
         }
     }

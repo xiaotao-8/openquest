@@ -10,8 +10,6 @@ enum VoicePrefs {
     /// stored only; the settings page keeps them disabled until the host
     /// vault unlocks and a key can be saved.
     static let engine = "cn.lingyu.voiceEngine"
-    /// AVSpeechSynthesisVoice identifier for the on-device Chinese voice.
-    static let voiceIdentifier = "cn.lingyu.voiceIdentifier"
     /// Reading speed (AVSpeechUtterance rate).
     static let rate = "cn.lingyu.callRate"
     /// Silence (seconds) that ends an utterance and sends it.
@@ -52,10 +50,12 @@ enum VoiceCallPhase: Equatable {
 
 /// One on-device voice call with a bot: the microphone is transcribed on
 /// this phone (SFSpeechRecognizer), the text goes to the bot as an ordinary
-/// chat message, and the bot's final replies are read aloud
-/// (AVSpeechSynthesizer). No host key is involved — the computer's
-/// credential store is locked, so the realtime / Live engines are
-/// unavailable and this is the only engine a call can use.
+/// chat message, and the bot's final replies are read aloud with Edge
+/// Xiaoxiao (free online voice, the app's only voice). No host key is
+/// involved — the computer's credential store is locked, so the realtime /
+/// Live engines are unavailable and this is the only engine a call can use.
+/// When there is no network, replies are skipped silently: no system voice,
+/// no offline model, no error popup.
 @MainActor
 final class VoiceStore: ObservableObject {
     let botId: String
@@ -93,8 +93,8 @@ final class VoiceStore: ObservableObject {
     private var silenceTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
-    private let synthesizer = AVSpeechSynthesizer()
-    private var speechDone: CallSpeechDone?
+    private let edgePlayer = EdgeTTSPlayer()
+    private var synthTask: Task<Void, Never>?
     private var speechQueue: [String] = []
     private var spokenEntryIds: Set<String> = []
     private var startedAtMillis: Int64 = 0
@@ -109,19 +109,13 @@ final class VoiceStore: ObservableObject {
     }
 
     private var autoReadAloud: Bool {
-        UserDefaults.standard.object(forKey: VoicePrefs.autoReadAloud) as? Bool ?? true
+        UserDefaults.standard.object(forKey: VoicePrefs.autoReadAloud) as? Bool ?? false
     }
 
     init(store: AppStore, botId: String, botName: String) {
         self.store = store
         self.botId = botId
         self.botName = botName
-        let done = CallSpeechDone(
-            onFinish: { [weak self] in Task { @MainActor in self?.finishedSpeaking() } },
-            onCancel: { [weak self] in Task { @MainActor in self?.cancelledSpeaking() } }
-        )
-        synthesizer.delegate = done
-        speechDone = done
     }
 
     // MARK: - Start / end
@@ -184,7 +178,9 @@ final class VoiceStore: ObservableObject {
         timerTask = nil
         silenceTask = nil
         speechQueue.removeAll()
-        synthesizer.stopSpeaking(at: .immediate)
+        synthTask?.cancel()
+        synthTask = nil
+        edgePlayer.stop()
         stopListening()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         isSpeaking = false
@@ -196,7 +192,9 @@ final class VoiceStore: ObservableObject {
     func interrupt() {
         guard isSpeaking else { return }
         speechQueue.removeAll()
-        synthesizer.stopSpeaking(at: .immediate)
+        synthTask?.cancel()
+        synthTask = nil
+        edgePlayer.stop()
         isSpeaking = false
         listen()
     }
@@ -376,13 +374,33 @@ final class VoiceStore: ObservableObject {
             return
         }
         stopListening()
+        synthTask?.cancel()
+        edgePlayer.stop()
         let text = speechQueue.removeFirst()
         isSpeaking = true
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = Self.voice()
-        let rate = UserDefaults.standard.float(forKey: VoicePrefs.rate)
-        utterance.rate = rate > 0 ? rate : AVSpeechUtteranceDefaultSpeechRate
-        synthesizer.speak(utterance)
+        let savedRate = UserDefaults.standard.float(forKey: VoicePrefs.rate)
+        let avRate: Float = savedRate > 0 ? savedRate : AVSpeechUtteranceDefaultSpeechRate
+        synthTask = Task {
+            do {
+                let data = try await EdgeTTS.Synthesizer().synthesize(
+                    text: text, voice: .xiaoxiao, avRate: avRate)
+                guard !Task.isCancelled else { return }
+                let played = self.edgePlayer.play(data) { [weak self] in
+                    Task { @MainActor in self?.finishedSpeaking() }
+                }
+                if !played {
+                    self.finishedSpeaking()
+                }
+            } catch {
+                // Cancelled by interrupt()/end()/the next sentence: that
+                // caller already handled the state, so stay out of it.
+                if Task.isCancelled { return }
+                // Edge needs the network: offline or a failed request just
+                // skips this sentence silently — never the system voice,
+                // never an error popup. The queue moves on.
+                self.finishedSpeaking()
+            }
+        }
     }
 
     private func finishedSpeaking() {
@@ -393,38 +411,6 @@ final class VoiceStore: ObservableObject {
         } else {
             speakNext()
         }
-    }
-
-    private func cancelledSpeaking() {
-        // An interrupt sets isSpeaking false before it stops the
-        // synthesizer, so its own cancel arrives here as a no-op; only
-        // an unexpected cancel (another app cut in) resumes the queue.
-        guard isSpeaking, phase == .live, !ended else { return }
-        if speechQueue.isEmpty {
-            isSpeaking = false
-            listen()
-        } else {
-            speakNext()
-        }
-    }
-
-    /// The user's chosen on-device Chinese voice, else the best-quality
-    /// Chinese voice on this phone, else the system default.
-    static func voice() -> AVSpeechSynthesisVoice? {
-        let voices = AVSpeechSynthesisVoice.speechVoices()
-        if let saved = UserDefaults.standard.string(forKey: VoicePrefs.voiceIdentifier),
-           let match = voices.first(where: { $0.identifier == saved }) {
-            return match
-        }
-        let chinese = voices.filter { $0.language.hasPrefix("zh") }
-        return chinese.max { $0.quality.rawValue < $1.quality.rawValue }
-    }
-
-    /// The Chinese voices on this phone, for the settings page.
-    static func chineseVoices() -> [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("zh") }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     // MARK: - Audio-thread closures (built outside the main actor)
@@ -455,26 +441,6 @@ final class VoiceStore: ObservableObject {
                 if failed { session.recognitionFailed(generation: generation) }
             }
         }
-    }
-}
-
-/// Synthesizer delegate: a finished utterance hands back to listening.
-/// Cancelled ones do the same unless an interrupt already moved on.
-private final class CallSpeechDone: NSObject, AVSpeechSynthesizerDelegate, Sendable {
-    let onFinish: @Sendable () -> Void
-    let onCancel: @Sendable () -> Void
-
-    init(onFinish: @escaping @Sendable () -> Void, onCancel: @escaping @Sendable () -> Void) {
-        self.onFinish = onFinish
-        self.onCancel = onCancel
-    }
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        onFinish()
-    }
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        onCancel()
     }
 }
 

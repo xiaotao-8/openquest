@@ -468,7 +468,7 @@ struct SettingsView: View {
     /// computer's credential store is locked), the reading voice, and
     /// whether replies are read aloud.
     private var voiceSection: some View {
-        CardSection(title: L("语音"), footer: L("通话与按住说话都在这台设备上识别与朗读，不走电脑端。")) {
+        CardSection(title: L("语音"), footer: L("通话与按住说话的识别在这台设备上完成，不走电脑端；朗读走 Edge 在线语音（晓晓，免费），断网时不读。")) {
             CardRow {
                 Button {
                     showingVoice = true
