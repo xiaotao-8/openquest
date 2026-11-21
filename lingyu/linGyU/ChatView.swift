@@ -388,6 +388,18 @@ struct ChatView: View {
                     }
                 }
             }
+            .onChange(of: timeline.contains(where: { $0.isWaitingCard })) { _, hasCard in
+                // A waiting approval card is the one thing the user must
+                // see: a streaming reply grows the last entry without
+                // changing the count, so the count watcher never fires for
+                // it and the card can land below the fold (Index 30's
+                // live screenshots showed the diag but not the card).
+                if hasCard {
+                    withAnimation(.easeOut(duration: 0.24)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
             .onChange(of: findIndex) { _, _ in
                 if let match = currentFindMatch {
                     withAnimation {

@@ -70,6 +70,9 @@ enum PreviewMode: Equatable {
         var botImport = false
         /// Show the computer-use page instead of the tabs.
         var computerUse = false
+        /// Seed a demo cloud computer for the computers sheet, so the
+        /// cloud section shows in its capture.
+        var cloud = false
     }
 
     static func fromLaunchArguments() -> PreviewMode {
@@ -112,6 +115,7 @@ enum PreviewMode: Equatable {
         options.phoneControl = args.contains("-PreviewPhoneControl")
         options.botImport = args.contains("-PreviewBotImport")
         options.computerUse = args.contains("-PreviewComputerUse")
+        options.cloud = args.contains("-PreviewCloud")
         return .seeded(options)
     }
 
@@ -159,6 +163,13 @@ enum PreviewRunner {
         if options.computers, let computer = demoComputer(), let hello = demoHello() {
             store.connector.seedPreview(computer: computer, hello: hello)
         }
+        if options.cloud {
+            // The cloud section shows only with a machine in the list.
+            store.cloudAvailable = true
+            if store.cloudMachines.isEmpty, let machine = demoCloudMachine() {
+                store.cloudMachines = [machine]
+            }
+        }
         if options.phase2 {
             seedPhase2(store: store)
         }
@@ -178,6 +189,14 @@ enum PreviewRunner {
             if let lead = bots.first {
                 store.navigationPath.append(lead.id)
                 store.openBotId = lead.id
+            }
+            if !options.candidates, let lead = bots.first {
+                // The "@" draft is saved to UserDefaults when a chat
+                // closes and survives terminate: without this, a
+                // candidates capture leaves the panel open in the later
+                // chat captures (genui / viewcard / learning) that run
+                // in the same simulator, covering the demo card.
+                UserDefaults.standard.removeObject(forKey: "cn.lingyu.draft.\(lead.id)")
             }
         }
     }
@@ -275,6 +294,14 @@ enum PreviewRunner {
     private static func demoComputer() -> Computer? {
         try? JSONDecoder().decode(Computer.self, from: Data("""
         {"id":"demo-computer","name":"ECS","signKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","boxKey":null,"urls":["http://47.238.160.204:19222"],"cloud":null,"device":"linux","color":null,"route":"direct","notifications":null}
+        """.utf8))
+    }
+
+    /// One demo cloud computer (the user's own InstaBox machine, as in
+    /// the original's cloud section) for the cloud preview, in-memory only.
+    private static func demoCloudMachine() -> CloudMachine? {
+        try? JSONDecoder().decode(CloudMachine.self, from: Data("""
+        {"cloudComputerId":"demo-cloud-1","name":"linGyU","computerId":"demo-cloud-computer","snapshots":true,"provider":"instabox","providerName":"InstaBox","region":"US","state":"running"}
         """.utf8))
     }
 

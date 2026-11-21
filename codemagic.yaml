@@ -350,6 +350,10 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-computers.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewComputers -PreviewCloud
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-cloud.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           # Phase 2 captures: Discover + State with seeded Phase 2 data,
           # and the new Settings/State sheets (Soul / Identity / Audit /
           # Vault / Network / Data controls).
@@ -495,7 +499,7 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-call.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-extensions-cordis.png preview-extensions-detail.png preview-host-network.png preview-usage.png preview-candidates.png preview-genui.png preview-viewcard.png preview-learning.png preview-im-bridge.png preview-phone-control.png preview-bot-import.png preview-computer-use.png preview-live.png preview-live-approval.png || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-cloud.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-extensions-cordis.png preview-extensions-detail.png preview-host-network.png preview-usage.png preview-candidates.png preview-genui.png preview-viewcard.png preview-learning.png preview-im-bridge.png preview-phone-control.png preview-bot-import.png preview-computer-use.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -519,6 +523,7 @@ workflows:
       - lingyu/preview-pairing-install.png
       - lingyu/preview-pairing-scan.png
       - lingyu/preview-computers.png
+      - lingyu/preview-cloud.png
       - lingyu/preview-discover-full.png
       - lingyu/preview-state-full.png
       - lingyu/preview-state-routines.png

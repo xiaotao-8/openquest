@@ -69,8 +69,7 @@ struct CloudHosting: Decodable, Sendable {
 /// One of the account's cloud computers (`GET /v1/cloud-computers`).
 /// `computerId` is nil until the machine has booted and claimed itself
 /// into the account. Provider, region and state sit flat beside it.
-struct CloudMachine: Decodable, Sendable, Identifiable {
-    var cloudComputerId: String
+struct CloudMachine: Decodable, Sendable, Identifiable {    var cloudComputerId: String
     var name: String
     var computerId: String?
     var snapshots: Bool
@@ -97,6 +96,17 @@ struct CloudMachine: Decodable, Sendable, Identifiable {
         region = try container.decodeIfPresent(String.self, forKey: .region) ?? ""
         state = try container.decodeIfPresent(String.self, forKey: .state) ?? "unknown"
     }
+}
+
+/// A provider key the cloud keeps (`PUT /v1/cloud-credentials/{provider}`).
+/// Only its kind and last four are ever shown, e.g. `boat_…9abc`.
+struct CloudCredential: Decodable, Sendable {
+    /// Its kind and last four, `boat_…9abc`.
+    var hint: String
+    /// What the owner has to fix while the provider turns the key down.
+    var problem: String?
+    /// The key itself was turned down (revoked, expired): nothing can be made with it until it's replaced.
+    var blocking: Bool?
 }
 
 /// The account's cloud as the cloud describes it (`GET /v1/cloud-computers`).
@@ -176,6 +186,44 @@ struct CloudClient: Sendable {
         try await request("GET", "v1/cloud-computers")
     }
 
+    /// Gives Codync Cloud the key to the user's own account with `provider`. The cloud checks it there and keeps it
+    /// sealed; a refusal (`422 keyRefused`) says what to fix.
+    func saveCloudKey(_ key: String, provider: String) async throws -> CloudCredential {
+        struct Res: Decodable { var credential: CloudCredential }
+        let res: Res = try await request("PUT", "v1/cloud-credentials/\(provider)", json: try jsonData(["key": key]))
+        return res.credential
+    }
+
+    /// Forgets the key (`409 conflict` while a cloud computer runs on that provider).
+    func deleteCloudKey(provider: String) async throws {
+        try await send("DELETE", "v1/cloud-credentials/\(provider)")
+    }
+
+    /// Creates another cloud computer named `name` on `provider` (`403 forbidden` when the cloud has Codync Cloud off,
+    /// `409` at the account's limit or without that provider's key).
+    func createCloudMachine(provider: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("POST", "v1/cloud-computers", json: try jsonData(["provider": provider, "name": name]))
+        return res.cloudComputer
+    }
+
+    /// Gives it a new name; its computer in the account, and its host, take it too.
+    func renameCloudMachine(_ id: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("PATCH", "v1/cloud-computers/\(id)", json: try jsonData(["name": name]))
+        return res.cloudComputer
+    }
+
+    /// Deletes the machine, its snapshots and backup, and takes its computer out of the account.
+    func deleteCloudMachine(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)")
+    }
+
+    /// Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps).
+    func deleteCloudSnapshots(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)/snapshots")
+    }
+
     // MARK: - Claims
 
     /// A claim for bringing a computer into the account. The computer
@@ -194,6 +242,32 @@ struct CloudClient: Sendable {
     }
 
     // MARK: - Plumbing
+
+    /// A call that answers with no body (DELETEs): only the status matters.
+    func send(_ method: String, _ path: String, json: Data? = nil) async throws {
+        let url = baseURL.appending(path: path)
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.httpMethod = method
+        req.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
+        req.setValue(Self.appHeader, forHTTPHeaderField: "Codync-App")
+        if let json {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = json
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw CloudError(status: 0, code: "noResponse")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            // The error body, when the cloud sent one, says what to fix.
+            throw CloudError(status: http.statusCode, body: data)
+        }
+    }
+
+    /// Encodes a flat string dictionary as a JSON body.
+    private func jsonData(_ dict: [String: String]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: dict)
+    }
 
     func request<T: Decodable>(_ method: String, _ path: String) async throws -> T {
         try await request(method, path, json: nil)

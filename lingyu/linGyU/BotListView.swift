@@ -500,12 +500,24 @@ struct ComputersView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var forgettingComputer: Computer?
-    @State private var showingNewCloudDialog = false
     @State private var updatingComputerId: String?
     @State private var updatingFromVersion: String?
     @State private var showingExtensions = false
     @State private var showingVoice = false
     @State private var showingNetwork = false
+    /// Cloud section (original CloudComputerSection): the machine being
+    /// renamed, the one whose provider key is open, the ones awaiting a
+    /// delete confirmation, and the machine an action is busy on.
+    @State private var renamingMachine: CloudMachine?
+    @State private var newCloudName = ""
+    @State private var keyMachine: CloudMachine?
+    @State private var cloudKeyText = ""
+    @State private var keySavedHint: String?
+    @State private var confirmDeleteMachine: CloudMachine?
+    @State private var confirmDeleteSnapshots: CloudMachine?
+    @State private var cloudError: String?
+    @State private var busyMachineId: String?
+    @State private var showingNewCloudSheet = false
     /// Whether the host answers `networkView`: nil until probed,
     /// false when the host has no such method.
     @State private var networkAvailable: Bool?
@@ -525,36 +537,46 @@ struct ComputersView: View {
             ModalHeader(title: L("电脑管理")) {
                 dismiss()
             }
-            ScrollView {
-                VStack(spacing: 24) {
-                    ForEach(store.connector.computers) { computer in
-                        CardSection {
-                            computerCard(computer)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 24) {
+                        ForEach(store.connector.computers) { computer in
+                            CardSection {
+                                computerCard(computer)
+                            }
+                        }
+                        ForEach(accountOnlyComputers) { account in
+                            CardSection {
+                                accountComputerRow(account)
+                            }
+                        }
+                        CardSection(footer: pairFooter) {
+                            Button {
+                                dismiss()
+                                store.showingPairing = true
+                            } label: {
+                                Label(L("配对一台电脑"), systemImage: "qrcode.viewfinder")
+                                    .foregroundStyle(Palette.text)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if store.cloudAvailable || !store.cloudMachines.isEmpty {
+                            cloudSection
                         }
                     }
-                    ForEach(accountOnlyComputers) { account in
-                        CardSection {
-                            accountComputerRow(account)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                }
+                .onAppear {
+                    if case .seeded(let options) = store.previewMode, options.cloud {
+                        // The cloud section sits below the fold; jump to it for the capture.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            proxy.scrollTo("cloudSection", anchor: .bottom)
                         }
-                    }
-                    CardSection(footer: pairFooter) {
-                        Button {
-                            dismiss()
-                            store.showingPairing = true
-                        } label: {
-                            Label(L("配对一台电脑"), systemImage: "qrcode.viewfinder")
-                                .foregroundStyle(Palette.text)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if store.cloudAvailable || !store.cloudMachines.isEmpty {
-                        cloudSection
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
             }
         }
         .background(Palette.background)
@@ -575,12 +597,41 @@ struct ComputersView: View {
                 },
             ]
         )
+        .codyncSheet(isPresented: $showingNewCloudSheet) {
+            NewCloudComputerSheet()
+        }
+        .codyncSheet(isPresented: Binding(get: { renamingMachine != nil }, set: { if !$0 { renamingMachine = nil } })) {
+            cloudRenameSheet
+        }
+        .codyncSheet(isPresented: Binding(get: { keyMachine != nil }, set: { if !$0 { keyMachine = nil } })) {
+            cloudKeySheet
+        }
         .codyncDialog(
-            isPresented: $showingNewCloudDialog,
-            title: L("新建云电脑"),
-            message: L("新建云电脑稍后推出。现在可以先用已有的云电脑。"),
+            isPresented: Binding(get: { confirmDeleteMachine != nil }, set: { if !$0 { confirmDeleteMachine = nil } }),
+            title: L("删除云电脑？"),
+            message: L("会删掉这台云电脑上的全部内容：智能体、聊天、文件和登录。无法恢复。"),
             actions: [
-                CodyncDialogAction(title: L("好")) {},
+                CodyncDialogAction(title: L("取消")) {},
+                CodyncDialogAction(title: L("删除"), isDestructive: true) {
+                    if let machine = confirmDeleteMachine {
+                        Task { await deleteCloudMachine(machine) }
+                    }
+                    confirmDeleteMachine = nil
+                },
+            ]
+        )
+        .codyncDialog(
+            isPresented: Binding(get: { confirmDeleteSnapshots != nil }, set: { if !$0 { confirmDeleteSnapshots = nil } }),
+            title: L("删除快照？"),
+            message: L("会删掉这台云电脑此前的保存状态和备份，现在的电脑和内容保留。"),
+            actions: [
+                CodyncDialogAction(title: L("取消")) {},
+                CodyncDialogAction(title: L("删除"), isDestructive: true) {
+                    if let machine = confirmDeleteSnapshots {
+                        Task { await deleteCloudSnapshots(machine) }
+                    }
+                    confirmDeleteSnapshots = nil
+                },
             ]
         )
         .onAppear {
@@ -926,8 +977,10 @@ struct ComputersView: View {
         }
     }
 
-    /// The host version (original CodyncVersionRow), labelled neutrally:
-    /// the real version from the hello handshake, plus update state.
+    /// The host version (original CodyncVersionRow): this app's own
+    /// name plus the real version from the hello handshake, plus update
+    /// state. The original shows its brand word here; this build's host
+    /// is the linGyU host, so the name is linGyU, never the original's.
     private func versionRow(_ computer: Computer, hello: HelloReply) -> some View {
         let info = versionInfo(hello)
         return CardRow {
@@ -937,7 +990,7 @@ struct ComputersView: View {
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text(L("服务端"))
+                        Text(L("linGyU"))
                         Text(verbatim: hello.version)
                             .foregroundStyle(Palette.secondary)
                             .monospacedDigit()
@@ -1044,13 +1097,18 @@ struct ComputersView: View {
             : L("每个智能体都在自己的电脑上运行。登录后可以看到账户里的电脑。")
     }
 
-    /// The cloud section (original CloudComputerSection): only real
-    /// machines from the account cloud, shown when the account can have
-    /// one or has any. Never a preset, never a dependency of the local
-    /// computers above.
+    /// The cloud section (original CloudComputerSection): the account's
+    /// cloud computers on the user's own provider accounts, each with
+    /// where it runs and whether it's awake, renamed / its provider key
+    /// opened / deleted (or its snapshots) from its `⋯`; "+" for another
+    /// on a provider picked there. Only real machines from the account
+    /// cloud, shown when the account can have one or has any. Never a
+    /// preset, never a dependency of the local computers above. The
+    /// title is this app's own cloud name: the original's brand word
+    /// does not appear in the UI.
     private var cloudSection: some View {
         CardSection(
-            title: L("云电脑"),
+            title: L("linGyU Cloud"),
             footer: L("运行在你自己的云端供应商账户上，供应商按它醒着的时间向你收费。闲置时休眠，你发消息时唤醒。"),
             accessory: AnyView(cloudAccessory)
         ) {
@@ -1060,7 +1118,14 @@ struct ComputersView: View {
                     Hairline()
                 }
             }
+            if let cloudError {
+                Text(cloudError)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .id("cloudSection")
     }
 
     private var cloudAccessory: some View {
@@ -1073,7 +1138,7 @@ struct ComputersView: View {
                 .background(Palette.bubbleAgent, in: Capsule())
             if store.cloudAvailable {
                 Button {
-                    showingNewCloudDialog = true
+                    showingNewCloudSheet = true
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .medium))
@@ -1100,8 +1165,214 @@ struct ComputersView: View {
                         .lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 8)
+                if busyMachineId == machine.id {
+                    Spinner(size: 16)
+                } else {
+                    DropdownMenu {
+                        cloudMenuItems(machine)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Palette.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(L("更多"))
+                    .disabled(busyMachineId != nil)
+                    .padding(.vertical, -6)
+                    .padding(.trailing, -12)
+                }
             }
         }
+    }
+
+    /// The `⋯` menu (original CloudComputerSection.menu): rename, the
+    /// provider's key, its snapshots when it has any, delete.
+    private func cloudMenuItems(_ machine: CloudMachine) -> [MenuItem] {
+        var items = [
+            MenuItem(L("重命名"), icon: "pencil") {
+                newCloudName = machine.name
+                renamingMachine = machine
+            },
+            MenuItem(L("%@ API 密钥", machine.providerName), icon: "key.fill") {
+                cloudKeyText = ""
+                keySavedHint = nil
+                keyMachine = machine
+            },
+        ]
+        if machine.snapshots {
+            items.append(MenuItem(L("删除快照"), icon: "clock.arrow.circlepath") {
+                confirmDeleteSnapshots = machine
+            })
+        }
+        items.append(MenuItem(L("删除云电脑"), icon: "trash", destructive: true) {
+            confirmDeleteMachine = machine
+        })
+        return items
+    }
+
+    /// Rename sheet: the new name, saved to the cloud (its computer in
+    /// the account, and its host, take it too).
+    private var cloudRenameSheet: some View {
+        VStack(spacing: 16) {
+            ModalHeader(title: L("重命名云电脑")) {
+                renamingMachine = nil
+            }
+            TextField(L("云电脑名称"), text: $newCloudName)
+                .textFieldStyle(.roundedBorder)
+            Button(L("保存")) {
+                if let machine = renamingMachine {
+                    Task { await saveCloudRename(machine) }
+                }
+            }
+            .buttonStyle(.primary)
+            .disabled(newCloudName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busyMachineId != nil)
+        }
+        .padding(20)
+        .background(Palette.background)
+    }
+
+    /// The provider key sheet: paste a key to save it (the cloud checks
+    /// it there and keeps it sealed), or forget the one saved.
+    private var cloudKeySheet: some View {
+        VStack(spacing: 16) {
+            ModalHeader(title: L("供应商 API 密钥")) {
+                keyMachine = nil
+            }
+            if let hint = keySavedHint {
+                Text(L("已保存：%@", hint))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(L("粘贴供应商的 API 密钥，云端会在供应商那里验证并加密保存。"))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            SecureField(L("密钥"), text: $cloudKeyText)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.password)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+            HStack(spacing: 12) {
+                Button(L("保存")) {
+                    if let machine = keyMachine {
+                        Task { await saveCloudKey(machine) }
+                    }
+                }
+                .buttonStyle(.primary)
+                .disabled(cloudKeyText.isEmpty || busyMachineId != nil)
+                Button(L("忘记密钥")) {
+                    if let machine = keyMachine {
+                        Task { await forgetCloudKey(machine) }
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.danger)
+                .disabled(busyMachineId != nil)
+            }
+        }
+        .padding(20)
+        .background(Palette.background)
+    }
+
+    private func cloudErrorText(_ error: Error) -> String {
+        if let cloudError = error as? CloudError, let message = cloudError.message, !message.isEmpty {
+            return message
+        }
+        // CloudError's LocalizedError text is pairing-specific, so it is
+        // never used for a cloud action; anything without a server
+        // message gets the plain retry line.
+        return L("操作失败，请重试。")
+    }
+
+    private func saveCloudRename(_ machine: CloudMachine) async {
+        let name = newCloudName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        guard let cloud = store.account.cloudClient() else {
+            cloudError = L("操作失败，请重试。")
+            return
+        }
+        busyMachineId = machine.id
+        cloudError = nil
+        do {
+            _ = try await cloud.renameCloudMachine(machine.id, name: name)
+            renamingMachine = nil
+            await store.refreshAccountCloud()
+        } catch {
+            cloudError = cloudErrorText(error)
+        }
+        busyMachineId = nil
+    }
+
+    private func saveCloudKey(_ machine: CloudMachine) async {
+        guard let cloud = store.account.cloudClient() else {
+            cloudError = L("操作失败，请重试。")
+            return
+        }
+        busyMachineId = machine.id
+        cloudError = nil
+        do {
+            let credential = try await cloud.saveCloudKey(cloudKeyText, provider: machine.provider)
+            keySavedHint = credential.hint
+            cloudKeyText = ""
+            await store.refreshAccountCloud()
+        } catch {
+            cloudError = cloudErrorText(error)
+        }
+        busyMachineId = nil
+    }
+
+    private func forgetCloudKey(_ machine: CloudMachine) async {
+        guard let cloud = store.account.cloudClient() else {
+            cloudError = L("操作失败，请重试。")
+            return
+        }
+        busyMachineId = machine.id
+        cloudError = nil
+        do {
+            try await cloud.deleteCloudKey(provider: machine.provider)
+            keySavedHint = nil
+            cloudKeyText = ""
+            await store.refreshAccountCloud()
+        } catch {
+            cloudError = cloudErrorText(error)
+        }
+        busyMachineId = nil
+    }
+
+    private func deleteCloudMachine(_ machine: CloudMachine) async {
+        guard let cloud = store.account.cloudClient() else {
+            cloudError = L("操作失败，请重试。")
+            return
+        }
+        busyMachineId = machine.id
+        cloudError = nil
+        do {
+            try await cloud.deleteCloudMachine(machine.id)
+            await store.refreshAccountCloud()
+        } catch {
+            cloudError = cloudErrorText(error)
+        }
+        busyMachineId = nil
+    }
+
+    private func deleteCloudSnapshots(_ machine: CloudMachine) async {
+        guard let cloud = store.account.cloudClient() else {
+            cloudError = L("操作失败，请重试。")
+            return
+        }
+        busyMachineId = machine.id
+        cloudError = nil
+        do {
+            try await cloud.deleteCloudSnapshots(machine.id)
+            await store.refreshAccountCloud()
+        } catch {
+            cloudError = cloudErrorText(error)
+        }
+        busyMachineId = nil
     }
 
     /// The machine's live state (original CloudComputerSection.status):
@@ -1123,6 +1394,97 @@ struct ComputersView: View {
 
 /// A computer-management row label (original RowLabel): 17pt icon in a
 /// 26pt slot, text, optional trailing value, optional chevron.
+/// New cloud computer sheet (original NewCloudComputerSheet, minimal):
+/// pick a provider, name it, paste its key when the cloud has none,
+/// create. The key is only sent to the cloud, which checks it with the
+/// provider and keeps it sealed; nothing is stored on the phone.
+private struct NewCloudComputerSheet: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var provider = "instabox"
+    @State private var name = ""
+    @State private var key = ""
+    @State private var error: String?
+    @State private var busy = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ModalHeader(title: L("新建云电脑")) {
+                dismiss()
+            }
+            providerRow(id: "instabox", name: "InstaBox", region: "US")
+            providerRow(id: "boat", name: "Boat", region: "EU")
+            TextField(L("名称"), text: $name)
+                .textFieldStyle(.roundedBorder)
+            SecureField(L("供应商 API 密钥"), text: $key)
+                .textFieldStyle(.roundedBorder)
+                .textContentType(.password)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+            Text(L("已有这家供应商的密钥时可以不填；没有就粘贴一个，云端会在供应商那里验证并加密保存。"))
+                .font(.footnote)
+                .foregroundStyle(Palette.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let error {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button(L("创建")) {
+                Task { await create() }
+            }
+            .buttonStyle(.primary)
+            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
+        }
+        .padding(20)
+        .background(Palette.background)
+    }
+
+    private func providerRow(id: String, name: String, region: String) -> some View {
+        Button {
+            provider = id
+        } label: {
+            HStack {
+                ProviderMascot(providerId: id, providerName: name, size: 28)
+                Text(verbatim: name)
+                    .foregroundStyle(Palette.text)
+                Text(verbatim: region)
+                    .font(.caption)
+                    .foregroundStyle(Palette.secondary)
+                Spacer()
+                if provider == id {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Palette.accent)
+                }
+            }
+            .padding(12)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func create() async {
+        guard let cloud = store.account.cloudClient() else {
+            error = L("操作失败，请重试。")
+            return
+        }
+        busy = true
+        error = nil
+        do {
+            if !key.isEmpty {
+                _ = try await cloud.saveCloudKey(key, provider: provider)
+            }
+            _ = try await cloud.createCloudMachine(provider: provider, name: name.trimmingCharacters(in: .whitespacesAndNewlines))
+            await store.refreshAccountCloud()
+            dismiss()
+        } catch {
+            error = (error as? CloudError)?.message ?? L("操作失败，请重试。")
+        }
+        busy = false
+    }
+}
+
 private struct ComputerRowLabel: View {
     var text: String
     var systemImage: String
