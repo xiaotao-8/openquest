@@ -312,17 +312,20 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-page-state.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_DEVICE_KEY
-          # 须事先在 Codemagic 环境变量里配好（未配则跳过这步，不让构建失败）。
-          if [ -n "$LINGYU_PREVIEW_DEVICE_KEY" ]; then
-            xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewLive -PreviewDeviceKey "$LINGYU_PREVIEW_DEVICE_KEY"
+          # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_PAIRING
+          # （preview-pairing.json 的 base64）须事先在 Codemagic 环境变量里配好
+          # （未配则跳过这步，不让构建失败）。两张图：60 秒时聊天，150 秒时审批卡。
+          if [ -n "$LINGYU_PREVIEW_PAIRING" ]; then
+            xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewPairing "$LINGYU_PREVIEW_PAIRING"
             sleep 60
             xcrun simctl io "$SIM_UDID" screenshot preview-live.png
+            sleep 90
+            xcrun simctl io "$SIM_UDID" screenshot preview-live-approval.png
             xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           else
-            echo "WARNING: LINGYU_PREVIEW_DEVICE_KEY not set, skipping live-chat screenshot"
+            echo "WARNING: LINGYU_PREVIEW_PAIRING not set, skipping live-chat screenshots"
           fi
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-live.png || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -344,4 +347,5 @@ workflows:
       - lingyu/preview-page-discover.png
       - lingyu/preview-page-state.png
       - lingyu/preview-live.png
+      - lingyu/preview-live-approval.png
       - lingyu/linGyU-unsigned.ipa
