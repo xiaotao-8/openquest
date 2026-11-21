@@ -10,6 +10,18 @@ final class AppStore: ObservableObject {
     /// The account session (Clerk). Owns sign-in/out and the cloud client.
     let account = AccountStore()
 
+    /// Phase 2 stores: the three-file user model (Soul / Memory /
+    /// Identity), the Discover data (Feed / Ideas / Goals / Spaces), the
+    /// audit log, the credential vault, and the network protocol settings.
+    let identity = IdentityStore()
+    let feed = FeedStore()
+    let ideas = IdeaStore()
+    let goals = GoalStore()
+    let spaces = SpaceStore()
+    let audit = AuditStore()
+    let vault = VaultStore()
+    let network = NetworkPrefs()
+
     /// Whether the sign-in sheet is showing (from Settings).
     @Published var showingSignIn = false
 
@@ -46,6 +58,8 @@ final class AppStore: ObservableObject {
     @Published var selectedTab = 0
     /// The bot whose chat is open (nil = roster).
     @Published var openBotId: String?
+    /// The bot whose chat is open in incognito mode (nil = normal chat).
+    @Published var incognitoBotId: String?
     /// The bot whose detail sheet is open.
     @Published var detailBotId: String?
     /// Whether the welcome/pairing flow is showing.
@@ -99,6 +113,30 @@ final class AppStore: ObservableObject {
         account.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
+        identity.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        feed.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        ideas.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        goals.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        spaces.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        audit.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        vault.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        network.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
         let args = ProcessInfo.processInfo.arguments
         let pairingArg = args.contains("-PreviewPairing") || args.contains { $0.hasPrefix("-PreviewPairing=") }
         liveDiag.record("init mode=\(previewMode) argc=\(args.count) pairingArg=\(pairingArg) paired=\(connector.isPaired)")
@@ -118,6 +156,7 @@ final class AppStore: ObservableObject {
 
     func start() {
         liveDiag.record("start() mode=\(previewMode)")
+        identity.load()
         // Signed in already (session restored): refresh the account's
         // cloud computers in the background. Failures are silent — a
         // token that isn't fresh yet heals on the next refresh.
@@ -148,14 +187,67 @@ final class AppStore: ObservableObject {
     func openChat(botId: String) {
         selectedTab = 0
         openBotId = botId
+        incognitoBotId = nil
         navigationPath.append(botId)
+    }
+
+    /// Open a chat with a pre-filled draft, replacing any saved draft.
+    func openChat(botId: String, draft: String) {
+        UserDefaults.standard.set(draft, forKey: "cn.lingyu.draft.\(botId)")
+        openChat(botId: botId)
+    }
+
+    /// The lead agent (or any non-group agent) — the one drafts go to.
+    var leadBot: Bot? {
+        connector.mirror.leadBot ?? connector.mirror.bots.first(where: { !$0.isGroup })
+    }
+
+    /// Open the lead agent's chat with a pre-filled draft. No-op when
+    /// there is no agent to draft to (callers disable the button then).
+    func draftToLeadBot(_ text: String) {
+        guard let bot = leadBot else { return }
+        openChat(botId: bot.id, draft: text)
+    }
+
+    /// Open a chat in incognito mode: nothing is kept on this phone.
+    func openIncognitoChat(botId: String) {
+        openChat(botId: botId)
+        incognitoBotId = botId
     }
 
     func closeChat() {
         openBotId = nil
+        incognitoBotId = nil
         if !navigationPath.isEmpty {
             navigationPath.removeLast()
         }
+    }
+
+    /// Answer a pending approval from anywhere (card, approvals list,
+    /// audit list). Returns whether the host accepted the answer. A
+    /// successful answer is written to the audit log.
+    func answerApproval(entry: Entry, option: PermissionOption, note: String? = nil) async -> Bool {
+        guard let api = connector.api else { return false }
+        do {
+            try await api.respondPermission(entryId: entry.id, optionId: option.optionId)
+        } catch {
+            return false
+        }
+        let bot = connector.mirror.bot(id: entry.botId)
+        audit.record(botId: entry.botId, botName: bot?.name ?? entry.botId, kind: .approval,
+                     title: entry.data.title ?? entry.data.command ?? L("审批请求"),
+                     detail: note ?? entry.data.detail ?? "",
+                     status: option.kind.hasPrefix("reject") ? .denied : .allowed)
+        return true
+    }
+
+    /// Reset everything and start over: sign out, forget all computers,
+    /// clear the account-fetched lists, and go back to the welcome flow.
+    func startOver() async {
+        await signOutAccount()
+        connector.forgetAllComputers()
+        clearAccountCloud()
+        showingWelcome = true
     }
 
     func setLanguage(_ code: String) {
