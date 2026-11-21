@@ -23,6 +23,10 @@ struct Composer: View {
     var isOnline: Bool
     var onSend: (String, [PendingAttachment]) -> Void
     var onStop: () -> Void
+    /// Set while a call is speaking (original Composer.onInterrupt):
+    /// the trailing button becomes Interrupt instead of Stop. Phase 1
+    /// has no voice calls, so callers pass nil until calls land.
+    var onInterrupt: (() -> Void)? = nil
 
     @State private var attachments: [PendingAttachment] = []
     @State private var showingPhotoPicker = false
@@ -158,12 +162,13 @@ struct Composer: View {
         .background(Palette.bubbleAgent, in: Capsule())
     }
 
-    private enum Trailing: Equatable { case stop, call, send }
+    private enum Trailing: Equatable { case interrupt, stop, call, send }
 
     /// One button that morphs between call, send and stop: its symbol
     /// replaces itself, its fill crossfades and the capsule narrows to a
     /// circle, so switching never pops.
     private var trailing: Trailing {
+        if onInterrupt != nil, trimmedEmpty, attachments.isEmpty { return .interrupt }
         if isWorking, trimmedEmpty, attachments.isEmpty { return .stop }
         if trimmedEmpty, attachments.isEmpty { return .call }
         return .send
@@ -174,20 +179,24 @@ struct Composer: View {
         let state = trailing
         let enabled = state != .send || canSend
         let (symbol, label, size): (String, String, CGFloat) = switch state {
+        case .interrupt: ("stop.fill", L("打断"), 12)
         case .stop: ("stop.fill", L("停止"), 12)
         case .call: ("waveform", L("通话"), 15)
         case .send: ("arrow.up", L("发送"), 14)
         }
         let fill: Color = switch state {
+        case .interrupt: Palette.danger
         case .send: canSend ? Palette.accentFill : Palette.accentDim
         case .stop, .call: Palette.accentFill
         }
         let ink: Color = switch state {
+        case .interrupt: .white
         case .send: canSend ? Palette.onAccent : Palette.tertiary
         case .stop, .call: Palette.onAccent
         }
         Button {
             switch state {
+            case .interrupt: onInterrupt?()
             case .stop: onStop()
             case .call: showingCallLater = true
             case .send: send()
@@ -262,7 +271,7 @@ struct AttachmentChip: View {
                     .frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
-                Image(systemName: "doc")
+                Image(systemName: AttachmentIcon.symbol(attachment.name))
                     .foregroundStyle(Palette.secondary)
             }
             VStack(alignment: .leading, spacing: 0) {

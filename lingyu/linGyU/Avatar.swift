@@ -250,6 +250,32 @@ struct CharacterAvatar: View {
     }
 }
 
+/// A coding agent's logo, by ACP registry id (original AgentIcon): the
+/// `agent-<registry>` logo asset when one exists, else the SF `terminal`
+/// glyph — never `cpu`. No `agent-*` assets ship in linGyU yet, so it
+/// renders `terminal` until logo assets are added.
+struct AgentIcon: View {
+    let registry: String?
+    let size: CGFloat
+
+    init(registry: String?, size: CGFloat = 20) {
+        self.registry = registry
+        self.size = size
+    }
+
+    var body: some View {
+        Group {
+            if let name = registry.map({ "agent-\($0)" }), UIImage(named: name) != nil {
+                Image(name).resizable().scaledToFit()
+            } else {
+                Image(systemName: "terminal").resizable().scaledToFit().padding(size * 0.1)
+            }
+        }
+        .frame(width: size, height: size)
+        .foregroundStyle(Palette.text)
+    }
+}
+
 extension Bot {
     var mood: CharacterAvatar.Mood { needsYouOutside ? .needsInput : isBusyOutside ? .working : .idle }
 

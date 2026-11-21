@@ -13,6 +13,11 @@ struct BotActivityPresentation: Hashable, Sendable {
         /// way, or waiting in the relay mailbox for an offline computer);
         /// the computer only pushes the others.
         case sending, queued, working, needsInput, completed, failed, stale, waiting
+        /// This phone is on a call with the bot (original: onCall carries
+        /// the call state). Phase 1 has no voice calls, so nothing sets
+        /// this yet; it exists so the call layer can, and so the symbol
+        /// map matches the original.
+        case onCall
     }
 
     let phase: Phase
@@ -42,6 +47,7 @@ struct BotActivityPresentation: Hashable, Sendable {
         case .failed: return L("失败")
         case .stale: return L("更新延迟")
         case .waiting: return L("等待更新")
+        case .onCall: return L("通话中")
         }
     }
 
@@ -50,15 +56,17 @@ struct BotActivityPresentation: Hashable, Sendable {
     var caption: String {
         switch phase {
         case .working, .needsInput: return activity.isEmpty ? title : activity
-        case .sending, .queued, .completed, .failed, .stale, .waiting: return title
+        case .sending, .queued, .completed, .failed, .stale, .waiting, .onCall: return title
         }
     }
 
+    /// Original BotActivityPresentation.symbol: onCall → waveform.
     var symbol: String {
         switch phase {
         case .completed: return "checkmark"
         case .failed: return "exclamationmark.triangle.fill"
         case .queued: return "desktopcomputer"
+        case .onCall: return "waveform"
         case .sending, .working, .needsInput, .stale, .waiting: return "ellipsis"
         }
     }
@@ -69,6 +77,7 @@ extension BotActivityPresentation {
         switch phase {
         case .working: return .working
         case .needsInput: return .listening
+        case .onCall: return .listening
         case .sending, .waiting, .stale: return .connecting
         case .queued, .completed, .failed: return nil
         }
@@ -80,7 +89,7 @@ extension BotActivityPresentation {
         case .failed: return Palette.danger
         case .completed: return Palette.added
         case .sending, .queued, .stale, .waiting: return Palette.secondary
-        case .working: return Palette.text
+        case .working, .onCall: return Palette.text
         }
     }
 
@@ -91,7 +100,7 @@ extension BotActivityPresentation {
     var progressStep: Int {
         switch phase {
         case .sending, .queued: return 1
-        case .working, .stale, .waiting: return 2
+        case .working, .stale, .waiting, .onCall: return 2
         case .needsInput: return 3
         case .completed, .failed: return 4
         }
@@ -101,7 +110,7 @@ extension BotActivityPresentation {
         switch phase {
         case .working: return .working
         case .needsInput: return .needsInput
-        case .sending, .queued, .completed, .failed, .stale, .waiting: return .idle
+        case .sending, .queued, .completed, .failed, .stale, .waiting, .onCall: return .idle
         }
     }
 
@@ -438,17 +447,53 @@ struct BotActivityPreview: View {
 
 // MARK: - Widget cards
 
+/// A usage provider's icon (original ProviderMascot): the provider's logo
+/// asset when the style is "original" and one exists, else the provider's
+/// first-letter disc — never `chart.bar`. No `agent-*` logo assets ship in
+/// linGyU yet, so the "original" style renders the first-letter disc until
+/// logo assets are added. The logo name follows the original: claude/codex
+/// run through ACP adapters (`agent-<id>-acp`), others go by their own id.
+struct ProviderMascot: View {
+    let providerId: String
+    let providerName: String
+    let size: CGFloat
+    var style: String = "character"
+
+    private var logoAsset: String? {
+        let registry = ["claude", "codex"].contains(providerId) ? "\(providerId)-acp" : providerId
+        let name = "agent-\(registry)"
+        return UIImage(named: name) == nil ? nil : name
+    }
+
+    var body: some View {
+        Group {
+            if style == "original", let logo = logoAsset {
+                Image(logo).resizable().scaledToFit().padding(size * 0.08)
+            } else {
+                Text(String(providerName.prefix(1)))
+                    .font(.system(size: size * 0.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(Palette.avatarColor(named: "gray"), in: Circle())
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 /// The usage widget preview. The `usage` RPC does not exist yet, so this
 /// shows the card's chrome with an honest empty state — never a number.
 struct UsagePreviewCard: View {
     enum Layout { case small, medium, large }
 
     let providerName: String
+    let providerId: String
     let layout: Layout
     let iconStyle: String
 
-    init(providerName: String, layout: Layout, iconStyle: String = "character") {
+    init(providerName: String, providerId: String = "", layout: Layout, iconStyle: String = "character") {
         self.providerName = providerName
+        self.providerId = providerId
         self.layout = layout
         self.iconStyle = iconStyle
     }
@@ -459,10 +504,7 @@ struct UsagePreviewCard: View {
                 if iconStyle == "character" {
                     CharacterAvatar(shape: "hex", color: "gray", size: 22, still: true)
                 } else {
-                    Image(systemName: "chart.bar")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
-                        .frame(width: 22, height: 22)
+                    ProviderMascot(providerId: providerId, providerName: providerName, size: 22, style: iconStyle)
                 }
                 Text(providerName)
                     .font(.system(size: 13, weight: .semibold))
@@ -981,7 +1023,7 @@ struct WidgetGalleryView: View {
     @ViewBuilder private func preview(wide: Bool) -> some View {
         Group {
             if kind == "usage" {
-                UsagePreviewCard(providerName: providerName, layout: size == "large" ? .large : wide ? .medium : .small, iconStyle: usageIconStyle)
+                UsagePreviewCard(providerName: providerName, providerId: providerID.isEmpty ? (providers.first?.id ?? "") : providerID, layout: size == "large" ? .large : wide ? .medium : .small, iconStyle: usageIconStyle)
             } else if kind == "team" {
                 BotsTeamCard(bots: bots)
             } else {

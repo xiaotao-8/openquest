@@ -136,9 +136,9 @@ enum WorkAction: String, CaseIterable {
     var symbol: String {
         switch self {
         case .stop: return "stop.fill"
-        case .cutIn: return "arrow.up.to.line"
+        case .cutIn: return "arrow.turn.right.up"
         case .first: return "arrow.up.to.line"
-        case .drop: return "trash"
+        case .drop: return "xmark"
         case .retry: return "arrow.clockwise"
         }
     }

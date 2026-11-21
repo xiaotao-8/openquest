@@ -305,7 +305,7 @@ struct ComputerFilterHeader: View {
                         if store.connector.computer?.id == computer.id {
                             Image(systemName: "checkmark")
                         } else {
-                            ComputerBadge()
+                            ComputerBadge(computer: computer)
                         }
                     }
                 }
@@ -338,10 +338,39 @@ struct ComputerFilterHeader: View {
 }
 
 /// A computer's badge: 28pt, its icon in a light rounded square.
+/// The icon follows the original ComputerBadge symbol map by device;
+/// linux uses the `computer-linux` asset — linGyU has no such asset yet,
+/// so linux falls back to `desktopcomputer` until one is added.
 struct ComputerBadge: View {
+    var computer: Computer?
+
+    /// The original's per-device symbol (ComputerBadge.symbol).
+    static func symbol(_ device: String?) -> String {
+        switch device {
+        case "laptop": return "laptopcomputer"
+        case "macmini": return "macmini"
+        case "macstudio": return "macstudio"
+        case "imac": return "desktopcomputer"
+        case "macpro": return "macpro.gen3"
+        case "cloud": return "cloud"
+        default: return "desktopcomputer"
+        }
+    }
+
+    /// The badge icon at a given glyph size, for rows that don't use the
+    /// 28pt badge chrome (same symbol map; linux asset when it exists).
+    @ViewBuilder
+    static func icon(for computer: Computer?, size: CGFloat) -> some View {
+        if computer?.device == "linux", UIImage(named: "computer-linux") != nil {
+            Image("computer-linux").resizable().scaledToFit().frame(width: size, height: size)
+        } else {
+            Image(systemName: symbol(computer?.device))
+                .font(.system(size: size, weight: .medium))
+        }
+    }
+
     var body: some View {
-        Image(systemName: "desktopcomputer")
-            .font(.system(size: 14))
+        Self.icon(for: computer, size: 14)
             .foregroundStyle(Palette.secondary)
             .frame(width: 28, height: 28)
             .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -531,7 +560,7 @@ struct ComputersView: View {
                     Task { await store.connector.selectComputer(computer) }
                 } label: {
                     HStack {
-                        Image(systemName: "desktopcomputer")
+                        ComputerBadge.icon(for: computer, size: 17)
                             .foregroundStyle(Palette.secondary)
                         Text(computer.name)
                             .font(.body.weight(.semibold))

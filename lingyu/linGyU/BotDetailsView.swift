@@ -76,9 +76,7 @@ struct BotDetailsView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Palette.text)
             HStack(spacing: 5) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.secondary)
+                AgentIcon(registry: bot.backend, size: 13)
                 Text(bot.model.map { "\(bot.backend) · \($0)" } ?? bot.backend)
                     .font(.footnote)
                     .foregroundStyle(Palette.secondary)
@@ -234,8 +232,7 @@ struct ComputerTab: View {
     var body: some View {
         VStack(spacing: 24) {
             HStack(spacing: 8) {
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 20))
+                ComputerBadge.icon(for: store.connector.computer, size: 20)
                     .foregroundStyle(Palette.secondary)
                 Text(store.connector.computer?.name ?? L("我的电脑"))
                     .font(.system(size: 15, weight: .semibold))

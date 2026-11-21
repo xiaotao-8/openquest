@@ -50,7 +50,11 @@ struct ChatView: View {
                             isWorking: bot.isWorking,
                             isOnline: isOnline,
                             onSend: send,
-                            onStop: stop
+                            onStop: stop,
+                            // No voice call is speaking in Phase 1, so no
+                            // Interrupt state; the original wires this only
+                            // while a call is speaking.
+                            onInterrupt: nil
                         )
                     }
                 }
@@ -147,10 +151,16 @@ struct ChatView: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    Image(systemName: connectionIcon)
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
-                        .frame(width: 12)
+                    Group {
+                        if isConnecting {
+                            Spinner(size: 8)
+                        } else {
+                            Image(systemName: connectionIcon)
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundStyle(Palette.secondary)
+                        }
+                    }
+                    .frame(width: 12)
                     Text(connectionText)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.secondary)
@@ -166,9 +176,27 @@ struct ChatView: View {
         return false
     }
 
+    /// While (re)connecting the subtitle shows a spinner, not an icon
+    /// (original ChatView.connectionSubtitle).
+    private var isConnecting: Bool {
+        switch store.connector.state {
+        case .connecting, .waiting: return true
+        default: return false
+        }
+    }
+
+    /// By route (original connectionSymbol): relay → cloud, direct → wifi,
+    /// online with no route → network; offline → wifi.slash. The route is
+    /// recorded as "direct" on hello (this build has no relay transport);
+    /// the Spinner above covers connecting/waiting.
     private var connectionIcon: String {
         switch store.connector.state {
-        case .ready: return "wifi"
+        case .ready:
+            switch store.connector.computer?.route {
+            case "relay": return "cloud"
+            case "direct": return "wifi"
+            default: return "network"
+            }
         case .connecting, .waiting: return "network"
         case .stopped, .offline: return "wifi.slash"
         }
@@ -455,7 +483,7 @@ struct UserBubble: View {
                     if let attachments = entry.data.attachments, !attachments.isEmpty {
                         ForEach(attachments, id: \.id) { attachment in
                             HStack(spacing: 6) {
-                                Image(systemName: "doc")
+                                Image(systemName: AttachmentIcon.symbol(attachment.name))
                                     .foregroundStyle(Palette.secondary)
                                 Text(attachment.name)
                                     .font(.subheadline)
@@ -673,13 +701,21 @@ struct ToolCallRow: View {
         .padding(.vertical, 4)
     }
 
+    /// The original ToolRow icon map (TraceView): read → doc.text,
+    /// edit → pencil, delete → trash, move → arrow.right.doc.on.clipboard,
+    /// search → magnifyingglass, execute → terminal, think → brain,
+    /// fetch → globe; anything else (incl. browser) → wrench.and.screwdriver.
     private var toolIcon: String {
         switch entry.data.toolKind {
+        case "read": return "doc.text"
+        case "edit": return "pencil"
+        case "delete": return "trash"
+        case "move": return "arrow.right.doc.on.clipboard"
+        case "search": return "magnifyingglass"
         case "execute": return "terminal"
-        case "edit", "delete", "move": return "doc.text"
-        case "fetch", "browser": return "globe"
-        case "read", "search": return "doc.magnifyingglass"
-        default: return "wrench"
+        case "think": return "brain"
+        case "fetch": return "globe"
+        default: return "wrench.and.screwdriver"
         }
     }
 }
@@ -788,7 +824,7 @@ struct WorkingSteps: View {
                 } else {
                     ForEach(steps.suffix(20)) { entry in
                         HStack(alignment: .top, spacing: 6) {
-                            Image(systemName: entry.kind == "tool" ? "wrench" : "brain")
+                            Image(systemName: entry.kind == "tool" ? "wrench.and.screwdriver" : "brain")
                                 .font(.caption)
                                 .foregroundStyle(Palette.secondary)
                             Text(entry.data.text ?? entry.data.title ?? "")

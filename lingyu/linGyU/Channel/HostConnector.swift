@@ -290,6 +290,11 @@ final class HostConnector: ObservableObject {
         if !validUrls.isEmpty { computer.urls = Array(validUrls.prefix(16)) }
         if let cloud = reply.cloud, !cloud.isEmpty { computer.cloud = cloud }
         if let device = reply.device { computer.device = device }
+        // Hello only ever arrives over the winning direct URL (this
+        // build has no relay transport), so the route is direct — the
+        // chat subtitle's connection icon reads it (relay → cloud,
+        // direct → wifi, no route → network).
+        computer.route = "direct"
         upsertComputer(computer)
         saveComputers()
     }

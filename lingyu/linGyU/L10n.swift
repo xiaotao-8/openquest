@@ -381,6 +381,8 @@ enum L10n {
         "供应商用量": "Provider usage",
         "做完一步，这里会自动打勾。": "Each finished step gets checked off here.",
         "停止": "Stop",
+        "打断": "Interrupt",
+        "通话中": "On a call",
         "停止这个任务？": "Stop this task?",
         "健身": "Fitness",
         "共 %d 个 · %d 个在干活": "%d total · %d working",

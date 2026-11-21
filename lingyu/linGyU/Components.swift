@@ -537,6 +537,23 @@ struct Spinner: View {
     }
 }
 
+/// The symbol for a file by its extension (original AttachmentIcon):
+/// image → photo, audio → waveform, pdf → doc.richtext,
+/// zip/gz/tar/7z → doc.zipper, mov/mp4/m4v → film, else doc.
+enum AttachmentIcon {
+    static func symbol(_ name: String) -> String {
+        let ext = (name as NSString).pathExtension.lowercased()
+        if ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"].contains(ext) { return "photo" }
+        if ["mp3", "m4a", "wav", "aac"].contains(ext) { return "waveform" }
+        switch ext {
+        case "pdf": return "doc.richtext"
+        case "zip", "gz", "tar", "7z": return "doc.zipper"
+        case "mov", "mp4", "m4v": return "film"
+        default: return "doc"
+        }
+    }
+}
+
 // MARK: - Choice picker
 
 /// One of a few choices, picked from a system menu: the value and a
