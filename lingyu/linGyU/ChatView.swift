@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var loadingEarlier = false
     @State private var hasMoreEarlier = true
     @State private var isAtBottom = true
+    @State private var didInitialScroll = false
     @State private var showingMiniWindow = false
     @State private var miniWindowTitle = ""
     @State private var errorMessage: String?
@@ -300,7 +301,15 @@ struct ChatView: View {
                 isAtBottom = atBottom
             }
             .onChange(of: timeline.count) { _, _ in
-                if isAtBottom {
+                // Opening a chat must land on the latest message: the list
+                // starts at the top and the geometry probe reports
+                // not-at-bottom before any count change arrives, so without
+                // this first jump new messages never scroll into view
+                // (the live-approval screenshots kept showing old history).
+                if !didInitialScroll {
+                    didInitialScroll = true
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                } else if isAtBottom {
                     withAnimation(.easeOut(duration: 0.24)) {
                         proxy.scrollTo("bottom", anchor: .bottom)
                     }
