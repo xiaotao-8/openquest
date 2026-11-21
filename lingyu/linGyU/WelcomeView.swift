@@ -1,12 +1,11 @@
-import Security
 import SwiftUI
 
-/// First-launch flow: Welcome → Install → Scan → Tabs (or Skip → Tabs).
+/// First-launch flow: Welcome → Pairing (install → scan) → Tabs (or Skip → Tabs).
 /// Steps slide + fade (spring 0.45s, fade only with Reduce Motion).
 struct WelcomeView: View {
     var onSkip: () -> Void
     @EnvironmentObject private var store: AppStore
-    @State private var step = 0
+    @State private var pairing = false
     @State private var phase: Double = 0
     @State private var glimpseDone = false
     @State private var timer: Timer?
@@ -14,18 +13,15 @@ struct WelcomeView: View {
     var body: some View {
         ZStack {
             Palette.background.ignoresSafeArea()
-            switch step {
-            case 0:
-                welcomeStep
-            case 1:
-                installStep
-            default:
-                PairingView(onDone: {
+            if pairing {
+                PairingView(onBack: { pairing = false }, onSkip: onSkip, onDone: {
                     store.showingWelcome = false
                 })
+            } else {
+                welcomeStep
             }
         }
-        .animation(.spring(response: 0.45, dampingFraction: 1), value: step)
+        .animation(.spring(response: 0.45, dampingFraction: 1), value: pairing)
         .onAppear {
             startBobbing()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
@@ -67,7 +63,7 @@ struct WelcomeView: View {
             }
             VStack(spacing: 10) {
                 PrimaryActionButton(title: L("开始配对")) {
-                    step = 1
+                    pairing = true
                 }
             }
             .padding(.horizontal, 24)
@@ -118,96 +114,6 @@ struct WelcomeView: View {
         }
     }
 
-    // MARK: - Install (pairing step 1)
-
-    @State private var serverAddress = "47.238.160.204"
-    @State private var serverToken = ""
-    @State private var copied = false
-
-    private var installStep: some View {
-        VStack(spacing: 0) {
-            stepProgress(current: 0)
-                .padding(.top, 12)
-            ZStack {
-                Image(systemName: "laptopcomputer")
-                    .font(.system(size: 150, weight: .ultraLight))
-                    .foregroundStyle(Palette.tertiary)
-                CharacterAvatar(shape: "blob", color: "blue", size: 52, mood: .working)
-                    .offset(y: -12)
-            }
-            .padding(.top, 8)
-            Text(L("在你的电脑上安装服务端"))
-                .font(.system(size: 30, weight: .semibold))
-                .tracking(-0.5)
-                .foregroundStyle(Palette.text)
-                .padding(.top, 24)
-            Text(L("智能体在电脑上运行，这部手机是和它们说话的窗口。"))
-                .font(.body)
-                .foregroundStyle(Palette.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.top, 8)
-                .padding(.horizontal, 32)
-            VStack(spacing: 12) {
-                TextField(L("服务器地址"), text: $serverAddress)
-                    .textFieldStyle(.roundedBorder)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                SecureField(L("令牌"), text: $serverToken)
-                    .textFieldStyle(.roundedBorder)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            Spacer()
-            Button {
-                UIPasteboard.general.string = installLink
-                copied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    copied = false
-                }
-            } label: {
-                HStack {
-                    Text(copied ? L("已复制") : L("复制安装链接"))
-                    if copied {
-                        Image(systemName: "checkmark")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 50)
-            }
-            .buttonStyle(.secondary)
-            .padding(.horizontal, 20)
-            PrimaryActionButton(title: L("继续")) {
-                saveServerConfig()
-                step = 2
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 24)
-        }
-        .navigationBarBackButtonHidden(true)
-    }
-
-    private var installLink: String {
-        "https://\(serverAddress)/install"
-    }
-
-    private func saveServerConfig() {
-        UserDefaults.standard.set(serverAddress, forKey: "cn.lingyu.serverAddress")
-        if !serverToken.isEmpty {
-            ServerTokenStore.save(serverToken)
-        }
-    }
-
-    private func stepProgress(current: Int) -> some View {
-        HStack(spacing: 6) {
-            ForEach(0..<2, id: \.self) { index in
-                Capsule()
-                    .fill(index == current ? Palette.text : Palette.accentDim)
-                    .frame(width: 18, height: 4)
-            }
-        }
-        .accessibilityLabel(L("第 %d 步，共 2 步", current + 1))
-    }
 }
 
 /// The demo conversation on the Welcome page: one question → working → done.
@@ -243,41 +149,5 @@ struct ChatGlimpse: View {
                 Spacer()
             }
         }
-    }
-}
-
-/// The server token lives in the Keychain, never in UserDefaults or files.
-enum ServerTokenStore {
-    private static let service = "cn.lingyu.server-token"
-    private static let account = "local"
-
-    static func save(_ token: String) {
-        guard let data = token.data(using: .utf8) else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
-        var attributes = query
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        attributes[kSecAttrSynchronizable as String] = false
-        SecItemAdd(attributes as CFDictionary, nil)
-    }
-
-    static func load() -> String? {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-        ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
     }
 }

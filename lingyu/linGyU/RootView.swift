@@ -50,7 +50,7 @@ struct RootView: View {
                 }
             }
             .codyncSheet(isPresented: $store.showingPairing) {
-                PairingView()
+                PairingView(inModal: true)
             }
             .codyncSheet(isPresented: Binding(
                 get: { store.detailBotId != nil },
