@@ -76,6 +76,15 @@ final class AccountStore: ObservableObject {
     func ensureConfigured() {
         guard !didConfigure else { return }
         didConfigure = true
+        #if targetEnvironment(simulator)
+        // The simulator build is unsigned (CODE_SIGNING_ALLOWED=NO), so the
+        // app has no Keychain entitlement and Clerk.configure traps with
+        // OSStatus -34018 (Build #15/#16: every launch died within seconds,
+        // "Failed to configure Clerk: Keychain operation failed").
+        // Account sign-in is a real-device feature; in the simulator the
+        // account stays unconfigured and the app runs without it.
+        return
+        #endif
         guard let key = publishableKey else { return }
         clerk = Clerk.configure(publishableKey: key, options: .init(
             telemetryEnabled: false,
