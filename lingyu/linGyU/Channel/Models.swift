@@ -122,6 +122,14 @@ struct HelloReply: Codable, Sendable {
     var canUpdate: Bool
     var latestVersion: String?
     var autoOrder: Bool?
+    /// The agent backends on this computer (`hello` carries them; there
+    /// is no standalone `backends` method). Nil from a host that
+    /// doesn't name them — the Extensions page then shows its
+    /// disabled state instead of inventing agents.
+    var backends: [Backend]?
+    /// Whether a signed-in phone may offer to bring this computer
+    /// into its account (`joinAccount`). Nil from an older host.
+    var canJoinAccount: Bool?
 
     /// 2.51.0+ speaks thread names; older hosts speak task names (§10 D3).
     var speaksThreads: Bool {
@@ -150,6 +158,86 @@ struct HelloReply: Codable, Sendable {
         canUpdate = container.lenient(Bool.self, forKey: .canUpdate) ?? false
         latestVersion = container.lenient(String.self, forKey: .latestVersion)
         autoOrder = container.lenient(Bool.self, forKey: .autoOrder)
+        backends = container.lenient([Backend].self, forKey: .backends)
+        canJoinAccount = container.lenient(Bool.self, forKey: .canJoinAccount)
+    }
+}
+
+// MARK: - Backend
+
+/// One agent backend on the computer (`hello.backends`): its install
+/// and sign-in state, and its login profiles. Only the fields the
+/// Extensions page shows; everything decodes leniently.
+struct Backend: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var name: String
+    var available: Bool
+    var command: String
+    var installHint: String
+    /// ACP registry id, for the agent's icon.
+    var registry: String?
+    var description: String?
+    var installed: Bool?
+    /// Known by name: it can install and sign in to it.
+    var curated: Bool?
+    /// Missing when the host can't tell.
+    var signedIn: Bool?
+    var canInstall: Bool?
+    /// Only for an agent that runs on Node.js, on a computer without its own.
+    var node: String?
+    var loginProfiles: [BackendLoginProfile]?
+    var defaultLoginProfile: BackendDefaultLogin?
+    var loginProfileSignIn: String?
+    /// The variable names its API key usually goes in, to start a key form with.
+    var loginKeys: [String]?
+
+    /// It can't run until Node.js is added to the computer.
+    var needsNode: Bool { node == "missing" }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        name = container.lenient(String.self, forKey: .name) ?? ""
+        available = container.lenient(Bool.self, forKey: .available) ?? false
+        command = container.lenient(String.self, forKey: .command) ?? ""
+        installHint = container.lenient(String.self, forKey: .installHint) ?? ""
+        registry = container.lenient(String.self, forKey: .registry)
+        description = container.lenient(String.self, forKey: .description)
+        installed = container.lenient(Bool.self, forKey: .installed)
+        curated = container.lenient(Bool.self, forKey: .curated)
+        signedIn = container.lenient(Bool.self, forKey: .signedIn)
+        canInstall = container.lenient(Bool.self, forKey: .canInstall)
+        node = container.lenient(String.self, forKey: .node)
+        loginProfiles = container.lenient([BackendLoginProfile].self, forKey: .loginProfiles)
+        defaultLoginProfile = container.lenient(BackendDefaultLogin.self, forKey: .defaultLoginProfile)
+        loginProfileSignIn = container.lenient(String.self, forKey: .loginProfileSignIn)
+        loginKeys = container.lenient([String].self, forKey: .loginKeys)
+    }
+}
+
+struct BackendLoginProfile: Codable, Hashable, Sendable, Identifiable {
+    var id: String
+    var name: String?
+    var kind: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        name = container.lenient(String.self, forKey: .name)
+        kind = container.lenient(String.self, forKey: .kind)
+    }
+}
+
+struct BackendDefaultLogin: Codable, Hashable, Sendable {
+    var name: String?
+    var label: String?
+    var email: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = container.lenient(String.self, forKey: .name)
+        label = container.lenient(String.self, forKey: .label)
+        email = container.lenient(String.self, forKey: .email)
     }
 }
 
@@ -678,5 +766,225 @@ struct Entry: Codable, Equatable, Identifiable, Sendable {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         createdAt = now
         updatedAt = now
+    }
+}
+
+// MARK: - Routines
+
+/// One scheduled task (Codync Routine.swift): a name, an instruction the
+/// bot runs, and one or more triggers. Decoded leniently like the other
+/// models: an unknown field never fails the whole listing.
+struct Routine: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var botId: String
+    var name: String
+    var instruction: String
+    var triggers: [RoutineTrigger]
+    var enabled: Bool
+    var createdAt: Int64
+    var updatedAt: Int64
+    var triggerDescriptions: [String]
+    var nextRunAt: Int64?
+    var timeoutSeconds: Int?
+    var lastError: String?
+
+    var nextRunDate: Date? {
+        nextRunAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000) }
+    }
+
+    init(id: String, botId: String, name: String, instruction: String,
+         triggers: [RoutineTrigger] = [], enabled: Bool = true,
+         createdAt: Int64 = 0, updatedAt: Int64 = 0,
+         triggerDescriptions: [String] = [], nextRunAt: Int64? = nil,
+         timeoutSeconds: Int? = nil, lastError: String? = nil) {
+        self.id = id
+        self.botId = botId
+        self.name = name
+        self.instruction = instruction
+        self.triggers = triggers
+        self.enabled = enabled
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.triggerDescriptions = triggerDescriptions
+        self.nextRunAt = nextRunAt
+        self.timeoutSeconds = timeoutSeconds
+        self.lastError = lastError
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        botId = container.lenient(String.self, forKey: .botId) ?? ""
+        name = container.lenient(String.self, forKey: .name) ?? ""
+        instruction = container.lenient(String.self, forKey: .instruction) ?? ""
+        triggers = container.lenient([RoutineTrigger].self, forKey: .triggers) ?? []
+        enabled = container.lenient(Bool.self, forKey: .enabled) ?? true
+        createdAt = container.lenient(Int64.self, forKey: .createdAt) ?? 0
+        updatedAt = container.lenient(Int64.self, forKey: .updatedAt) ?? 0
+        triggerDescriptions = container.lenient([String].self, forKey: .triggerDescriptions) ?? []
+        nextRunAt = container.lenient(Int64.self, forKey: .nextRunAt)
+        timeoutSeconds = container.lenient(Int.self, forKey: .timeoutSeconds)
+        lastError = container.lenient(String.self, forKey: .lastError)
+    }
+}
+
+/// One trigger of a routine. `type` is "interval" | "once" | "cron" |
+/// "webhook" | "event" (live host 2.51.0 rejects "at": the one-off
+/// variant is "once"). Only the fields the type uses are set: `seconds`
+/// for interval, `at` for a one-off time, `expression` for cron, `event`
+/// + `filters` for events.
+struct RoutineTrigger: Codable, Equatable, Sendable {
+    var type: String
+    var seconds: Int64?
+    var at: Int64?
+    var expression: String?
+    var timeZone: String?
+    var source: String?
+    var event: String?
+    var filters: [String: String]?
+
+    init(type: String, seconds: Int64? = nil, at: Int64? = nil,
+         expression: String? = nil, timeZone: String? = nil,
+         source: String? = nil, event: String? = nil,
+         filters: [String: String]? = nil) {
+        self.type = type
+        self.seconds = seconds
+        self.at = at
+        self.expression = expression
+        self.timeZone = timeZone
+        self.source = source
+        self.event = event
+        self.filters = filters
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = container.lenient(String.self, forKey: .type) ?? ""
+        seconds = container.lenient(Int64.self, forKey: .seconds)
+        at = container.lenient(Int64.self, forKey: .at)
+        expression = container.lenient(String.self, forKey: .expression)
+        timeZone = container.lenient(String.self, forKey: .timeZone)
+        source = container.lenient(String.self, forKey: .source)
+        event = container.lenient(String.self, forKey: .event)
+        filters = container.lenient([String: String].self, forKey: .filters)
+    }
+}
+
+/// One execution of a routine. A retry of a run that failed before acting
+/// waits until `notBefore`.
+struct RoutineRun: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var routineId: String
+    var botId: String
+    var status: String
+    var createdAt: Int64
+    var finishedAt: Int64?
+    var detail: String?
+    var notBefore: Int64?
+
+    var isActive: Bool {
+        ["pending", "starting", "running", "recovering"].contains(status)
+    }
+
+    var isFailed: Bool { status == "failed" || status == "interrupted" }
+
+    /// The delivered text of a finished run (live host 2.51.0 puts the
+    /// run's result here; `detail` is usually null).
+    var result: String?
+
+    init(id: String, routineId: String, botId: String, status: String,
+         createdAt: Int64 = 0, finishedAt: Int64? = nil,
+         detail: String? = nil, notBefore: Int64? = nil, result: String? = nil) {
+        self.id = id
+        self.routineId = routineId
+        self.botId = botId
+        self.status = status
+        self.createdAt = createdAt
+        self.finishedAt = finishedAt
+        self.detail = detail
+        self.notBefore = notBefore
+        self.result = result
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        routineId = container.lenient(String.self, forKey: .routineId) ?? ""
+        botId = container.lenient(String.self, forKey: .botId) ?? ""
+        status = container.lenient(String.self, forKey: .status) ?? ""
+        createdAt = container.lenient(Int64.self, forKey: .createdAt) ?? 0
+        finishedAt = container.lenient(Int64.self, forKey: .finishedAt)
+        detail = container.lenient(String.self, forKey: .detail)
+        notBefore = container.lenient(Int64.self, forKey: .notBefore)
+        result = container.lenient(String.self, forKey: .result)
+    }
+}
+
+/// A deadline a bot set for itself: one later turn in its own chat, then
+/// it is gone.
+struct FollowUp: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var botId: String
+    /// When it is due (Unix ms).
+    var at: Int64
+    var note: String
+    var createdAt: Int64
+
+    init(id: String, botId: String, at: Int64, note: String, createdAt: Int64 = 0) {
+        self.id = id
+        self.botId = botId
+        self.at = at
+        self.note = note
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        botId = container.lenient(String.self, forKey: .botId) ?? ""
+        at = container.lenient(Int64.self, forKey: .at) ?? 0
+        note = container.lenient(String.self, forKey: .note) ?? ""
+        createdAt = container.lenient(Int64.self, forKey: .createdAt) ?? 0
+    }
+}
+
+/// Everything `routines {botId}` returns: the routines, their recent
+/// runs, and the follow-ups still waiting (nil on a host from before
+/// follow-ups).
+struct RoutineListing: Codable, Sendable {
+    var routines: [Routine]
+    var runs: [RoutineRun]
+    var followUps: [FollowUp]?
+
+    init(routines: [Routine] = [], runs: [RoutineRun] = [], followUps: [FollowUp]? = []) {
+        self.routines = routines
+        self.runs = runs
+        self.followUps = followUps
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        routines = container.lenient([Routine].self, forKey: .routines) ?? []
+        runs = container.lenient([RoutineRun].self, forKey: .runs) ?? []
+        followUps = container.lenient([FollowUp].self, forKey: .followUps)
+    }
+}
+
+/// A routine's webhook: `url` is public through the cloud (nil while the
+/// cloud is off), `localUrl` works on the host itself.
+struct RoutineWebhook: Codable, Equatable, Sendable {
+    var url: String?
+    var localUrl: String
+    var key: String
+    var connected: Bool
+    var needsAccount: Bool?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = container.lenient(String.self, forKey: .url)
+        localUrl = container.lenient(String.self, forKey: .localUrl) ?? ""
+        key = container.lenient(String.self, forKey: .key) ?? ""
+        connected = container.lenient(Bool.self, forKey: .connected) ?? false
+        needsAccount = container.lenient(Bool.self, forKey: .needsAccount)
     }
 }

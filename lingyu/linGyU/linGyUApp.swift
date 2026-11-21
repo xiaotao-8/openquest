@@ -17,6 +17,7 @@ struct LinGyUApp: App {
                     // Pairing links are handled in-app, never through here.
                     if url.scheme == Bundle.main.bundleIdentifier {
                         Task { await store.account.handle(url) }
+                        Task { @MainActor in store.handleDeepLink(url) }
                     }
                 }
         }

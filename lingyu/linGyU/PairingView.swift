@@ -565,6 +565,7 @@ private struct ScanPage: View {
     private func runPairing(link: PairingLink) async throws {
         let deviceName = UIDevice.current.name
         _ = try await store.connector.pair(link: link, deviceName: deviceName)
+        await MainActor.run { store.writeWidgetSnapshot() }
         pasted = ""
     }
 }

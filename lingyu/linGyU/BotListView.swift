@@ -491,11 +491,11 @@ struct UnreadBadge: View {
 }
 
 /// The computer-management sheet, matching the original's ComputersView:
-/// one card per paired computer (summary + notifications + auto-order +
-/// connection + host version), the account's unpaired computers, the pair
-/// button, and the cloud section — all from real data only. No extensions,
-/// voice, screen or network rows yet: those destinations do not exist in
-/// linGyU, so the rows are omitted rather than leading nowhere.
+/// one card per paired computer (summary + extensions / voice / network
+/// while the current computer is online + notifications + auto-order +
+/// connection + add-to-account + host version), the account's unpaired
+/// computers, the pair button, and the cloud section — all from real
+/// data only.
 struct ComputersView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
@@ -503,6 +503,22 @@ struct ComputersView: View {
     @State private var showingNewCloudDialog = false
     @State private var updatingComputerId: String?
     @State private var updatingFromVersion: String?
+    @State private var showingExtensions = false
+    @State private var showingVoice = false
+    @State private var showingNetwork = false
+    /// Whether the host answers `networkView`: nil until probed,
+    /// false when the host has no such method.
+    @State private var networkAvailable: Bool?
+    @State private var joiningAccount = false
+    @State private var joinError: String?
+    @State private var joinDone = false
+
+    /// LinkState carries associated values and is not Equatable, so the
+    /// codebase tests readiness with `if case` (see BotListView.isOnline).
+    private var isOnline: Bool {
+        if case .ready = store.connector.state { return true }
+        return false
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -589,6 +605,20 @@ struct ComputersView: View {
             try? await Task.sleep(for: .seconds(600))
             updatingComputerId = nil
         }
+        .codyncSheet(isPresented: $showingExtensions) {
+            ExtensionsView()
+        }
+        .codyncSheet(isPresented: $showingVoice) {
+            // B 号代理的语音设置页 (VoiceSettingsViews.swift):
+            // struct VoiceSettingsView, 已核对名字一致。
+            VoiceSettingsView()
+        }
+        .codyncSheet(isPresented: $showingNetwork) {
+            NetworkView()
+        }
+        .task(id: isOnline) {
+            await probeNetwork()
+        }
     }
 
     /// The account's computers that are not paired on this phone, for the
@@ -600,13 +630,24 @@ struct ComputersView: View {
         }
     }
 
-    /// One paired computer: summary, notifications, auto-order (current
-    /// computer only, when the host reports it), connection, host version.
+    /// One paired computer: summary, extensions / voice / network
+    /// (current computer only, while it is online), notifications,
+    /// auto-order (current computer only, when the host reports it),
+    /// connection, add-to-account (current computer only, while it
+    /// is not in the account yet), host version.
     private func computerCard(_ computer: Computer) -> some View {
         let isCurrent = store.connector.computer?.id == computer.id
         let hello = isCurrent ? store.connector.hello : nil
         return Group {
             summaryRow(computer)
+            if isCurrent, isOnline {
+                Hairline()
+                extensionsRow
+                Hairline()
+                voiceRow
+                Hairline()
+                networkRow
+            }
             Hairline()
             notificationsRow(computer)
             if hello.flatMap({ $0.autoOrder }) != nil {
@@ -615,11 +656,151 @@ struct ComputersView: View {
             }
             Hairline()
             connectionRow
+            if isCurrent, !isInAccount(computer.id) {
+                Hairline()
+                addToAccountRow
+            }
             if let hello {
                 Hairline()
                 versionRow(computer, hello: hello)
             }
         }
+    }
+
+    /// Extensions, voice chat and network (original ComputerRows):
+    /// only for the current computer while it is online — the
+    /// destinations read from its live host.
+    private var extensionsRow: some View {
+        CardRow {
+            Button { showingExtensions = true } label: {
+                ComputerRowLabel(text: L("扩展"), systemImage: "square.grid.2x2", chevron: true)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var voiceRow: some View {
+        CardRow {
+            Button { showingVoice = true } label: {
+                ComputerRowLabel(text: L("语音"), systemImage: "waveform", chevron: true)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var networkRow: some View {
+        CardRow {
+            if networkAvailable == false {
+                ComputerRowLabel(text: L("网络"), systemImage: "network", value: L("电脑端未提供"))
+                    .opacity(0.5)
+            } else {
+                Button { showingNetwork = true } label: {
+                    ComputerRowLabel(text: L("网络"), systemImage: "network", chevron: true)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// Asks the host once whether it answers `networkView`, so the
+    /// network row can sit disabled with a reason when it doesn't.
+    /// Any other failure leaves the row enabled; the page reports it.
+    private func probeNetwork() async {
+        guard isOnline, let api = store.connector.api else { return }
+        guard networkAvailable == nil else { return }
+        do {
+            _ = try await api.networkView()
+            networkAvailable = true
+        } catch {
+            if let callError = error as? HostCallError, callError.isUnknownMethod {
+                networkAvailable = false
+            }
+        }
+    }
+
+    /// Bring this computer into the account (original
+    /// AddToAccountRow): only for the current computer while it is
+    /// not in the account yet. Signed out: a disabled row with the
+    /// reason and a sign-in entry. Signed in: starts the claim flow
+    /// (`createClaim` → host `joinAccount` → `completeClaim`); the
+    /// host still refuses until the device-certificate flow lands,
+    /// and the row says so instead of pretending it worked.
+    private var addToAccountRow: some View {
+        CardRow {
+            VStack(alignment: .leading, spacing: 8) {
+                if store.account.isSignedIn {
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await requestJoinAccount() }
+                        } label: {
+                            ComputerRowLabel(text: L("加入账户"), systemImage: "person.crop.circle.badge.plus", chevron: !joiningAccount)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(joiningAccount || joinDone)
+                        if joiningAccount {
+                            Spinner(size: 16)
+                        }
+                    }
+                    if joinDone {
+                        Text(L("已加入账户"))
+                            .font(.footnote)
+                            .foregroundStyle(Palette.secondary)
+                    } else if let joinError {
+                        Text(joinError)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if store.connector.hello?.canJoinAccount == false {
+                        Text(L("这台电脑现在不能加入账户"))
+                            .font(.footnote)
+                            .foregroundStyle(Palette.secondary)
+                    }
+                } else {
+                    ComputerRowLabel(text: L("加入账户"), systemImage: "person.crop.circle.badge.plus", value: L("需先登录账号"))
+                        .opacity(0.5)
+                    Button(L("登录账号")) {
+                        dismiss()
+                        store.selectedTab = 3
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(400))
+                            await MainActor.run { store.showingSignIn = true }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.text)
+                }
+            }
+        }
+    }
+
+    private func requestJoinAccount() async {
+        guard let api = store.connector.api, let cloud = store.account.cloudClient() else { return }
+        joiningAccount = true
+        joinError = nil
+        joinDone = false
+        do {
+            let claim = try await cloud.createClaim()
+            let signed = try await api.joinAccount(claimId: claim.claimId, nonce: claim.nonce, certificate: nil)
+            try await cloud.completeClaim(claimId: claim.claimId, claim: signed)
+            joinDone = true
+            await store.refreshAccountCloud()
+        } catch {
+            joinError = joinErrorText(error)
+        }
+        joiningAccount = false
+    }
+
+    private func joinErrorText(_ error: Error) -> String {
+        if let callError = error as? HostCallError, let message = callError.hostMessage, !message.isEmpty {
+            if message.localizedCaseInsensitiveContains("confirm") {
+                return L("加入账户需要设备证书，尚未接通。")
+            }
+            return message
+        }
+        if let localized = (error as? LocalizedError)?.errorDescription, !localized.isEmpty {
+            return localized
+        }
+        return L("加入账户失败，请重试。")
     }
 
     /// Name, account checkmark, cloud hosting line, and the live
@@ -651,9 +832,18 @@ struct ComputersView: View {
             }
             .contentShape(Rectangle())
             .contextActions {
-                [MenuItem(L("忘记这台电脑"), icon: "trash", destructive: true) {
+                var items: [MenuItem] = []
+                if store.connector.computer?.id == computer.id, isOnline {
+                    items.append(MenuItem(L("扩展"), icon: "square.grid.2x2") { showingExtensions = true })
+                    items.append(MenuItem(L("语音"), icon: "waveform") { showingVoice = true })
+                    if networkAvailable != false {
+                        items.append(MenuItem(L("网络"), icon: "network") { showingNetwork = true })
+                    }
+                }
+                items.append(MenuItem(L("忘记这台电脑"), icon: "trash", destructive: true) {
                     forgettingComputer = computer
-                }]
+                })
+                return items
             }
         }
     }

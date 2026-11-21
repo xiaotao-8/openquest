@@ -124,6 +124,9 @@ struct BotDetailsView: View {
 struct DetailsTab: View {
     var bot: Bot
     @EnvironmentObject private var store: AppStore
+    @State private var detailRoutineId: String?
+    @State private var showingEditor = false
+    @State private var busyRoutineId: String?
 
     private var liveWork: [WorkTask] {
         bot.work.filter { $0.isLive }
@@ -131,6 +134,10 @@ struct DetailsTab: View {
 
     private var waitingEntries: [Entry] {
         store.connector.mirror.entries(for: bot.id).filter { $0.isWaitingCard }
+    }
+
+    private var routines: [Routine] {
+        store.routines.listing(botId: bot.id)?.routines ?? []
     }
 
     var body: some View {
@@ -194,9 +201,53 @@ struct DetailsTab: View {
                 }
             }
             CardSection(title: L("定时任务")) {
+                if routines.isEmpty {
+                    CardRow {
+                        Text(L("还没有定时任务。"))
+                            .foregroundStyle(Palette.secondary)
+                    }
+                } else {
+                    ForEach(routines) { routine in
+                        CardRow {
+                            HStack(spacing: 12) {
+                                Button {
+                                    detailRoutineId = routine.id
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(routine.name)
+                                            .font(.body)
+                                            .foregroundStyle(Palette.text)
+                                            .lineLimit(1)
+                                        Text(routineSubtitle(routine))
+                                            .font(.caption)
+                                            .foregroundStyle(routine.lastError == nil ? Palette.secondary : Palette.danger)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Toggle("", isOn: Binding(
+                                    get: { routine.enabled },
+                                    set: { newValue in setEnabled(routine, enabled: newValue) }
+                                ))
+                                .labelsHidden()
+                                .toggleStyle(.codync)
+                                .disabled(busyRoutineId == routine.id)
+                            }
+                        }
+                        if routine.id != routines.last?.id {
+                            Hairline()
+                        }
+                    }
+                }
                 CardRow {
-                    Text(L("还没有定时任务。"))
-                        .foregroundStyle(Palette.secondary)
+                    Button {
+                        showingEditor = true
+                    } label: {
+                        Label(L("新建定时任务"), systemImage: "plus")
+                    }
+                    .disabled(store.connector.api == nil)
                 }
             }
             CardSection(title: L("稍后")) {
@@ -205,6 +256,45 @@ struct DetailsTab: View {
                         .foregroundStyle(Palette.secondary)
                 }
             }
+        }
+        .task {
+            if let api = store.connector.api {
+                await store.routines.refresh(botId: bot.id, api: api)
+            }
+        }
+        .codyncSheet(isPresented: Binding(get: { detailRoutineId != nil }, set: { if !$0 { detailRoutineId = nil } })) {
+            if let routineId = detailRoutineId {
+                NavigationStack { RoutineDetailView(botId: bot.id, routineId: routineId) }
+            }
+        }
+        .codyncSheet(isPresented: $showingEditor) {
+            NavigationStack {
+                RoutineEditorView(botId: bot.id, routine: nil) { _ in
+                    showingEditor = false
+                }
+            }
+        }
+    }
+
+    private func routineSubtitle(_ routine: Routine) -> String {
+        if let lastError = routine.lastError {
+            return lastError
+        }
+        if !routine.enabled {
+            return L("已关闭")
+        }
+        if let next = RoutineTime.nextRunText(routine.nextRunAt) {
+            return "\(L("下次运行")) \(next)"
+        }
+        return routine.scheduleSummary
+    }
+
+    private func setEnabled(_ routine: Routine, enabled: Bool) {
+        guard let api = store.connector.api else { return }
+        busyRoutineId = routine.id
+        Task {
+            _ = await store.routines.setEnabled(botId: bot.id, routineId: routine.id, enabled: enabled, api: api)
+            await MainActor.run { busyRoutineId = nil }
         }
     }
 

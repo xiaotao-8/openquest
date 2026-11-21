@@ -288,6 +288,66 @@ struct HostAPI: Sendable {
         return (Data(base64Encoded: wrapper.data) ?? Data(), wrapper.size)
     }
 
+    // MARK: - Routines
+
+    /// The bot's routines, recent runs, and waiting follow-ups.
+    func routines(botId: String) async throws -> RoutineListing {
+        let data = try await connection.call(method: "routines", body: try body(["botId": botId]))
+        return try decode(RoutineListing.self, from: data)
+    }
+
+    /// Creates (`id` nil) or updates a routine. Triggers are encoded as a
+    /// JSON array, like BotDraft's fallbacks.
+    func saveRoutine(botId: String, id: String?, name: String, instruction: String,
+                     triggers: [RoutineTrigger], timeoutSeconds: Int) async throws -> Routine {
+        var dict: [String: Any] = [
+            "botId": botId,
+            "name": name,
+            "instruction": instruction,
+            "timeoutSeconds": timeoutSeconds,
+        ]
+        if let id { dict["id"] = id }
+        if let data = try? JSONEncoder().encode(triggers),
+           let array = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+            dict["triggers"] = array
+        }
+        let data = try await connection.call(method: "saveRoutine", body: try body(dict))
+        struct Wrapper: Decodable { var routine: Routine }
+        return try decode(Wrapper.self, from: data).routine
+    }
+
+    /// A routine action: "deleteRoutine" | "setRoutineEnabled" |
+    /// "runRoutine". `enabled` only applies to setRoutineEnabled.
+    func routineAction(_ method: String, botId: String, id: String, enabled: Bool? = nil) async throws {
+        var dict: [String: Any] = ["botId": botId, "id": id]
+        if let enabled { dict["enabled"] = enabled }
+        _ = try await connection.call(method: method, body: try body(dict))
+    }
+
+    func deleteRoutine(botId: String, id: String) async throws {
+        try await routineAction("deleteRoutine", botId: botId, id: id)
+    }
+
+    func setRoutineEnabled(botId: String, id: String, enabled: Bool) async throws {
+        try await routineAction("setRoutineEnabled", botId: botId, id: id, enabled: enabled)
+    }
+
+    /// Drops a follow-up that hasn't happened yet.
+    func cancelFollowUp(botId: String, id: String) async throws {
+        _ = try await connection.call(method: "cancelFollowUp", body: try body(["botId": botId, "id": id]))
+    }
+
+    /// Runs a failed run's work again, with the event it had.
+    func retryRoutineRun(botId: String, runId: String) async throws {
+        _ = try await connection.call(method: "retryRoutineRun", body: try body(["botId": botId, "runId": runId]))
+    }
+
+    /// `rotate` replaces the key first; senders using the old one stop working.
+    func routineWebhook(botId: String, id: String, rotate: Bool = false) async throws -> RoutineWebhook {
+        let data = try await connection.call(method: "routineWebhook", body: try body(["botId": botId, "id": id, "rotate": rotate]))
+        return try decode(RoutineWebhook.self, from: data)
+    }
+
     /// The events subscription, mapped to decoded `HostEvent`s. One per
     /// connection; resubscribe from the persisted `rev` on every reconnect.
     func events(since: Int64) async -> AsyncThrowingStream<HostEvent, Error> {

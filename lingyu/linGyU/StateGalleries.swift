@@ -682,6 +682,88 @@ struct BotsWidgetCard: View {
     }
 }
 
+/// The new-conversation widget's in-app preview: a plus mark, the
+/// kind, and the lead bot it will open a chat with (or the honest empty
+/// state when there is no bot yet). Tapping it in the real widget opens
+/// the new chat; here it is a preview only.
+struct NewConversationPreviewCard: View {
+    let leadBot: Bot?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Palette.text)
+            Spacer(minLength: 0)
+            Text(L("新建"))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.text)
+            if let leadBot {
+                HStack(spacing: 6) {
+                    CharacterAvatar(bot: leadBot, size: 20, still: true)
+                    Text(widgetName(leadBot))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                }
+            } else {
+                Text(L("还没有智能体"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .foregroundStyle(Palette.text)
+    }
+}
+
+/// The MiniApps widget's in-app preview: the user's Spaces, up to four
+/// rows, or the honest empty state with the create entry.
+struct MiniAppsPreviewCard: View {
+    let spaces: [SpaceItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(L("小工具")).font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+            }
+            .foregroundStyle(Palette.text)
+            if spaces.isEmpty {
+                Spacer(minLength: 0)
+                Text(L("还没有小工具"))
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                Text(L("描述一个来创建"))
+                    .font(.system(size: 10)).foregroundStyle(Palette.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(spaces.prefix(4)) { space in
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.grid.2x2")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.secondary)
+                                .frame(width: 24, height: 24)
+                                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 7))
+                            Text(space.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Palette.text)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Palette.tertiary)
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 /// Four bots in a 2×2 grid, each in its mood with a dot for its state.
 /// Spots picked in the widget's settings keep their bot; the rest fill
 /// with the bots that need you first, and empty spots hold a faded
@@ -845,39 +927,29 @@ struct WidgetGalleryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var page: Page?
-    @State private var kind = "usage"
-    @State private var providerID = ""
+    @State private var kind = "roster"
     @State private var size = "medium"
     @State private var hasWidget: Bool?
     @State private var widgetCheckFailed = false
+    /// Whether the add-widget steps are shown (the preview's tap target).
+    @State private var showWidgetSteps = false
     /// nil until asked, false once turned off in the Settings app.
     @State private var notificationsAllowed: Bool?
     @AppStorage("cn.lingyu.usageIconStyle") private var usageIconStyle = "character"
 
     private var bots: [Bot] { store.connector.mirror.bots }
 
-    /// The providers are the backends the user's own bots actually use.
-    private var providers: [(id: String, label: String)] {
-        Array(Set(bots.map(\.backend).filter { !$0.isEmpty })).sorted().map { backend in
-            (id: backend, label: backend.prefix(1).uppercased() + backend.dropFirst())
-        }
-    }
+    /// The lead bot, for the new-conversation preview.
+    private var leadBot: Bot? { store.connector.mirror.leadBot }
 
-    private var providerName: String {
-        providers.first { $0.id == providerID }?.label ?? providers.first?.label ?? L("用量")
-    }
+    private var spaces: [SpaceItem] { store.spaces.spaces }
 
-    /// The provider picker always has a selection: the first provider
-    /// until the user picks another.
-    private var providerSelection: Binding<String> {
-        Binding(get: { providerID.isEmpty ? (providers.first?.id ?? "") : providerID },
-                set: { providerID = $0 })
-    }
-
-    /// The widget kinds, translated at render time (not once, so a
-    /// language change takes effect).
+    /// The widgets this extension actually ships: the roster, a new
+    /// conversation, and MiniApps. (The usage and team previews stay in
+    /// this file as components, but their widgets are not built in this
+    /// round, so they are not offered here.)
     private var kinds: [(id: String, label: String)] {
-        [("usage", L("供应商用量")), ("bots", L("智能体")), ("team", L("团队"))]
+        [("roster", L("智能体")), ("new", L("新建")), ("miniapps", L("小工具"))]
     }
 
     var body: some View {
@@ -940,20 +1012,44 @@ struct WidgetGalleryView: View {
                     } else {
                         SegmentedChoice(options: kinds.map { (value: $0.id, title: $0.label) }, selection: $kind)
                     }
-                    if kind == "usage", !providers.isEmpty {
-                        if typeSize.isAccessibilitySize || providers.count > 3 {
-                            ChoicePicker(selection: providerSelection, options: providers)
-                        } else {
-                            SegmentedChoice(options: providers.map { (value: $0.id, title: $0.label) }, selection: providerSelection)
-                        }
-                    }
-                    if kind != "team" {
+                    if kind == "roster" {
                         ChoicePicker(selection: $size, options: [("small", L("小")), ("medium", L("中")), ("large", L("大"))])
                     }
                     VStack(spacing: 18) {
                         preview(wide: size != "small")
-                            .frame(width: size == "small" || kind == "team" ? 158 : nil, height: size == "large" && kind != "team" ? 338 : 158)
+                            .frame(width: kind == "roster" && size != "small" ? nil : 158, height: kind == "roster" && size == "large" ? 338 : 158)
                         previewDescription
+                        Button { showWidgetSteps.toggle() } label: {
+                            HStack {
+                                Text(L("怎么添加 linGyU 小组件"))
+                                    .font(.footnote.weight(.medium))
+                                Spacer()
+                                Image(systemName: showWidgetSteps ? "chevron.up" : "chevron.down")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Palette.tertiary)
+                            }
+                            .foregroundStyle(Palette.text)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint(L("长按主屏幕上的空白处"))
+                        if showWidgetSteps {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(WidgetSetupDemo.steps, id: \.index) { step in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text("\(step.index + 1)")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Palette.secondary)
+                                            .frame(width: 16, height: 16)
+                                            .background(Palette.surface, in: Circle())
+                                        Text(step.text)
+                                            .font(.footnote)
+                                            .foregroundStyle(Palette.secondary)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .padding(14)
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 26))
@@ -1010,21 +1106,35 @@ struct WidgetGalleryView: View {
 
     private var previewDescription: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(kind == "team" ? L("小尺寸小组件") : L("%@尺寸小组件", size == "small" ? L("小") : size == "large" ? L("大") : L("中"))).font(.subheadline.weight(.medium))
-            Text(kind == "usage" ? L("小尺寸显示最紧的那个限额。中尺寸显示两个时间窗。大尺寸加一个汇总和最多四个限额。")
-                 : kind == "team" ? L("四个智能体排成小人阵，每个旁边一个点表示谁在干活。长按小组件、点编辑小组件可以选每个位置坐谁；空位先放最需要你的智能体。")
-                 : L("看谁需要你、谁还在干活。大尺寸最多显示六个智能体。"))
+            Text(previewTitle).font(.subheadline.weight(.medium))
+            Text(previewBody)
                 .font(.caption).foregroundStyle(Palette.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var previewTitle: String {
+        switch kind {
+        case "new": return L("新建")
+        case "miniapps": return L("小工具")
+        default: return L("%@尺寸小组件", size == "small" ? L("小") : size == "large" ? L("大") : L("中"))
+        }
+    }
+
+    private var previewBody: String {
+        switch kind {
+        case "new": return leadBot?.name ?? L("还没有智能体")
+        case "miniapps": return spaces.isEmpty ? L("还没有小工具") : spaces[0].title
+        default: return L("看谁需要你、谁还在干活。大尺寸最多显示六个智能体。")
+        }
+    }
+
     @ViewBuilder private func preview(wide: Bool) -> some View {
         Group {
-            if kind == "usage" {
-                UsagePreviewCard(providerName: providerName, providerId: providerID.isEmpty ? (providers.first?.id ?? "") : providerID, layout: size == "large" ? .large : wide ? .medium : .small, iconStyle: usageIconStyle)
-            } else if kind == "team" {
-                BotsTeamCard(bots: bots)
+            if kind == "miniapps" {
+                MiniAppsPreviewCard(spaces: spaces)
+            } else if kind == "new" {
+                NewConversationPreviewCard(leadBot: leadBot)
             } else {
                 BotsWidgetCard(bots: bots, wide: wide, large: size == "large")
             }

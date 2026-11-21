@@ -64,7 +64,7 @@ struct StateView: View {
             }
             .background(Palette.background)
             .codyncSheet(isPresented: $showingUsage) {
-                UsageView()
+                HostUsageView()
             }
             .codyncSheet(isPresented: $showingApprovals) {
                 if let bot = firstPendingBot {
@@ -84,6 +84,7 @@ struct StateView: View {
                 if !didHandlePreview, case .seeded(let options) = store.previewMode {
                     didHandlePreview = true
                     if options.audit { showingAudit = true }
+                    if options.upcoming { showingUpcoming = true }
                     if options.stateLower {
                         // Let the layout settle, then jump to the new sections.
                         Task { @MainActor in
@@ -123,7 +124,7 @@ struct StateView: View {
                         showingUpcoming = true
                     } label: {
                         HStack {
-                            Text(L("还没有定时任务"))
+                            Text(upcomingSummary)
                                 .foregroundStyle(Palette.text)
                             Spacer()
                             Image(systemName: "chevron.right")
@@ -162,6 +163,17 @@ struct StateView: View {
         return L("%d 个待决 · %d 个已决定", pendingEntries.count, decided)
     }
 
+    private var upcomingSummary: String {
+        let count = store.routines.routineCount
+        if count == 0 {
+            return L("还没有定时任务")
+        }
+        if let next = store.routines.nextRun, let time = RoutineTime.nextRunText(next.at) {
+            return L("%d 个定时任务 · 下次 %@", count, time)
+        }
+        return L("%d 个定时任务", count)
+    }
+
     private var auditSummary: String {
         let today = store.audit.records.filter { Calendar.current.isDateInToday($0.date) }.count
         if store.audit.records.isEmpty {
@@ -193,55 +205,6 @@ struct StateView: View {
                 .buttonStyle(.plain)
             }
         }
-    }
-}
-
-/// The Usage sheet: per-provider cards. The `usage` RPC is a Phase 2 item,
-/// so the sheet shows an honest empty state — never a number.
-struct UsageView: View {
-    @EnvironmentObject private var store: AppStore
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScreenHeader(title: L("用量"), trailing: AnyView(
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.iconButton)
-                .accessibilityLabel(L("关闭"))
-            ))
-            if !store.connector.isPaired {
-                VStack(spacing: 14) {
-                    Image(systemName: "chart.bar")
-                        .font(.system(size: 40, weight: .ultraLight))
-                        .foregroundStyle(Palette.tertiary)
-                    Text(L("还没有连接电脑"))
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Palette.text)
-                    Text(L("连接电脑后，这里会显示用量。"))
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(24)
-            } else {
-                VStack(spacing: 12) {
-                    Text(L("还没有用量数据"))
-                        .font(.headline)
-                        .foregroundStyle(Palette.text)
-                    Text(L("连接电脑后，这里会按供应商显示用量与剩余额度。"))
-                        .font(.body)
-                        .foregroundStyle(Palette.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
-                Spacer()
-            }
-        }
-        .background(Palette.background)
     }
 }
 

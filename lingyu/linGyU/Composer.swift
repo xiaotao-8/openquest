@@ -27,14 +27,19 @@ struct Composer: View {
     /// the trailing button becomes Interrupt instead of Stop. Phase 1
     /// has no voice calls, so callers pass nil until calls land.
     var onInterrupt: (() -> Void)? = nil
+    /// Empty state: the trailing button opens a voice call.
+    var onCall: (() -> Void)? = nil
 
     @State private var attachments: [PendingAttachment] = []
     @State private var showingPhotoPicker = false
     @State private var showingDocumentPicker = false
     @State private var errorMessage: String?
     @FocusState private var fieldFocused: Bool
-    @State private var showingCallLater = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Hold to talk: the mic is held down, not tapped.
+    @StateObject private var talkRecognizer = OneShotSpeechRecognizer()
+    @State private var holdingTalk = false
+    @State private var talkCancelling = false
 
     private var trimmedEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -58,6 +63,11 @@ struct Composer: View {
                     .foregroundStyle(Palette.danger)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
+            }
+            if holdingTalk {
+                holdTalkBanner
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
             }
             HStack(alignment: .bottom, spacing: 8) {
                 plusButton
@@ -107,9 +117,6 @@ struct Composer: View {
                 addFiles(urls)
             }
         }
-        .codyncDialog(isPresented: $showingCallLater, title: L("通话稍后推出"), message: L("语音通话会在后续阶段加入，现在还不能打电话。"), actions: [
-            CodyncDialogAction(title: L("好"), action: {}),
-        ])
     }
 
     private var placeholder: String {
@@ -141,9 +148,11 @@ struct Composer: View {
         }
     }
 
-    /// Dictation, beside send / call: a light circle with its engine menu.
-    /// Phase 1 has one engine — the keyboard's dictation, one tap away —
-    /// so the mic focuses the field; voice engines are a later phase.
+    /// Hold to talk: press and hold the mic to speak — a live waveform
+    /// shows above the composer, sliding up more than 64pt arms cancel,
+    /// and releasing fills the recognised text into the field (it never
+    /// sends). Recognition is on-device (SFSpeechRecognizer); when it
+    /// cannot start, a tap falls back to the keyboard's dictation.
     private var micButton: some View {
         HStack(spacing: 0) {
             Button {
@@ -151,15 +160,75 @@ struct Composer: View {
             } label: {
                 Image(systemName: "mic")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(holdingTalk ? Palette.text : Palette.secondary)
                     .frame(width: 34, height: 34)
                     .contentShape(Circle())
             }
             .buttonStyle(PressScale())
-            .accessibilityLabel(L("听写"))
+            .accessibilityLabel(L("按住说话"))
+            .gesture(holdTalkGesture)
             DictationEngineMenu(height: 34)
         }
         .background(Palette.bubbleAgent, in: Capsule())
+    }
+
+    private var holdTalkGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                talkCancelling = value.translation.height < -64
+                guard !holdingTalk, !talkRecognizer.isRecording else { return }
+                holdingTalk = true
+                talkCancelling = false
+                Task {
+                    let started = await talkRecognizer.start()
+                    if !started {
+                        holdingTalk = false
+                        fieldFocused = true
+                    }
+                }
+            }
+            .onEnded { value in
+                guard holdingTalk else { return }
+                holdingTalk = false
+                talkCancelling = false
+                if value.translation.height < -64 {
+                    talkRecognizer.cancel()
+                    return
+                }
+                Task {
+                    let recognised = await talkRecognizer.finish()
+                    let trimmed = recognised.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        fieldFocused = true
+                    } else if text.isEmpty {
+                        text = trimmed
+                    } else {
+                        text += " " + trimmed
+                    }
+                }
+            }
+    }
+
+    /// The live waveform + hint shown above the composer while holding.
+    private var holdTalkBanner: some View {
+        HStack(spacing: 10) {
+            HoldTalkWaveform(level: talkRecognizer.level, reduceMotion: reduceMotion)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(talkCancelling ? L("松手取消") : L("正在听…松手填入输入框"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(talkCancelling ? Palette.danger : Palette.text)
+                if !talkRecognizer.interimText.isEmpty {
+                    Text(talkRecognizer.interimText)
+                        .font(.caption)
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private enum Trailing: Equatable { case interrupt, stop, call, send }
@@ -198,7 +267,7 @@ struct Composer: View {
             switch state {
             case .interrupt: onInterrupt?()
             case .stop: onStop()
-            case .call: showingCallLater = true
+            case .call: onCall?()
             case .send: send()
             }
         } label: {
@@ -293,6 +362,30 @@ struct AttachmentChip: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Palette.bubbleAgent, in: Capsule())
+    }
+}
+
+/// Live waveform bars for hold to talk: heights follow the microphone
+/// level while the mic is held.
+struct HoldTalkWaveform: View {
+    var level: Float
+    var reduceMotion: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<5, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Palette.text)
+                    .frame(width: 3, height: height(for: index))
+            }
+        }
+        .frame(height: 20)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: level)
+    }
+
+    private func height(for index: Int) -> CGFloat {
+        let wave = 1 - abs(Float(index) - 2) / 2
+        return 4 + CGFloat(level * wave) * 16
     }
 }
 

@@ -119,6 +119,13 @@ struct CloudStatus: Decodable, Sendable {
     }
 }
 
+/// A claim for bringing a computer into the account (`POST /v1/claims`).
+/// The computer signs it (`joinAccount`); the phone completes it below.
+struct CloudClaim: Decodable, Sendable {
+    var claimId: String
+    var nonce: String
+}
+
 /// The user-facing `/v1` API: short codes and the cloud-computer lists.
 /// The session token comes from the account store, fetched fresh on every
 /// request — the app never stores a token itself. No device signature
@@ -167,6 +174,23 @@ struct CloudClient: Sendable {
     /// The account's cloud computers, whether it may have them, and the limit.
     func cloudStatus() async throws -> CloudStatus {
         try await request("GET", "v1/cloud-computers")
+    }
+
+    // MARK: - Claims
+
+    /// A claim for bringing a computer into the account. The computer
+    /// signs it with `joinAccount`; the phone completes it with
+    /// `completeClaim` below. Note: the host also checks the phone's
+    /// device certificate, which this app does not register yet —
+    /// `joinAccount` refuses until that flow lands.
+    func createClaim() async throws -> CloudClaim {
+        try await request("POST", "v1/claims", json: Data("{}".utf8))
+    }
+
+    /// `claim`: the JSON object the computer signed, sent as it came.
+    func completeClaim(claimId: String, claim: Data) async throws {
+        struct Ignored: Decodable {}
+        let _: Ignored = try await request("POST", "v1/claims/\(claimId)/complete", json: claim)
     }
 
     // MARK: - Plumbing

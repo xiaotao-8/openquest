@@ -51,6 +51,7 @@ struct SettingsView: View {
     @State private var showingDataControls = false
     @State private var showingVault = false
     @State private var showingNetwork = false
+    @State private var showingVoice = false
     @State private var didHandlePreview = false
     @State private var notificationStatus = ""
     @State private var iconBadge = false
@@ -69,6 +70,7 @@ struct SettingsView: View {
                 appearanceSection
                 languageSection
                 thinkingSection
+                voiceSection
                 permissionsSection
                 dataSection
                 shortcutSection
@@ -116,6 +118,9 @@ struct SettingsView: View {
         }
         .codyncSheet(isPresented: $showingNetwork) {
             NavigationStack { NetworkProtocolsView() }
+        }
+        .codyncSheet(isPresented: $showingVoice) {
+            NavigationStack { VoiceSettingsView() }
         }
         .codyncDialog(
             isPresented: $showingDeleteDialog,
@@ -168,6 +173,7 @@ struct SettingsView: View {
                 else if options.identity { showingIdentity = true }
                 else if options.vault { showingVault = true }
                 else if options.network { showingNetwork = true }
+                else if options.voice { showingVoice = true }
                 else if options.dataControls { showingDataControls = true }
             }
         }
@@ -441,6 +447,34 @@ struct SettingsView: View {
                         Text(L("Identity"))
                             .foregroundStyle(Palette.text)
                         Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Voice
+
+    /// Voice service: the call engine (on-device only while the
+    /// computer's credential store is locked), the reading voice, and
+    /// whether replies are read aloud.
+    private var voiceSection: some View {
+        CardSection(title: L("语音"), footer: L("通话与按住说话都在这台设备上识别与朗读，不走电脑端。")) {
+            CardRow {
+                Button {
+                    showingVoice = true
+                } label: {
+                    HStack {
+                        Text(L("语音服务"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Text(L("设备语音"))
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(Palette.tertiary)

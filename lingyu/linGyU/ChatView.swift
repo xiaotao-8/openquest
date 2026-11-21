@@ -21,15 +21,18 @@ struct ChatView: View {
     @State private var didLoadHistory = false
     @State private var showingWork = false
     @State private var showingStopDialog = false
+    @State private var showingCall = false
+    @State private var didHandleCallPreview = false
 
     private var mirror: EventMirror { store.connector.mirror }
     private var bot: Bot? { mirror.bot(id: botId) }
 
-    /// The timeline: chat entries plus tool-call rows; thought/plan entries
-    /// live in the working steps / trace, not the main timeline.
+    /// The timeline: chat entries plus tool-call rows and call lines;
+    /// thought/plan entries live in the working steps / trace, not the
+    /// main timeline.
     private var timeline: [Entry] {
         mirror.entries(for: botId).filter { entry in
-            entry.isChat || entry.kind == "tool"
+            entry.isChat || entry.kind == "tool" || entry.kind == "call"
         }
     }
 
@@ -67,7 +70,8 @@ struct ChatView: View {
                             // No voice call is speaking in Phase 1, so no
                             // Interrupt state; the original wires this only
                             // while a call is speaking.
-                            onInterrupt: nil
+                            onInterrupt: nil,
+                            onCall: { showingCall = true }
                         )
                     }
                 }
@@ -78,14 +82,24 @@ struct ChatView: View {
                 titleButton
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingFind = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 18, weight: .medium))
+                HStack(spacing: 20) {
+                    Button {
+                        showingCall = true
+                    } label: {
+                        Image(systemName: "phone")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("语音通话"))
+                    Button {
+                        showingFind = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("在对话中查找"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("在对话中查找"))
             }
         }
         .overlay(alignment: .top) {
@@ -109,6 +123,11 @@ struct ChatView: View {
         .codyncSheet(isPresented: $showingWork) {
             AllWorkView()
         }
+        .codyncSheet(isPresented: $showingCall) {
+            if let bot {
+                CallView(bot: bot, store: store, onEnd: endCall)
+            }
+        }
         .stopWorkDialog(isPresented: $showingStopDialog) {
             Task {
                 try? await store.connector.api?.stopWork(botId: botId, taskId: bot.workSections.stoppable?.id)
@@ -116,6 +135,10 @@ struct ChatView: View {
         }
         .onAppear {
             loadDraft()
+            if !didHandleCallPreview, case .seeded(let options) = store.previewMode, options.call {
+                didHandleCallPreview = true
+                showingCall = true
+            }
             if !didLoadHistory {
                 didLoadHistory = true
                 loadEarlier()
@@ -436,6 +459,48 @@ struct ChatView: View {
         mirror.updateLocalEntry(botId: entry.botId, clientNonce: nonce, status: "cancelled")
     }
 
+    // MARK: - Call record
+
+    /// Writes a finished call into the chat as one titled line
+    /// ("通话 · 00:16") holding the call's transcript. Local only: the
+    /// host never saw the call (its voice methods need the vault), so
+    /// there is no host row to echo it back.
+    private func endCall(lines: [CallLine], seconds: Int) {
+        guard !lines.isEmpty || seconds > 0 else { return }
+        let callId = UUID().uuidString
+        guard let entry = makeCallEntry(callId: callId, seconds: seconds, lines: lines) else { return }
+        mirror.addLocalEntry(entry)
+    }
+
+    private func makeCallEntry(callId: String, seconds: Int, lines: [CallLine]) -> Entry? {
+        // One line per turn, "user"/"agent" + a unit separator + the text:
+        // the separator never appears in typed or transcribed text, so the
+        // row can split it back without guessing.
+        let transcript = lines.map { line in
+            "\(line.speaker.rawValue)\u{1F}\(line.text)"
+        }.joined(separator: "\n")
+        let dict: [String: Any] = [
+            "id": "local-call-\(callId)",
+            "seq": 0,
+            "botId": botId,
+            "rev": 0,
+            "kind": "call",
+            "turn": 0,
+            "data": [
+                "text": transcript,
+                "title": L("通话 · %d:%02d", seconds / 60, seconds % 60),
+                "call": callId,
+                "callSeconds": seconds,
+                "status": "sent",
+            ],
+            "createdAt": Int64(Date().timeIntervalSince1970 * 1000),
+            "updatedAt": Int64(Date().timeIntervalSince1970 * 1000),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let entry = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
+        return entry
+    }
+
     // MARK: - Drafts
 
     private var draftKey: String { "cn.lingyu.draft.\(botId)" }
@@ -482,6 +547,8 @@ struct MessageRow: View {
             NoticeRow(entry: entry)
         case "tool":
             ToolCallRow(entry: entry, onShowBrowser: onShowBrowser)
+        case "call":
+            CallLineRow(entry: entry)
         default:
             EmptyView()
         }
@@ -761,6 +828,65 @@ struct ToolCallRow: View {
         case "fetch": return "globe"
         default: return "wrench.and.screwdriver"
         }
+    }
+}
+
+/// A finished call, as one titled line ("通话 · 00:16") next to the
+/// tool-call rows. Tapping it opens the call's transcript.
+struct CallLineRow: View {
+    var entry: Entry
+    @State private var expanded = false
+
+    /// The transcript, split back from the entry's text: one line per
+    /// turn, "user"/"agent" + unit separator + the text.
+    private var turns: [(speaker: String, text: String)] {
+        (entry.data.text ?? "").components(separatedBy: "\n").compactMap { line in
+            guard let separator = line.firstIndex(of: "\u{1F}") else { return nil }
+            let speaker = String(line[..<separator])
+            let text = String(line[line.index(after: separator)...])
+            guard !text.isEmpty else { return nil }
+            return (speaker, text)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                expanded.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "phone")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Palette.secondary)
+                    Text(entry.data.title ?? L("通话"))
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.text)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Palette.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(turn.speaker == "user" ? L("你") : L("智能体"))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Palette.secondary)
+                            Text(turn.text)
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.text)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

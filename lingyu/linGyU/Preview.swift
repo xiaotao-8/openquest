@@ -34,6 +34,20 @@ enum PreviewMode: Equatable {
         /// Scroll the State tab to the lower sections (Activity /
         /// Approvals / Upcoming / audit) for the screenshot.
         var stateLower = false
+        /// Seed demo routines for the State-lower screenshot.
+        var routines = false
+        /// Open the Voice service sheet on the Settings tab.
+        var voice = false
+        /// Open the lead bot's chat, then the call screen over it.
+        var call = false
+        /// Show the Extensions page instead of the tabs.
+        var extensions = false
+        /// Show the host Network page instead of the tabs.
+        var hostNetwork = false
+        /// Show the Usage page (true data) instead of the tabs.
+        var usage = false
+        /// Open the Upcoming sheet on the State tab.
+        var upcoming = false
     }
 
     static func fromLaunchArguments() -> PreviewMode {
@@ -59,6 +73,13 @@ enum PreviewMode: Equatable {
         options.dataControls = args.contains("-PreviewDataControls")
         options.audit = args.contains("-PreviewAudit")
         options.stateLower = args.contains("-PreviewStateLower")
+        options.routines = args.contains("-PreviewRoutines")
+        options.voice = args.contains("-PreviewVoice")
+        options.call = args.contains("-PreviewCall")
+        options.extensions = args.contains("-PreviewExtensions")
+        options.hostNetwork = args.contains("-PreviewHostNetwork")
+        options.usage = args.contains("-PreviewUsage")
+        options.upcoming = args.contains("-PreviewUpcoming")
         return .seeded(options)
     }
 
@@ -109,15 +130,18 @@ enum PreviewRunner {
         if options.phase2 {
             seedPhase2(store: store)
         }
-        if options.soul || options.memory || options.identity || options.vault || options.network || options.dataControls {
+        if options.routines {
+            seedRoutinesDemo(store: store)
+        }
+        if options.soul || options.memory || options.identity || options.vault || options.network || options.dataControls || options.voice {
             store.selectedTab = 3
-        } else if options.audit {
+        } else if options.audit || options.upcoming {
             store.selectedTab = 2
         } else if options.settings {
             store.selectedTab = 3
         } else if let page = options.page {
             store.selectedTab = page == "state" ? 2 : 1
-        } else if options.openChat || options.approval || options.ask {
+        } else if options.openChat || options.approval || options.ask || options.call {
             store.selectedTab = 0
             if let lead = bots.first {
                 store.navigationPath.append(lead.id)
@@ -159,6 +183,40 @@ enum PreviewRunner {
         store.identity.saveSoul("演示 Soul：你是 linGyU 的智能体，中文回复，简洁直接。")
         store.identity.saveMemory("演示记忆：用户喜欢简洁直接的回答。")
         store.identity.saveIdentity(name: "阿文", vibe: "冷静、直接", tagline: "写代码、修 bug、跑测试。", body: "演示身份。")
+    }
+
+    /// Seeded demo routines (seeded mode only): one enabled daily routine
+    /// with a next run, one disabled weekly routine, one done run, one
+    /// failed run (retryable), and one waiting follow-up — so the State
+    /// lower sections and Upcoming can be screenshotted with real rows.
+    @MainActor
+    private static func seedRoutinesDemo(store: AppStore) {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let hour: Int64 = 3600_000
+        let listing = RoutineListing(
+            routines: [
+                Routine(id: "demo-routine-morning", botId: "demo-lead", name: "早上简报",
+                        instruction: "每天早上整理一份简报发给我。",
+                        triggers: [RoutineTrigger(type: "cron", expression: "0 8 * * *", timeZone: TimeZone.current.identifier)],
+                        enabled: true, createdAt: now - 7 * 24 * hour, updatedAt: now - 7 * 24 * hour,
+                        triggerDescriptions: ["每天 08:00"], nextRunAt: now + hour, timeoutSeconds: 3600),
+                Routine(id: "demo-routine-weekly", botId: "demo-lead", name: "每周回顾",
+                        instruction: "每周五晚上总结这周完成的事。",
+                        triggers: [RoutineTrigger(type: "cron", expression: "0 18 * * 5", timeZone: TimeZone.current.identifier)],
+                        enabled: false, createdAt: now - 7 * 24 * hour, updatedAt: now - 7 * 24 * hour,
+                        triggerDescriptions: ["每周五 18:00"], nextRunAt: nil, timeoutSeconds: 3600),
+            ],
+            runs: [
+                RoutineRun(id: "demo-run-1", routineId: "demo-routine-morning", botId: "demo-lead",
+                           status: "done", createdAt: now - hour, finishedAt: now - hour + 60_000, detail: "简报已发。"),
+                RoutineRun(id: "demo-run-2", routineId: "demo-routine-morning", botId: "demo-lead",
+                           status: "failed", createdAt: now - 25 * hour, finishedAt: now - 25 * hour + 30_000, detail: "电脑端返回错误。"),
+            ],
+            followUps: [
+                FollowUp(id: "demo-followup-1", botId: "demo-lead", at: now + 2 * hour,
+                         note: "下午三点前提醒我看一眼简报。", createdAt: now - hour),
+            ])
+        store.routines.seedDemo(botId: "demo-lead", listing: listing)
     }
 
     private static func demoBots(now: Int64) -> [Bot] {
@@ -223,7 +281,7 @@ enum PreviewRunner {
     // MARK: - Live driver
 
     /// Connects with the preview pairing blob, opens the preview bot chat,
-    /// sends a Chinese intro message, then a file-listing message to trigger
+    /// sends a Chinese intro message, then a file-write message to trigger
     /// a real approval card. When a pending card appears, it is answered
     /// "Allow once" at ~+120 s so the ~150 s screenshot shows it answered.
     @MainActor
@@ -300,19 +358,20 @@ enum PreviewRunner {
         } catch {
             store.liveDiag.record("intro send failed: \(error)")
         }
-        // 2. A file-listing request — the preview bot has permission "ask",
-        // so the tool call surfaces a real approval card.
+        // 2. A file-write request — the preview bot has permission "ask",
+        // so the write surfaces a real approval card (a read-only file
+        // listing never would: nothing there needs approving).
         try? await Task.sleep(nanoseconds: 20_000_000_000)
-        let listNonce = UUID().uuidString
-        let list = Entry(localText: "列出你工作区里的文件。", botId: parsed.botId, clientNonce: listNonce)
-        connector.mirror.addLocalEntry(list)
+        let writeNonce = UUID().uuidString
+        let write = Entry(localText: "在工作区新建文件 linGyU-live-test.txt，写一行 hello。", botId: parsed.botId, clientNonce: writeNonce)
+        connector.mirror.addLocalEntry(write)
         do {
-            _ = try await api.send(botId: parsed.botId, text: "列出你工作区里的文件。", clientNonce: listNonce)
-            store.liveDiag.record("list request sent")
+            _ = try await api.send(botId: parsed.botId, text: "在工作区新建文件 linGyU-live-test.txt，写一行 hello。", clientNonce: writeNonce)
+            store.liveDiag.record("write request sent")
         } catch {
-            store.liveDiag.record("list send failed: \(error)")
+            store.liveDiag.record("write send failed: \(error)")
         }
-        recordRoster(store: store, tag: "after-list")
+        recordRoster(store: store, tag: "after-write")
         // 3. Watch for a pending card; answer "Allow once" at ~+120 s.
         var cardSeen = false
         while Date().timeIntervalSince(start) < 150 {

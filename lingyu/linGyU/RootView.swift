@@ -11,6 +11,12 @@ struct RootView: View {
             PairingView(initialStep: pairingPage == "scan" ? .scan : .install)
         } else if case .seeded(let options) = store.previewMode, options.computers {
             ComputersView()
+        } else if case .seeded(let options) = store.previewMode, options.extensions {
+            ExtensionsView()
+        } else if case .seeded(let options) = store.previewMode, options.hostNetwork {
+            NetworkView()
+        } else if case .seeded(let options) = store.previewMode, options.usage {
+            HostUsageView()
         } else if store.showingWelcome && !store.connector.isPaired && !store.isPreview {
             WelcomeView(onSkip: {
                 store.showingWelcome = false

@@ -377,35 +377,261 @@ struct ApprovalsView: View {
 
 // MARK: - Upcoming
 
-/// Upcoming: the routines (scheduled tasks) list. The host exposes no
-/// routines API yet, so the list is honestly empty and creating one
-/// drafts a message to the lead agent, which sets it up in chat.
+/// Upcoming: every routine across bots (title, next run, toggle, tap for
+/// detail), their run history (failed runs retryable), and the bots'
+/// waiting follow-ups (due time, cancellable). All rows come from
+/// `store.routines`, which reads the host's `routines` listing — nothing
+/// here is invented, and an empty host reads as an honest empty state.
 struct UpcomingView: View {
     @EnvironmentObject private var store: AppStore
+    @State private var detailBotId: String?
+    @State private var detailRoutineId: String?
+    @State private var showingEditor = false
+    @State private var editorBotId: String?
+    @State private var editorRoutine: Routine?
+    @State private var busyRoutineId: String?
+
+    private var routines: [(botId: String, routine: Routine)] {
+        store.routines.allRoutines
+    }
+
+    private var runs: [(botId: String, run: RoutineRun)] {
+        store.routines.allRuns
+    }
+
+    private var followUps: [(botId: String, followUp: FollowUp)] {
+        store.routines.allFollowUps
+    }
+
+    private var isEmpty: Bool {
+        routines.isEmpty && runs.isEmpty && followUps.isEmpty
+    }
 
     var body: some View {
         List {
-            Section {
-                Text(L("还没有定时任务。"))
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.secondary)
-                Button {
-                    store.draftToLeadBot(L("请帮我新建一个定时任务"))
-                } label: {
-                    Label(L("新建定时任务"), systemImage: "plus")
-                }
-                .disabled(store.leadBot == nil)
-                if store.leadBot == nil {
-                    Text(L("需要先配对电脑并有智能体。"))
-                        .font(.footnote)
+            if isEmpty {
+                Section {
+                    Text(L("还没有定时任务。"))
+                        .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
+                    Button {
+                        editorBotId = store.leadBot?.id
+                        editorRoutine = nil
+                        showingEditor = true
+                    } label: {
+                        Label(L("新建定时任务"), systemImage: "plus")
+                    }
+                    .disabled(store.leadBot == nil || store.connector.api == nil)
+                    if store.leadBot == nil {
+                        Text(L("需要先配对电脑并有智能体。"))
+                            .font(.footnote)
+                            .foregroundStyle(Palette.secondary)
+                    } else {
+                        Button(L("请帮我新建一个定时任务")) {
+                            store.draftToLeadBot(L("请帮我新建一个定时任务"))
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.secondary)
+                    }
+                } footer: {
+                    Text(L("定时任务由电脑端按时执行，比如每天早上发简报。"))
                 }
-            } footer: {
-                Text(L("定时任务由电脑端按时执行，比如每天早上发简报。电脑端还没有提供定时任务列表，这里会先显示空状态。"))
+            } else {
+                if !routines.isEmpty {
+                    Section {
+                        ForEach(routines.indices, id: \.self) { index in
+                            routineRow(routines[index])
+                        }
+                    } header: {
+                        Text(L("定时任务"))
+                    }
+                }
+                if !runs.isEmpty {
+                    Section {
+                        ForEach(runs.indices, id: \.self) { index in
+                            runRow(runs[index])
+                        }
+                    } header: {
+                        Text(L("运行记录"))
+                    }
+                }
+                if !followUps.isEmpty {
+                    Section {
+                        ForEach(followUps.indices, id: \.self) { index in
+                            followUpRow(followUps[index])
+                        }
+                    } header: {
+                        Text(L("稍后"))
+                    }
+                }
+                Section {
+                    Button {
+                        editorBotId = store.leadBot?.id
+                        editorRoutine = nil
+                        showingEditor = true
+                    } label: {
+                        Label(L("新建定时任务"), systemImage: "plus")
+                    }
+                    .disabled(store.leadBot == nil || store.connector.api == nil)
+                }
+            }
+            if let error = store.routines.lastError, !isEmpty {
+                Section {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.danger)
+                }
             }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(L("即将到来"))
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await refresh()
+        }
+        .codyncSheet(isPresented: Binding(get: { detailRoutineId != nil }, set: { if !$0 { detailRoutineId = nil; detailBotId = nil } })) {
+            if let botId = detailBotId, let routineId = detailRoutineId {
+                NavigationStack { RoutineDetailView(botId: botId, routineId: routineId) }
+            }
+        }
+        .codyncSheet(isPresented: $showingEditor) {
+            if let botId = editorBotId {
+                NavigationStack {
+                    RoutineEditorView(botId: botId, routine: editorRoutine) { saved in
+                        detailBotId = botId
+                        detailRoutineId = saved.id
+                    }
+                }
+            }
+        }
+    }
+
+    private func routineRow(_ item: (botId: String, routine: Routine)) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                detailBotId = item.botId
+                detailRoutineId = item.routine.id
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.routine.name)
+                        .font(.body)
+                        .foregroundStyle(Palette.text)
+                        .lineLimit(1)
+                    Text(routineSubtitle(item))
+                        .font(.caption)
+                        .foregroundStyle(item.routine.lastError == nil ? Palette.secondary : Palette.danger)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Toggle("", isOn: Binding(
+                get: { item.routine.enabled },
+                set: { newValue in setEnabled(item, enabled: newValue) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.codync)
+            .disabled(busyRoutineId == item.routine.id)
+        }
+    }
+
+    private func routineSubtitle(_ item: (botId: String, routine: Routine)) -> String {
+        let botName = store.connector.mirror.bot(id: item.botId)?.name ?? item.botId
+        if let lastError = item.routine.lastError {
+            return lastError
+        }
+        if !item.routine.enabled {
+            return "\(botName) · \(L("已关闭"))"
+        }
+        if let next = RoutineTime.nextRunText(item.routine.nextRunAt) {
+            return "\(botName) · \(L("下次运行")) \(next)"
+        }
+        return botName
+    }
+
+    private func runRow(_ item: (botId: String, run: RoutineRun)) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.routines.routine(botId: item.botId, routineId: item.run.routineId)?.name ?? item.run.routineId)
+                    .font(.body)
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(runStatusText(item.run.status))
+                    Text(RoutineTime.fullText(item.run.createdAt))
+                }
+                .font(.caption)
+                .foregroundStyle(Palette.secondary)
+                if let detail = item.run.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(2)
+                }
+                if let result = item.run.result, !result.isEmpty {
+                    Text(result)
+                        .font(.caption)
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            if item.run.isFailed {
+                Button(L("重试")) { retryRun(item) }
+                    .font(.subheadline.weight(.semibold))
+                    .disabled(busyRoutineId == item.run.id)
+            }
+        }
+    }
+
+    private func followUpRow(_ item: (botId: String, followUp: FollowUp)) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.followUp.note)
+                    .font(.body)
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(2)
+                Text(RoutineTime.fullText(item.followUp.at))
+                    .font(.caption)
+                    .foregroundStyle(Palette.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(L("取消")) { cancelFollowUp(item) }
+                .font(.subheadline.weight(.semibold))
+                .disabled(busyRoutineId == item.followUp.id)
+        }
+    }
+
+    private func refresh() async {
+        guard let api = store.connector.api else { return }
+        await store.routines.refreshAll(api: api, botIds: store.connector.mirror.bots.map(\.id), force: true)
+    }
+
+    private func setEnabled(_ item: (botId: String, routine: Routine), enabled: Bool) {
+        guard let api = store.connector.api else { return }
+        busyRoutineId = item.routine.id
+        Task {
+            _ = await store.routines.setEnabled(botId: item.botId, routineId: item.routine.id, enabled: enabled, api: api)
+            await MainActor.run { busyRoutineId = nil }
+        }
+    }
+
+    private func retryRun(_ item: (botId: String, run: RoutineRun)) {
+        guard let api = store.connector.api else { return }
+        busyRoutineId = item.run.id
+        Task {
+            _ = await store.routines.retryRun(botId: item.botId, runId: item.run.id, api: api)
+            await MainActor.run { busyRoutineId = nil }
+        }
+    }
+
+    private func cancelFollowUp(_ item: (botId: String, followUp: FollowUp)) {
+        guard let api = store.connector.api else { return }
+        busyRoutineId = item.followUp.id
+        Task {
+            _ = await store.routines.cancelFollowUp(botId: item.botId, followUpId: item.followUp.id, api: api)
+            await MainActor.run { busyRoutineId = nil }
+        }
     }
 }

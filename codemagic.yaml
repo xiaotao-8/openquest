@@ -350,6 +350,16 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-state-full.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 3 routines：State 下半区 + seeded routines 演示数据，验证
+          # Upcoming 汇总行显示真数字；再单独开 Upcoming 详情页。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPage=state -PreviewPhase2 -PreviewRoutines -PreviewStateLower
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-state-routines.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPage=state -PreviewPhase2 -PreviewRoutines -PreviewUpcoming
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-upcoming.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewSoul -PreviewPhase2
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-soul.png
@@ -373,6 +383,30 @@ workflows:
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewDataControls
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-data-controls.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 3 语音：语音服务页（设置 → 语音服务）与通话屏（seeded 聊天上自动打开）。
+          # 通话屏在模拟器首次运行时会先弹麦克风/语音识别授权框，6 秒时的截图
+          # 可能拍到授权框或失败态——那是真实状态，不是截图步骤的问题。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewVoice
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-voice.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewChat -PreviewCall
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-call.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 3 电脑管理新页：扩展页 / host 网络页 / 用量页。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewExtensions
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-extensions.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewHostNetwork
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-host-network.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewUsage
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-usage.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_PAIRING
           # （preview-pairing.json 的 base64）须事先在 Codemagic 环境变量里配好
@@ -401,7 +435,7 @@ workflows:
           else
             echo "WARNING: LINGYU_PREVIEW_PAIRING not set, skipping live-chat screenshots"
           fi
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-live.png preview-live-approval.png || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-host-network.png preview-usage.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -427,12 +461,19 @@ workflows:
       - lingyu/preview-computers.png
       - lingyu/preview-discover-full.png
       - lingyu/preview-state-full.png
+      - lingyu/preview-state-routines.png
+      - lingyu/preview-upcoming.png
       - lingyu/preview-soul.png
       - lingyu/preview-identity.png
       - lingyu/preview-audit.png
       - lingyu/preview-vault.png
       - lingyu/preview-network.png
       - lingyu/preview-data-controls.png
+      - lingyu/preview-voice.png
+      - lingyu/preview-call.png
+      - lingyu/preview-extensions.png
+      - lingyu/preview-host-network.png
+      - lingyu/preview-usage.png
       - lingyu/preview-live.png
       - lingyu/preview-live-approval.png
       - lingyu/linGyU-unsigned.ipa

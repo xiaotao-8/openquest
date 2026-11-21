@@ -21,6 +21,9 @@ final class AppStore: ObservableObject {
     let audit = AuditStore()
     let vault = VaultStore()
     let network = NetworkPrefs()
+    /// The routines cache (one listing per bot). Refreshed on connect,
+    /// when a new bot appears, and when a routine-related entry arrives.
+    let routines = RoutineStore()
 
     /// Whether the sign-in sheet is showing (from Settings).
     @Published var showingSignIn = false
@@ -110,6 +113,11 @@ final class AppStore: ObservableObject {
         connector.mirror.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
+        // The widget roster follows the mirror: every roster change
+        // rewrites the App Group snapshot (throttled in the writer).
+        connector.mirror.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.writeWidgetSnapshot() }
+        }.store(in: &cancellables)
         account.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
@@ -128,6 +136,9 @@ final class AppStore: ObservableObject {
         spaces.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
+        spaces.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.writeWidgetSnapshot() }
+        }.store(in: &cancellables)
         audit.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
@@ -137,6 +148,58 @@ final class AppStore: ObservableObject {
         network.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
+        routines.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        // Routines follow the connection: hello means a live host is up
+        // (fetch every bot's listing; hello nil on disconnect clears the
+        // cache so a stale list never poses as live data).
+        connector.$hello.sink { [weak self] hello in
+            guard let self else { return }
+            if hello == nil {
+                self.routines.clear()
+                return
+            }
+            guard let api = self.connector.api else { return }
+            Task { await self.routines.refreshAll(api: api, botIds: self.connector.mirror.bots.map(\.id)) }
+        }.store(in: &cancellables)
+        // A bot the cache has never seen gets its listing fetched once.
+        connector.mirror.$bots.sink { [weak self] bots in
+            guard let self, let api = self.connector.api else { return }
+            let missing = bots.map(\.id).filter { self.routines.listing(botId: $0) == nil }
+            guard !missing.isEmpty else { return }
+            Task { await self.routines.refreshAll(api: api, botIds: missing) }
+        }.store(in: &cancellables)
+        // A routine run lands as an entry carrying its routine id: the
+        // run list for that bot is re-read (throttled in the store).
+        connector.mirror.$entriesByBot.sink { [weak self] byBot in
+            guard let self, let api = self.connector.api else { return }
+            for (botId, entries) in byBot {
+                guard let last = entries.last, last.data.routineId != nil else { continue }
+                Task { await self.routines.refresh(botId: botId, api: api) }
+            }
+        }.store(in: &cancellables)
+        // A pending permission entry starts its Live Activity (the
+        // lock-screen approval). startApproval is a no-op for an entry
+        // that already has one, and for a phone with Live Activities off.
+        connector.mirror.$entriesByBot.sink { [weak self] byBot in
+            guard let self else { return }
+            for (botId, entries) in byBot {
+                for entry in entries where entry.isWaitingCard {
+                    let botName = self.connector.mirror.bot(id: botId)?.name ?? botId
+                    LiveActivityManager.shared.startApproval(
+                        entryId: entry.id, botId: botId, botName: botName,
+                        title: entry.data.title ?? entry.data.command ?? L("审批请求"),
+                        detail: entry.data.detail ?? "")
+                }
+            }
+        }.store(in: &cancellables)
+        // Widget taps and Live Activity buttons hand the app a deep link;
+        // the intents run in the app process (openAppWhenRun).
+        OpenBotIntent.open = { [weak self] url in self?.handleDeepLink(url) }
+        OpenApprovalIntent.open = { [weak self] url in self?.handleDeepLink(url) }
+        MuteCallIntent.open = { [weak self] url in self?.handleDeepLink(url) }
+        EndCallIntent.open = { [weak self] url in self?.handleDeepLink(url) }
         let args = ProcessInfo.processInfo.arguments
         let pairingArg = args.contains("-PreviewPairing") || args.contains { $0.hasPrefix("-PreviewPairing=") }
         liveDiag.record("init mode=\(previewMode) argc=\(args.count) pairingArg=\(pairingArg) paired=\(connector.isPaired)")
@@ -182,6 +245,7 @@ final class AppStore: ObservableObject {
                 await PreviewRunner.runLive(store: self)
             }
         }
+        writeWidgetSnapshot()
     }
 
     func openChat(botId: String) {
@@ -189,6 +253,42 @@ final class AppStore: ObservableObject {
         openBotId = botId
         incognitoBotId = nil
         navigationPath.append(botId)
+    }
+
+    /// Rewrite the widget snapshot (roster / spaces / paired) into the
+    /// App Group, so the home-screen widgets follow the app. A no-op
+    /// when the group is unavailable (the widgets then show their
+    /// honest empty state).
+    func writeWidgetSnapshot() {
+        WidgetSnapshotWriter.shared.write(
+            bots: connector.mirror.bots,
+            spaces: spaces.spaces,
+            paired: connector.isPaired)
+    }
+
+    /// Route a widget / Live Activity deep link (scheme is the bundle
+    /// id, `cn.lingyu`). The "space" and "approvals/<entryId>" legs land
+    /// on the right tab/list; routing into the Space detail or one
+    /// entry's sheet is still open (no detail route exists yet).
+    func handleDeepLink(_ url: URL) {
+        guard url.scheme == Bundle.main.bundleIdentifier else { return }
+        switch url.host {
+        case "bot":
+            if let id = url.pathComponents.dropFirst().first { openChat(botId: id) }
+        case "new-chat":
+            if let bot = leadBot { openChat(botId: bot.id) }
+        case "space":
+            selectedTab = 1 // Discover; the Spaces segment opens the space by id
+        case "approvals":
+            selectedTab = 2 // State; the approvals list is its top block
+        case "call":
+            if let id = url.pathComponents.dropFirst().first {
+                // The call view opens from the chat's phone button; the
+                // "mute" / "end" query action is not acted on yet.
+                openChat(botId: id)
+            }
+        default: break
+        }
     }
 
     /// Open a chat with a pre-filled draft, replacing any saved draft.
@@ -238,12 +338,14 @@ final class AppStore: ObservableObject {
                      title: entry.data.title ?? entry.data.command ?? L("审批请求"),
                      detail: note ?? entry.data.detail ?? "",
                      status: option.kind.hasPrefix("reject") ? .denied : .allowed)
+        await LiveActivityManager.shared.endApproval(entryId: entry.id)
         return true
     }
 
     /// Reset everything and start over: sign out, forget all computers,
     /// clear the account-fetched lists, and go back to the welcome flow.
     func startOver() async {
+        await LiveActivityManager.shared.endAllApprovals()
         await signOutAccount()
         connector.forgetAllComputers()
         clearAccountCloud()
