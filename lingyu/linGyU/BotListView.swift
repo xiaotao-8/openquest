@@ -803,7 +803,7 @@ struct ComputersView: View {
     private func accountComputerRow(_ account: AccountComputer) -> some View {
         CardRow {
             HStack(spacing: 12) {
-                Image(systemName: ComputerBadge.symbol(account.device))
+                Image(systemName: ComputerBadge.symbol(account.cloud != nil ? "cloud" : nil))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.secondary)
                     .frame(width: 28, height: 28)
@@ -833,7 +833,7 @@ struct ComputersView: View {
         if let cloud = account.cloud, cloud.isAsleep {
             return L("休眠 · 发消息时唤醒")
         }
-        let online = account.online ? L("在线") : L("离线")
+        let online = account.isOnline ? L("在线") : L("离线")
         return L("%@ · 在你的账户里", online)
     }
 
