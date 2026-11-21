@@ -65,7 +65,7 @@ struct BotActivityPresentation: Hashable, Sendable {
 }
 
 extension BotActivityPresentation {
-    var orbState: ThinkingOrb.State? {
+    var orbState: ThinkingOrb.OrbState? {
         switch phase {
         case .working: return .working
         case .needsInput: return .listening

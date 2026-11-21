@@ -6,11 +6,11 @@ import SwiftUI
 /// TimelineView; dots never move, each state is a field that sets how full
 /// every dot is).
 struct ThinkingOrb: View {
-    enum State: String, CaseIterable, Sendable {
+    enum OrbState: String, CaseIterable, Sendable {
         case working, searching, listening, connecting, shaping
     }
 
-    let state: State
+    let state: OrbState
     let size: CGFloat
     let color: Color
     let animated: Bool
@@ -19,7 +19,7 @@ struct ThinkingOrb: View {
     @State private var visible = false
     @State private var epoch = Date.now
 
-    init(state: State = .working, size: CGFloat = 16, color: Color = Palette.text, animated: Bool = true) {
+    init(state: OrbState = .working, size: CGFloat = 16, color: Color = Palette.text, animated: Bool = true) {
         self.state = state
         self.size = size
         self.color = color
@@ -69,7 +69,7 @@ enum ThinkingOrbGeometry {
 
     /// The pose a still orb shows (widgets, Live Activity, Reduce Motion)
     /// and a moving one starts from, in seconds into its animation.
-    static func rest(_ state: ThinkingOrb.State) -> Double {
+    static func rest(_ state: ThinkingOrb.OrbState) -> Double {
         switch state {
         case .working, .searching: 0.45
         case .listening: 0.55
@@ -79,7 +79,7 @@ enum ThinkingOrbGeometry {
     }
 
     /// Every dot of the orb in a `size` box at `time` seconds: the grid cropped to a circle.
-    static func frame(state: ThinkingOrb.State, size: Double, time: Double) -> [Dot] {
+    static func frame(state: ThinkingOrb.OrbState, size: Double, time: Double) -> [Dot] {
         guard size.isFinite, size > 0, time.isFinite else { return [] }
         let n = cells(size: size), half = Double(n) / 2, pitch = size / Double(n)
         var dots: [Dot] = []
@@ -98,7 +98,7 @@ enum ThinkingOrbGeometry {
     }
 
     /// How full the dot at (`u`, `w`) on the unit disc is (0…1), `t` seconds in.
-    private static func fill(_ state: ThinkingOrb.State, _ u: Double, _ w: Double, _ t: Double) -> Double {
+    private static func fill(_ state: ThinkingOrb.OrbState, _ u: Double, _ w: Double, _ t: Double) -> Double {
         switch state {
         case .working:
             // A halftone-shaded ball whose light circles it clockwise every 2 s.
