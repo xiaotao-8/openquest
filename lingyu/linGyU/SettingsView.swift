@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UserNotifications
 
 /// The app log (About → Log only). Timestamped lines, capped at 200,
@@ -33,6 +34,12 @@ enum LogStore {
 /// About keeps only the log; no version row, no rating, no report link.
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
+    @ObservedObject private var avatarStore = AvatarStore.shared
+    @State private var myName = UserDefaults.standard.string(forKey: "cn.lingyu.myName") ?? ""
+    @AppStorage("cn.lingyu.showAgentLogos") private var showAgentLogos = true
+    @State private var shortcutLead = UserDefaults.standard.string(forKey: "cn.lingyu.shortcutLead") ?? "automatic"
+    @State private var showingPhotoPicker = false
+    @State private var photoItem: PhotosPickerItem?
     @State private var showingLog = false
     @State private var showingAnalyticsInfo = false
     @State private var showingStartOverDialog = false
@@ -46,7 +53,8 @@ struct SettingsView: View {
                 Text(L("设置"))
                     .font(.largeTitle.weight(.bold))
                     .foregroundStyle(Palette.text)
-                    .padding(.top, 8)
+                    .padding(.top, 20)
+                profileSection
                 appearanceSection
                 languageSection
                 thinkingSection
@@ -57,9 +65,18 @@ struct SettingsView: View {
                 startOverSection
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 32)
+            .padding(.bottom, 20)
         }
         .background(Palette.background)
+        .photosPicker(isPresented: $showingPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let image = await AvatarStore.load(item) {
+                    avatarStore.save(image, for: AvatarStore.meOwnerId)
+                }
+            }
+        }
         .codyncSheet(isPresented: $showingLog) {
             LogView()
         }
@@ -85,31 +102,66 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - My profile
+
+    /// The user's own name and photo. Tap the avatar to pick a photo;
+    /// the photo is stored locally and shown wherever the user's avatar
+    /// appears. No name or photo is pre-filled.
+    private var profileSection: some View {
+        CardSection(title: L("我的资料")) {
+            CardRow {
+                HStack(spacing: 14) {
+                    Button {
+                        showingPhotoPicker = true
+                    } label: {
+                        AvatarView(name: displayName, color: "blue", shape: "blob", size: 64, ownerId: AvatarStore.meOwnerId)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("选择照片"))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L("你的名字"))
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.secondary)
+                        TextField(L("你的名字"), text: $myName)
+                            .font(.body)
+                            .foregroundStyle(Palette.text)
+                            .onChange(of: myName) { _, new in
+                                UserDefaults.standard.set(new, forKey: "cn.lingyu.myName")
+                            }
+                    }
+                }
+            }
+            if avatarStore.hasPhoto(for: AvatarStore.meOwnerId) {
+                Hairline()
+                CardRow {
+                    Button(L("移除照片"), role: .destructive) {
+                        avatarStore.remove(for: AvatarStore.meOwnerId)
+                    }
+                    .foregroundStyle(Palette.danger)
+                }
+            }
+        }
+    }
+
+    private var displayName: String {
+        let trimmed = myName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? L("我") : trimmed
+    }
+
     // MARK: - Appearance
 
     private var appearanceSection: some View {
-        CardSection(title: L("外观")) {
-            ForEach([("system", L("跟随系统")), ("light", L("浅色")), ("dark", L("深色"))], id: \.0) { item in
-                CardRow {
-                    Button {
-                        store.appearance = item.0
-                    } label: {
-                        HStack {
-                            Text(item.1)
-                                .foregroundStyle(Palette.text)
-                            Spacer()
-                            if store.appearance == item.0 {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Palette.text)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
+        CardSection(title: L("外观"), footer: L("只改这部设备上的外观。")) {
+            CardRow {
+                ValueRow(label: L("主题")) {
+                    ChoicePicker(selection: $store.appearance, options: [
+                        ("system", L("跟随系统")), ("light", L("浅色")), ("dark", L("深色")),
+                    ])
                 }
-                if item.0 != "dark" {
-                    Hairline()
-                }
+            }
+            Hairline()
+            CardRow {
+                SwitchRow(label: L("显示智能体图标"), detail: L("智能体用多个不同后端时，在每个智能体旁标出它的图标。"), isOn: $showAgentLogos)
             }
         }
     }
@@ -117,34 +169,11 @@ struct SettingsView: View {
     // MARK: - Language
 
     private var languageSection: some View {
-        CardSection(title: L("语言"), footer: L("更多语言后续推出。")) {
-            ForEach(languageOptions, id: \.code) { option in
-                CardRow {
-                    Button {
-                        if option.enabled {
-                            store.setLanguage(option.code)
-                        }
-                    } label: {
-                        HStack {
-                            Text(option.title)
-                                .foregroundStyle(option.enabled ? Palette.text : Palette.tertiary)
-                            Spacer()
-                            if !option.enabled {
-                                Text(L("即将推出"))
-                                    .font(.caption)
-                                    .foregroundStyle(Palette.tertiary)
-                            } else if store.language == option.code {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Palette.text)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!option.enabled)
-                }
-                if option.code != languageOptions.last?.code {
-                    Hairline()
+        CardSection(title: L("语言"), footer: L("选择这部设备用的语言。不支持的系统语言用英文。")) {
+            CardRow {
+                ValueRow(label: L("App 语言")) {
+                    ChoicePicker(selection: $store.language, options: languageOptions.map { ($0.code, $0.title) },
+                                 disabled: Set(languageOptions.filter { !$0.enabled }.map(\.code)))
                 }
             }
         }
@@ -173,7 +202,7 @@ struct SettingsView: View {
     // MARK: - Thinking details
 
     private var thinkingSection: some View {
-        CardSection(title: L("思考详情")) {
+        CardSection(title: L("聊天"), footer: L("可以在聊天里从智能体的状态展开它的思考和步骤。只改这部设备。")) {
             CardRow {
                 Toggle(L("显示思考过程"), isOn: $store.showThinkingDetails)
                     .toggleStyle(.codync)
@@ -183,38 +212,27 @@ struct SettingsView: View {
 
     // MARK: - Shortcut lead bot
 
+    /// Only when there is more than one bot to pick from.
     private var shortcutSection: some View {
-        CardSection(title: L("快捷指令主智能体")) {
-            let bots = store.connector.mirror.bots.filter { !$0.isGroup }
-            if bots.isEmpty {
-                CardRow {
-                    Text(L("还没有智能体。"))
-                        .foregroundStyle(Palette.secondary)
-                }
-            } else {
-                ForEach(bots) { bot in
+        let bots = store.connector.mirror.bots.filter { !$0.isGroup }
+        return Group {
+            if bots.count > 1 {
+                CardSection(title: L("快捷指令"), footer: L("Siri、操作按钮和无智能体打开的实时模式都会叫这位主智能体。自动会叫你列表里第一台电脑的主智能体。")) {
                     CardRow {
-                        Button {
-                            Task {
-                                try? await store.connector.api?.setLead(botId: bot.id)
-                            }
-                        } label: {
-                            HStack {
-                                AvatarView(bot: bot, size: 28)
-                                Text(bot.name)
-                                    .foregroundStyle(Palette.text)
-                                Spacer()
-                                if bot.lead {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(Palette.text)
+                        ValueRow(label: L("主智能体")) {
+                            ChoicePicker(selection: Binding(
+                                get: { shortcutLead },
+                                set: { newValue in
+                                    shortcutLead = newValue
+                                    UserDefaults.standard.set(newValue, forKey: "cn.lingyu.shortcutLead")
+                                    if newValue != "automatic" {
+                                        Task {
+                                            try? await store.connector.api?.setLead(botId: newValue)
+                                        }
+                                    }
                                 }
-                            }
+                            ), options: [("automatic", L("自动"))] + bots.map { ($0.id, "\($0.name) · \(store.connector.computer?.name ?? "")") })
                         }
-                        .buttonStyle(.plain)
-                    }
-                    if bot.id != bots.last?.id {
-                        Hairline()
                     }
                 }
             }
@@ -224,7 +242,7 @@ struct SettingsView: View {
     // MARK: - Notifications
 
     private var notificationsSection: some View {
-        CardSection(title: L("通知")) {
+        CardSection(title: L("通知"), footer: L("收到结果摘要、需要你确认的请求或失败提醒。通知预览跟随你的 iOS 设置。")) {
             CardRow {
                 Button {
                     openNotificationSettings()
@@ -235,9 +253,6 @@ struct SettingsView: View {
                         Spacer()
                         Text(notificationStatus)
                             .foregroundStyle(Palette.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Palette.tertiary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -293,25 +308,30 @@ struct SettingsView: View {
     // MARK: - Analytics
 
     private var analyticsSection: some View {
-        CardSection(title: L("分析"), footer: L("只统计功能使用情况，不含消息、代码与文件内容。")) {
+        CardSection(footer: L("只统计功能使用情况，不含消息、代码与文件内容。")) {
             CardRow {
-                HStack {
-                    Toggle(L("分享使用分析"), isOn: Binding(
+                HStack(spacing: 4) {
+                    Text(L("分享使用分析"))
+                        .foregroundStyle(Palette.text)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Button {
+                        showingAnalyticsInfo = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.iconButton)
+                    .accessibilityLabel(L("分析说明"))
+                    Toggle(isOn: Binding(
                         get: { shareAnalytics },
                         set: {
                             shareAnalytics = $0
                             UserDefaults.standard.set($0, forKey: "cn.lingyu.shareAnalytics")
                         }
-                    ))
-                    .toggleStyle(.codync)
-                    Button {
-                        showingAnalyticsInfo = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                            .foregroundStyle(Palette.secondary)
+                    )) {
+                        EmptyView()
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("分析说明"))
+                    .toggleStyle(.codync)
                 }
             }
         }
@@ -342,18 +362,18 @@ struct SettingsView: View {
     // MARK: - Danger zone
 
     private var startOverSection: some View {
-        Button {
-            showingStartOverDialog = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.counterclockwise")
-                    .foregroundStyle(Palette.danger)
-                Text(L("重新开始"))
-                    .foregroundStyle(Palette.danger)
+        CardSection {
+            CardRow {
+                Button {
+                    showingStartOverDialog = true
+                } label: {
+                    Label(L("重新开始"), systemImage: "arrow.counterclockwise")
+                        .foregroundStyle(Palette.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
     }
 }
 

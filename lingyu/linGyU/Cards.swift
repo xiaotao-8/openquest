@@ -16,7 +16,7 @@ struct PermissionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text(titleForToolKind)
                     .font(.headline)
                     .foregroundStyle(Palette.text)
@@ -41,6 +41,7 @@ struct PermissionCard: View {
                     .font(.caption)
                     .foregroundStyle(Palette.tertiary)
             }
+            WorkThreadLine(data: data)
             if hasDetails {
                 detailsSection
             }
@@ -76,7 +77,6 @@ struct PermissionCard: View {
     private var runsOnLine: String {
         let computerName = store.connector.computer?.name ?? ""
         let folder = bot.folderDisplay
-        if computerName.isEmpty { return folder }
         return L("运行于 %@ · %@", computerName, folder)
     }
 
@@ -201,6 +201,21 @@ struct PermissionCard: View {
     }
 }
 
+/// Which work thread a card belongs to: "Work · {title}", with a clock.
+/// Hidden when the entry has no thread.
+struct WorkThreadLine: View {
+    let data: EntryData
+
+    var body: some View {
+        if let thread = data.thread, !thread.title.isEmpty {
+            Label(L("工作") + " · " + thread.title, systemImage: "clock")
+                .font(.caption)
+                .foregroundStyle(Palette.tertiary)
+                .lineLimit(1)
+        }
+    }
+}
+
 struct CodeBox: View {
     var text: String
 
@@ -226,7 +241,7 @@ struct DiffView: View {
                 Image(systemName: diff.isNew ? "doc.badge.plus" : "doc.text")
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
-                Text(diff.path)
+                Text(diff.path.components(separatedBy: "/").last ?? diff.path)
                     .font(.caption.monospaced())
                     .foregroundStyle(Palette.secondary)
                     .lineLimit(1)
@@ -239,12 +254,17 @@ struct DiffView: View {
                     .foregroundStyle(Palette.removed)
             }
             if let patch = diff.patch {
-                ScrollView(.vertical, showsIndicators: false) {
-                    Text(patch)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Palette.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(patch.components(separatedBy: "\n").prefix(80).enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(line.hasPrefix("+") ? Palette.added
+                                    : line.hasPrefix("-") || line.hasPrefix("−") ? Palette.removed
+                                    : Palette.secondary)
+                        }
+                    }
+                    .padding(8)
                 }
                 .frame(maxHeight: 260)
                 .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
@@ -262,11 +282,16 @@ struct DecisionCard: View {
     @State private var answeringOption: String?
     @State private var otherText = ""
     @State private var questionExpanded = false
+    @State private var shownHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
 
     private var data: EntryData { entry.data }
     private var isPending: Bool { data.status == "pending" }
     private var choices: [String] { data.choices ?? [] }
     private var recommended: Int? { data.recommended }
+
+    /// The clamped question hides lines: only then is there something to expand.
+    private var clamped: Bool { fullHeight > shownHeight + 1 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -276,8 +301,14 @@ struct DecisionCard: View {
                     .foregroundStyle(Palette.text)
                     .lineLimit(questionExpanded ? nil : 4)
                     .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+                    .background(alignment: .top) {
+                        Text(data.question ?? "").font(.headline).fixedSize(horizontal: false, vertical: true).hidden()
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                    }
                 Spacer()
-                if (data.question ?? "").count > 120 {
+                if questionExpanded || clamped {
                     Button {
                         questionExpanded.toggle()
                     } label: {
@@ -289,15 +320,19 @@ struct DecisionCard: View {
                 }
             }
             if isPending {
-                ForEach(choices.indices, id: \.self) { index in
-                    optionRow(index: index)
+                VStack(spacing: 2) {
+                    ForEach(choices.indices, id: \.self) { index in
+                        optionRow(index: index)
+                    }
+                    otherRow
                 }
-                otherRow
+                .padding(.horizontal, -8)
             } else {
                 Text(outcomeText)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Palette.secondary)
             }
+            WorkThreadLine(data: data)
         }
         .padding(16)
         .frame(maxWidth: 420, alignment: .leading)
@@ -313,16 +348,11 @@ struct DecisionCard: View {
             answer(option: choice)
         } label: {
             HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(Palette.text.opacity(0.06))
-                        .frame(width: 24, height: 24)
+                RowNumber {
                     if isAnswering {
                         Spinner(size: 12)
                     } else {
                         Text("\(index + 1)")
-                            .font(.caption.weight(.semibold).monospaced())
-                            .foregroundStyle(Palette.text)
                     }
                 }
                 Text(choice)
@@ -338,22 +368,18 @@ struct DecisionCard: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .frame(minHeight: 44, alignment: .leading)
-            .background(Palette.text.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
             .opacity(answeringOption != nil && !isAnswering ? 0.4 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowStyle())
         .disabled(answeringOption != nil)
     }
 
     private var otherRow: some View {
         HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(Palette.text.opacity(0.06))
-                    .frame(width: 24, height: 24)
+            RowNumber {
                 Image(systemName: "pencil")
                     .font(.caption)
-                    .foregroundStyle(Palette.text)
             }
             TextField(L("其他…"), text: $otherText)
                 .font(.body)
@@ -410,6 +436,30 @@ struct DecisionCard: View {
             // Other… is sent as a plain message; the host treats it as the answer.
             _ = try? await api.send(botId: entry.botId, text: text, clientNonce: UUID().uuidString)
         }
+    }
+}
+
+/// The number (or pencil) before a decision option: 24×24, secondary,
+/// monospaced digits.
+private struct RowNumber<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(Palette.secondary)
+            .frame(width: 24, height: 24)
+            .background(Palette.text.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+/// An option row lights up while pressed.
+private struct RowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Palette.text.opacity(configuration.isPressed ? 0.08 : 0),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 

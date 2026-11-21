@@ -43,6 +43,17 @@ enum RelativeTime {
         return formatter.string(from: date)
     }
 
+    /// Chat message time: 24-hour clock precise to the second ("12:53:02").
+    /// Uses the message's own event time (Entry.createdAt), never render time.
+    static func clock(_ millis: Int64) -> String {
+        guard millis > 0 else { return "" }
+        let date = Date(timeIntervalSince1970: TimeInterval(millis) / 1000)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
     /// Chat time separator: today → "今天 3:27"; yesterday → "昨天 5:20";
     /// earlier → "9月16日 9:02".
     static func separator(_ millis: Int64) -> String {
@@ -69,103 +80,88 @@ enum RelativeTime {
 
 struct BotListView: View {
     @EnvironmentObject private var store: AppStore
-    @State private var searchText = ""
     @State private var showingNewBot = false
     @State private var showingWork = false
+    @State private var showingAccount = false
     @State private var showingComputers = false
     @State private var showingNewGroup = false
 
     private var mirror: EventMirror { store.connector.mirror }
 
-    private var filteredBots: [Bot] {
-        let bots = mirror.bots
-        guard !searchText.isEmpty else { return bots }
-        return bots.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    /// The toolbar badge counts working tasks, not bots.
+    private var workingTaskCount: Int {
+        mirror.bots.flatMap(\.work).filter { $0.status == "working" }.count
+    }
+
+    private var hasWork: Bool {
+        mirror.bots.contains { !$0.workSections.isIdle }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            SearchField(text: $searchText, placeholder: L("搜索智能体"))
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-            List {
-                if filteredBots.isEmpty {
-                    emptyState
+        List {
+            if mirror.bots.isEmpty {
+                emptyState
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            } else {
+                ForEach(mirror.bots) { bot in
+                    BotRow(bot: bot)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                } else {
-                    ForEach(filteredBots) { bot in
-                        BotRow(bot: bot)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                    }
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
         .background(Palette.background)
+        .navigationTitle(L("智能体"))
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showingComputers = true
-                } label: {
-                    computerBadge
+                AccountSwitcherButton {
+                    showingAccount = true
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("管理电脑"))
             }
             ToolbarItem(placement: .principal) {
-                Text(connectionStateText)
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.secondary)
+                ComputerFilterHeader {
+                    showingComputers = true
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 4) {
-                    if mirror.workingBots.count > 0 || mirror.waitingTotal > 0 {
-                        Button {
-                            showingWork = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Label(L("工作"), systemImage: "tray.full")
-                                if mirror.workingBots.count > 0 {
-                                    Text("\(mirror.workingBots.count)")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(Palette.onAccent)
-                                        .padding(.horizontal, 5)
-                                        .frame(minHeight: 16)
-                                        .background(Palette.accentFill, in: Capsule())
-                                }
-                            }
-                            .font(.subheadline)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Menu {
-                        Button {
-                            showingNewBot = true
-                        } label: {
-                            Label(L("新建智能体"), systemImage: "plus")
-                        }
-                        Button {
-                            showingNewGroup = true
-                        } label: {
-                            Label(L("新建群聊"), systemImage: "person.2")
-                        }
+                if hasWork {
+                    Button {
+                        showingWork = true
                     } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .medium))
-                            .frame(width: 36, height: 36)
+                        Label(L("工作"), systemImage: "tray.full")
                     }
-                    .disabled(!store.connector.isPaired)
+                    .badge(workingTaskCount)
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu(L("新建"), systemImage: "plus") {
+                    Button {
+                        showingNewBot = true
+                    } label: {
+                        Label(L("新建智能体"), systemImage: "plus")
+                    }
+                    Button {
+                        showingNewGroup = true
+                    } label: {
+                        Label(L("新建群聊"), systemImage: "person.2")
+                    }
+                    .disabled(!isOnline)
+                }
+                .disabled(!store.connector.isPaired)
             }
         }
         .refreshable {
             await store.connector.disconnect()
             await store.connector.connectIfPaired()
+        }
+        .codyncSheet(isPresented: $showingAccount) {
+            AccountSwitcherView()
         }
         .codyncSheet(isPresented: $showingComputers) {
             ComputersView()
@@ -181,51 +177,19 @@ struct BotListView: View {
         }
     }
 
-    private var computerBadge: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Circle()
-                .fill(Palette.bubbleAgent)
-                .frame(width: 32, height: 32)
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 15))
-                .foregroundStyle(Palette.secondary)
-            Circle()
-                .fill(isConnected ? Palette.added : Palette.warning)
-                .frame(width: 9, height: 9)
-                .overlay(Circle().stroke(Palette.background, lineWidth: 1.5))
-        }
-    }
-
-    private var isConnected: Bool {
+    private var isOnline: Bool {
         if case .ready = store.connector.state { return true }
         return false
     }
 
-    private var connectionStateText: String {
-        switch store.connector.state {
-        case .ready:
-            return L("已连接")
-        case .connecting:
-            return L("连接中…")
-        case .waiting:
-            return L("重连中…")
-        case .stopped:
-            return L("离线")
-        case .offline:
-            return store.connector.isPaired ? L("未连接") : L("未配对")
-        }
-    }
-
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 44, weight: .ultraLight))
-                .foregroundStyle(Palette.tertiary)
+        VStack(spacing: 14) {
+            CharacterAvatar(shape: "cloud", color: "green", size: 72)
             Text(L("还没有智能体"))
-                .font(.headline)
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(Palette.text)
             Text(L("新建一个智能体，给它起个名字、指一个项目。"))
-                .font(.body)
+                .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
             if store.connector.isPaired {
@@ -241,34 +205,161 @@ struct BotListView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .padding(.vertical, 40)
+    }
+}
+
+/// The account button in the toolbar: the user's avatar and a chevron,
+/// opening the account switcher.
+struct AccountSwitcherButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        let name = UserDefaults.standard.string(forKey: "cn.lingyu.myName")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        Button(action: action) {
+            HStack(spacing: 6) {
+                AvatarView(name: name.isEmpty ? L("我") : name, color: "blue", shape: "blob", size: 30, ownerId: AvatarStore.meOwnerId)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("切换账号"))
+    }
+}
+
+/// The account switcher: the one local account, with a way to edit the
+/// profile in Settings. (There is no cloud account to switch to.)
+struct AccountSwitcherView: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader(title: L("账号")) {
+                dismiss()
+            }
+            ScrollView {
+                VStack(spacing: 24) {
+                    CardSection {
+                        CardRow {
+                            HStack(spacing: 14) {
+                                let name = UserDefaults.standard.string(forKey: "cn.lingyu.myName")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                                AvatarView(name: name.isEmpty ? L("我") : name, color: "blue", shape: "blob", size: 48, ownerId: AvatarStore.meOwnerId)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(name.isEmpty ? L("我") : name)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(Palette.text)
+                                    Text(L("本机账号"))
+                                        .font(.subheadline)
+                                        .foregroundStyle(Palette.secondary)
+                                }
+                                Spacer(minLength: 12)
+                                Image(systemName: "checkmark")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Palette.text)
+                            }
+                        }
+                        Hairline()
+                        CardRow {
+                            Button(L("我的资料")) {
+                                dismiss()
+                                store.selectedTab = 3
+                            }
+                            .foregroundStyle(Palette.text)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+            }
+        }
+        .background(Palette.background)
+    }
+}
+
+/// The computer filter in the toolbar's center: how many computers are
+/// connected, and a menu to pick them, reconnect, or manage them.
+struct ComputerFilterHeader: View {
+    @EnvironmentObject private var store: AppStore
+    var onManage: () -> Void
+
+    private var connectedCount: Int {
+        if case .ready = store.connector.state { return 1 }
+        return 0
+    }
+
+    var body: some View {
+        Menu {
+            Toggle(isOn: .constant(true)) {
+                Label(L("所有电脑"), systemImage: "desktopcomputer")
+            }
+            if let computer = store.connector.computer {
+                Toggle(isOn: .constant(true)) {
+                    Label {
+                        Text(computer.name)
+                    } icon: {
+                        ComputerBadge()
+                    }
+                }
+            }
+            Divider()
+            Button {
+                Task {
+                    await store.connector.disconnect()
+                    await store.connector.connectIfPaired()
+                }
+            } label: {
+                Label(L("重新连接"), systemImage: "arrow.clockwise")
+            }
+            Button(action: onManage) {
+                Label(L("管理电脑"), systemImage: "gearshape")
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(L("%d 台已连接", connectedCount))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.text)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Palette.secondary)
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A computer's badge: 28pt, its icon in a light rounded square.
+struct ComputerBadge: View {
+    var body: some View {
+        Image(systemName: "desktopcomputer")
+            .font(.system(size: 14))
+            .foregroundStyle(Palette.secondary)
+            .frame(width: 28, height: 28)
+            .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
 /// One roster row (§3.2): 46pt avatar, name + time, preview + badge.
+/// A plain Button — the same push as a link, without a chevron.
 struct BotRow: View {
     var bot: Bot
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        NavigationLink(value: bot.id) {
+        Button {
+            store.navigationPath.append(bot.id)
+        } label: {
             HStack(spacing: 12) {
-                if bot.isGroup {
-                    GroupAvatarView(bot: bot, size: 46)
-                } else {
-                    AvatarView(bot: bot, size: 46)
-                }
+                AvatarWithStatus(bot: bot, members: members, size: 46)
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
+                    HStack {
                         if bot.pinned {
                             Image(systemName: "pin.fill")
                                 .font(.caption2)
                                 .foregroundStyle(Palette.tertiary)
-                        }
-                        if bot.lead {
-                            Image(systemName: "star.fill")
-                                .font(.caption2)
-                                .foregroundStyle(Palette.warning)
                         }
                         Text(bot.name)
                             .font(.body.weight(.semibold))
@@ -279,7 +370,7 @@ struct BotRow: View {
                             .font(.subheadline)
                             .foregroundStyle(bot.unread > 0 ? Palette.text : Palette.tertiary)
                     }
-                    HStack(spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         preview
                         Spacer(minLength: 4)
                         if bot.unread > 0 {
@@ -294,81 +385,50 @@ struct BotRow: View {
         .buttonStyle(.plain)
     }
 
+    private var members: [Bot] {
+        bot.members.compactMap { store.connector.mirror.bot(id: $0) }
+    }
+
     @ViewBuilder
     private var preview: some View {
         // Preview priority (§3.3): needsYou > activity > work > lastMessage.
-        if bot.needsInput {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(Palette.warning)
-                    .frame(width: 16, height: 16)
-                Text(needsYouLine)
+        switch bot.rosterLine {
+        case .needsYou:
+            ThinkingOrb(state: .listening, size: 16, color: Palette.warning)
+            Text(bot.needsYouLine)
+                .font(.subheadline)
+                .foregroundStyle(Palette.warning)
+                .lineLimit(1)
+        case .activity:
+            ThinkingOrb(state: .working, size: 13, color: Palette.secondary)
+            Text(bot.activity.isEmpty ? L("工作中…") : bot.activity)
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondary)
+                .lineLimit(1)
+        case .work:
+            ThinkingOrb(state: .working, size: 13, color: Palette.secondary)
+            Text(bot.workSections.counts())
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondary)
+                .lineLimit(1)
+        case .lastMessage:
+            if let lastMessage = bot.lastMessage, !lastMessage.isEmpty {
+                Text(lastMessage)
                     .font(.subheadline)
-                    .foregroundStyle(Palette.warning)
+                    .foregroundStyle(bot.status == "error" ? Palette.danger : Palette.secondary)
                     .lineLimit(1)
-            }
-        } else if bot.isWorking {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(Palette.secondary)
-                    .frame(width: 13, height: 13)
-                Text(bot.activity.isEmpty ? L("工作中…") : bot.activity)
+            } else if bot.isGroup {
+                Text(L("%d 个智能体", bot.members.count))
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(1)
+            } else {
+                Text("\(bot.backend) · \(bot.folderDisplay)")
                     .font(.subheadline)
                     .foregroundStyle(Palette.secondary)
                     .lineLimit(1)
             }
-        } else if let liveWork = bot.work.first(where: { $0.isLive }) {
-            Text(liveWork.title)
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(1)
-        } else if let lastMessage = bot.lastMessage, !lastMessage.isEmpty {
-            Text(lastMessage)
-                .font(.subheadline)
-                .foregroundStyle(bot.status == "error" ? Palette.danger : Palette.secondary)
-                .lineLimit(1)
-        } else if bot.isGroup {
-            Text(L("%d 个智能体", bot.members.count))
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(1)
-        } else {
-            Text("\(bot.backend) · \(bot.folderDisplay)")
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(1)
         }
-    }
-
-    private var needsYouLine: String {
-        L("需要你确认")
-    }
-}
-
-/// A group's 46pt avatar: a 2×2 grid of its members' avatars.
-struct GroupAvatarView: View {
-    var bot: Bot
-    var size: CGFloat
-    @EnvironmentObject private var store: AppStore
-
-    var body: some View {
-        let members = bot.members.prefix(4).compactMap { store.connector.mirror.bot(id: $0) }
-        let grid: [Bot?] = members.map(Optional.init) + Array(repeating: nil, count: max(0, 4 - members.count))
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                .fill(Palette.bubbleAgent)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2)], spacing: 2) {
-                ForEach(grid.indices, id: \.self) { index in
-                    if let member = grid[index] {
-                        AvatarView(bot: member, size: (size - 8) / 2)
-                    } else {
-                        Color.clear.frame(width: (size - 8) / 2, height: (size - 8) / 2)
-                    }
-                }
-            }
-            .padding(4)
-        }
-        .frame(width: size, height: size)
     }
 }
 
@@ -478,12 +538,13 @@ struct ComputersView: View {
 }
 
 /// All live/waiting work across bots (the Work button sheet, §3.6).
+/// Closes itself when there is nothing left to show.
 struct AllWorkView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
 
     private var workingBots: [Bot] {
-        store.connector.mirror.bots.filter { $0.isWorking || $0.waiting > 0 }
+        store.connector.mirror.bots.filter { !$0.workSections.isIdle }
     }
 
     var body: some View {
@@ -491,39 +552,66 @@ struct AllWorkView: View {
             ModalHeader(title: L("工作")) {
                 dismiss()
             }
-            List {
-                ForEach(workingBots) { bot in
-                    Button {
-                        dismiss()
-                        store.openChat(botId: bot.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            AvatarView(bot: bot, size: 40)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(bot.name)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(Palette.text)
-                                Text(bot.needsInput ? L("需要你确认") : (bot.activity.isEmpty ? L("工作中…") : bot.activity))
-                                    .font(.subheadline)
-                                    .foregroundStyle(bot.needsInput ? Palette.warning : Palette.secondary)
-                                    .lineLimit(1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(workingBots) { bot in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button {
+                                dismiss()
+                                store.openChat(botId: bot.id)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    BotAvatar(bot: bot, members: bot.members.compactMap { store.connector.mirror.bot(id: $0) }, size: 22)
+                                    Text(bot.name)
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(Palette.text)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(Palette.tertiary)
+                                }
+                                .padding(.leading, 2)
                             }
-                            Spacer()
-                            if bot.waiting > 0 {
-                                UnreadBadge(count: bot.waiting, waiting: true)
-                            }
+                            .buttonStyle(.plain)
+                            WorkTimeline(bot: bot, mode: .plain, outlined: true, onAction: { task, action in
+                                perform(bot: bot, task: task, action: action)
+                            }, onOpen: { _ in
+                                dismiss()
+                                store.openChat(botId: bot.id)
+                            })
                         }
-                        .padding(.vertical, 8)
                     }
-                    .buttonStyle(.plain)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
                 }
+                .padding(20)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Palette.background)
         }
         .background(Palette.background)
+        .onAppear { if workingBots.isEmpty { dismiss() } }
+        .onChange(of: workingBots.map(\.id)) { _, _ in
+            if workingBots.isEmpty { dismiss() }
+        }
+    }
+
+    private func perform(bot: Bot, task: WorkTask, action: WorkAction) {
+        guard let api = store.connector.api else { return }
+        Task {
+            do {
+                switch action {
+                case .stop:
+                    try await api.stopWork(botId: bot.id, taskId: task.id)
+                case .cutIn:
+                    if let first = bot.workSections.waiting.first {
+                        try await api.workCutIn(botId: bot.id, taskId: task.id, insteadOf: first.id)
+                    }
+                case .first:
+                    try await api.work(method: "workFirst", botId: bot.id, taskId: task.id)
+                case .drop:
+                    try await api.work(method: "dropWork", botId: bot.id, taskId: task.id)
+                case .retry:
+                    try await api.work(method: "retryWork", botId: bot.id, taskId: task.id)
+                }
+            } catch {
+                // The host reports the failure in the chat; the row stays.
+            }
+        }
     }
 }

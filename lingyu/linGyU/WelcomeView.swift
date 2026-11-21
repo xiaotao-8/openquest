@@ -41,37 +41,38 @@ struct WelcomeView: View {
 
     private var welcomeStep: some View {
         VStack(spacing: 0) {
-            crew
-                .frame(height: 170)
-                .padding(.top, 24)
-            ChatGlimpse(done: glimpseDone)
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-            Text(L("你的智能体团队\n在电脑上替你干活"))
-                .font(.system(size: 34, weight: .semibold))
-                .tracking(-0.6)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(Palette.text)
-                .padding(.top, 24)
-                .padding(.horizontal, 24)
-            Text(L("给每个智能体起个名字、指一个项目，它们在你的电脑上替你干活。"))
-                .font(.body)
-                .foregroundStyle(Palette.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.top, 12)
-                .padding(.horizontal, 32)
-            Spacer()
-            PrimaryActionButton(title: L("开始配对")) {
-                step = 1
+            GeometryReader { _ in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 24)
+                        crew
+                            .frame(height: 170)
+                        ChatGlimpse(done: glimpseDone)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 24)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(L("你的智能体团队\n在电脑上替你干活"))
+                                .font(.system(size: 34, weight: .semibold))
+                                .tracking(-0.6)
+                                .foregroundStyle(Palette.text)
+                            Text(L("给每个智能体起个名字、指一个项目，它们在你的电脑上替你干活。"))
+                                .font(.body)
+                                .foregroundStyle(Palette.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 24)
+                        Spacer(minLength: 24)
+                    }
+                }
             }
-            .padding(.horizontal, 20)
-            Button(L("跳过，先看看")) {
-                onSkip()
+            VStack(spacing: 10) {
+                PrimaryActionButton(title: L("开始配对")) {
+                    step = 1
+                }
             }
-            .font(.footnote.weight(.medium))
-            .foregroundStyle(Palette.secondary)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
         }
     }
 
@@ -79,7 +80,7 @@ struct WelcomeView: View {
     private var crew: some View {
         ZStack {
             ForEach(Array(crewMembers.enumerated()), id: \.offset) { index, member in
-                AvatarView(name: member.letter, color: member.color, shape: member.shape, size: member.size)
+                CharacterAvatar(shape: member.shape, color: member.color, size: member.size, mood: member.mood)
                     .offset(x: member.offset.x, y: member.offset.y + bobOffset(index: index))
                     .opacity(member.opacity)
             }
@@ -87,21 +88,21 @@ struct WelcomeView: View {
     }
 
     private struct CrewMember {
-        var letter: String
         var color: String
         var shape: String
         var size: CGFloat
+        var mood: CharacterAvatar.Mood
         var offset: CGPoint
         var opacity: Double = 1
     }
 
     private var crewMembers: [CrewMember] {
         [
-            CrewMember(letter: "L", color: "blue", shape: "blob", size: 92, offset: CGPoint(x: 0, y: 0)),
-            CrewMember(letter: "J", color: "orange", shape: "squircle", size: 64, offset: CGPoint(x: -104, y: -34)),
-            CrewMember(letter: "Y", color: "violet", shape: "teardrop", size: 58, offset: CGPoint(x: 100, y: -46)),
-            CrewMember(letter: "G", color: "green", shape: "hex", size: 48, offset: CGPoint(x: -76, y: 64)),
-            CrewMember(letter: "U", color: "magenta", shape: "cloud", size: 52, offset: CGPoint(x: 84, y: 58)),
+            CrewMember(color: "blue", shape: "blob", size: 92, mood: .working, offset: CGPoint(x: 0, y: 0)),
+            CrewMember(color: "orange", shape: "squircle", size: 64, mood: .idle, offset: CGPoint(x: -104, y: -34)),
+            CrewMember(color: "violet", shape: "teardrop", size: 58, mood: .working, offset: CGPoint(x: 100, y: -46)),
+            CrewMember(color: "green", shape: "hex", size: 48, mood: .idle, offset: CGPoint(x: -76, y: 64)),
+            CrewMember(color: "magenta", shape: "cloud", size: 52, mood: .needsInput, offset: CGPoint(x: 84, y: 58)),
         ]
     }
 
@@ -131,7 +132,7 @@ struct WelcomeView: View {
                 Image(systemName: "laptopcomputer")
                     .font(.system(size: 150, weight: .ultraLight))
                     .foregroundStyle(Palette.tertiary)
-                AvatarView(name: "L", color: "blue", shape: "blob", size: 52)
+                CharacterAvatar(shape: "blob", color: "blue", size: 52, mood: .working)
                     .offset(y: -12)
             }
             .padding(.top, 8)
@@ -215,7 +216,7 @@ struct ChatGlimpse: View {
     var done: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Spacer()
                 Text(L("修好那个不稳定的登录测试"))
@@ -225,20 +226,19 @@ struct ChatGlimpse: View {
                     .padding(.vertical, 9)
                     .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18))
             }
-            HStack(alignment: .top, spacing: 8) {
-                AvatarView(name: "L", color: "blue", shape: "blob", size: 28)
+            HStack(alignment: .bottom, spacing: 8) {
+                CharacterAvatar(shape: "blob", color: "blue", size: 28, mood: done ? .idle : .working)
                 if done {
                     Text(L("搞定了，登录测试已修复，跑了三遍都通过。"))
                         .font(.subheadline)
                         .foregroundStyle(Palette.text)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
                         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18))
                 } else {
                     Text(L("工作中…"))
                         .font(.subheadline)
                         .foregroundStyle(Palette.tertiary)
-                        .padding(.vertical, 4)
                 }
                 Spacer()
             }

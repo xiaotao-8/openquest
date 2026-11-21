@@ -1,171 +1,427 @@
 import SwiftUI
 
-/// The 8 avatar shapes (UI_SPEC §2.2): blob, pebble, squircle, tablet,
-/// wedge, hex, cloud, teardrop. Approximations of the originals' paths;
-/// squircle uses a continuous corner radius.
+/// The 8 avatar shapes, with the original's exact paths. `AvatarShape`
+/// stays as the picker's enum; its paths come from `CharacterShape`.
 enum AvatarShape: String, CaseIterable {
     case blob, pebble, squircle, tablet, wedge, hex, cloud, teardrop
 
     func path(in rect: CGRect) -> Path {
-        switch self {
-        case .blob:
-            return BlobShape().path(in: rect)
-        case .pebble:
-            return PebbleShape().path(in: rect)
-        case .squircle:
-            return RoundedRectangle(cornerRadius: rect.width * 0.28, style: .continuous).path(in: rect)
-        case .tablet:
-            return Capsule().path(in: rect)
-        case .wedge:
-            return WedgeShape().path(in: rect)
-        case .hex:
-            return HexShape().path(in: rect)
-        case .cloud:
-            return CloudShape().path(in: rect)
-        case .teardrop:
-            return TeardropShape().path(in: rect)
+        CharacterShape(kind: rawValue).path(in: rect)
+    }
+}
+
+/// The eight character silhouettes, ported exactly from the original.
+struct CharacterShape: Shape {
+    let kind: String
+
+    init(kind: String) { self.kind = kind }
+
+    func path(in r: CGRect) -> Path {
+        let w = r.width, h = r.height
+        switch kind {
+        case "pebble":
+            return Path(ellipseIn: r.insetBy(dx: 0, dy: h * 0.1))
+        case "squircle":
+            return Path(roundedRect: r.insetBy(dx: w * 0.04, dy: h * 0.04), cornerRadius: w * 0.3, style: .continuous)
+        case "tablet":
+            return Path(roundedRect: r.insetBy(dx: w * 0.14, dy: 0), cornerRadius: w * 0.22, style: .continuous)
+        case "wedge":
+            var p = Path()
+            p.move(to: CGPoint(x: w * 0.5, y: h * 0.04))
+            p.addQuadCurve(to: CGPoint(x: w * 0.98, y: h * 0.86), control: CGPoint(x: w * 0.9, y: h * 0.4))
+            p.addQuadCurve(to: CGPoint(x: w * 0.02, y: h * 0.86), control: CGPoint(x: w * 0.5, y: h * 1.04))
+            p.addQuadCurve(to: CGPoint(x: w * 0.5, y: h * 0.04), control: CGPoint(x: w * 0.1, y: h * 0.4))
+            return p
+        case "hex":
+            var p = Path()
+            for i in 0..<6 {
+                let a = Double(i) * .pi / 3 - .pi / 2
+                let pt = CGPoint(x: w / 2 + cos(a) * w * 0.49, y: h / 2 + sin(a) * h * 0.49)
+                i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+            }
+            p.closeSubpath()
+            return p.strokedPath(.init(lineWidth: w * 0.08, lineJoin: .round)).union(p)
+        case "cloud":
+            var p = Path()
+            p.addEllipse(in: CGRect(x: 0, y: h * 0.3, width: w * 0.55, height: h * 0.55))
+            p.addEllipse(in: CGRect(x: w * 0.45, y: h * 0.3, width: w * 0.55, height: h * 0.55))
+            p.addEllipse(in: CGRect(x: w * 0.18, y: h * 0.08, width: w * 0.64, height: h * 0.64))
+            p.addRoundedRect(in: CGRect(x: w * 0.1, y: h * 0.5, width: w * 0.8, height: h * 0.35), cornerSize: CGSize(width: w * 0.15, height: w * 0.15))
+            return p
+        case "teardrop":
+            var p = Path()
+            p.move(to: CGPoint(x: w * 0.5, y: 0))
+            p.addCurve(to: CGPoint(x: w * 0.94, y: h * 0.62), control1: CGPoint(x: w * 0.62, y: h * 0.2), control2: CGPoint(x: w * 0.94, y: h * 0.38))
+            p.addArc(center: CGPoint(x: w * 0.5, y: h * 0.62), radius: w * 0.44, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+            p.addCurve(to: CGPoint(x: w * 0.5, y: 0), control1: CGPoint(x: w * 0.06, y: h * 0.38), control2: CGPoint(x: w * 0.38, y: h * 0.2))
+            return p
+        default: // blob
+            var p = Path()
+            let c = CGPoint(x: w / 2, y: h / 2)
+            let steps = 64
+            for i in 0...steps {
+                let a = Double(i) / Double(steps) * 2 * .pi
+                let rr = 0.46 + 0.035 * sin(a * 3 + 0.6)
+                let pt = CGPoint(x: c.x + cos(a) * w * rr, y: c.y + sin(a) * h * rr)
+                i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+            }
+            p.closeSubpath()
+            return p
         }
     }
 }
 
-/// Organic asymmetric blob: four bezier lobes with different radii.
-struct BlobShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width, h = rect.height
-        path.move(to: CGPoint(x: w * 0.50, y: h * 0.02))
-        path.addCurve(to: CGPoint(x: w * 0.98, y: h * 0.42),
-                      control1: CGPoint(x: w * 0.78, y: h * 0.02),
-                      control2: CGPoint(x: w * 0.98, y: h * 0.18))
-        path.addCurve(to: CGPoint(x: w * 0.82, y: h * 0.96),
-                      control1: CGPoint(x: w * 0.98, y: h * 0.66),
-                      control2: CGPoint(x: w * 0.96, y: h * 0.88))
-        path.addCurve(to: CGPoint(x: w * 0.18, y: h * 0.92),
-                      control1: CGPoint(x: w * 0.68, y: h * 1.04),
-                      control2: CGPoint(x: w * 0.38, y: h * 1.02))
-        path.addCurve(to: CGPoint(x: w * 0.02, y: h * 0.38),
-                      control1: CGPoint(x: w * 0.02, y: h * 0.80),
-                      control2: CGPoint(x: w * 0.02, y: h * 0.60))
-        path.addCurve(to: CGPoint(x: w * 0.50, y: h * 0.02),
-                      control1: CGPoint(x: w * 0.02, y: h * 0.16),
-                      control2: CGPoint(x: w * 0.22, y: h * 0.02))
-        path.closeSubpath()
-        return path
-    }
+/// Keep the halftone at every size: 9 × 9 large dots from 18 pt up. Tiny
+/// icons use 7 × 7 so the gaps and hollow eyes survive rasterization.
+struct DotGrid {
+    let cells: Int
+    init(size: CGFloat) { cells = size < 18 ? 7 : 9 }
+    var eyeColumns: [Int] { cells == 7 ? [2, 4] : [3, 6] }
+    var eyeRows: [Int] { cells == 7 ? [2, 3] : [3, 4] }
 }
 
-/// A pebble: a rounded rect with one corner pulled in.
-struct PebbleShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width, h = rect.height
-        path.move(to: CGPoint(x: w * 0.30, y: h * 0.04))
-        path.addCurve(to: CGPoint(x: w * 0.94, y: h * 0.30),
-                      control1: CGPoint(x: w * 0.62, y: h * 0.00),
-                      control2: CGPoint(x: w * 0.96, y: h * 0.08))
-        path.addCurve(to: CGPoint(x: w * 0.86, y: h * 0.94),
-                      control1: CGPoint(x: w * 0.92, y: h * 0.58),
-                      control2: CGPoint(x: w * 0.94, y: h * 0.78))
-        path.addCurve(to: CGPoint(x: w * 0.14, y: h * 0.90),
-                      control1: CGPoint(x: w * 0.72, y: h * 1.04),
-                      control2: CGPoint(x: w * 0.36, y: h * 1.00))
-        path.addCurve(to: CGPoint(x: w * 0.06, y: h * 0.28),
-                      control1: CGPoint(x: w * 0.02, y: h * 0.76),
-                      control2: CGPoint(x: w * 0.02, y: h * 0.52))
-        path.addCurve(to: CGPoint(x: w * 0.30, y: h * 0.04),
-                      control1: CGPoint(x: w * 0.10, y: h * 0.10),
-                      control2: CGPoint(x: w * 0.16, y: h * 0.04))
-        path.closeSubpath()
-        return path
-    }
-}
+/// A character drawn like the app icon: an even grid of dots, shaded as if
+/// the silhouette were a ball, with the eyes left hollow (two missing pairs
+/// of dots). The eyes glance side to side while the bot works and blink now
+/// and then; a badge shows when it needs you.
+struct DottedBody: View {
+    let shape: String
+    let color: Color
+    let size: CGFloat
+    let mood: CharacterAvatar.Mood
+    let paused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-/// A wedge: a rounded triangle pointing up-right.
-struct WedgeShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width, h = rect.height
-        let r: CGFloat = w * 0.12
-        path.move(to: CGPoint(x: w * 0.50, y: h * 0.04))
-        path.addQuadCurve(to: CGPoint(x: w * 0.96, y: h * 0.86),
-                          control: CGPoint(x: w * 0.86, y: h * 0.52))
-        path.addQuadCurve(to: CGPoint(x: w * 0.04, y: h * 0.86),
-                          control: CGPoint(x: w * 0.50, y: h * 0.98 - r))
-        path.addQuadCurve(to: CGPoint(x: w * 0.50, y: h * 0.04),
-                          control: CGPoint(x: w * 0.14, y: h * 0.52))
-        path.closeSubpath()
-        return path
-    }
-}
+    /// Where the light sits and where the eyes look.
+    struct Pose: Equatable {
+        var yaw: Double
+        var glance: Int
+        var blinking = false
+        /// The needs-you ripple's phase, nil without one.
+        var ripple: Double?
 
-struct HexShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let cx = rect.midX, cy = rect.midY, r = rect.width / 2
-        for i in 0..<6 {
-            let angle = CGFloat(i) * .pi / 3 - .pi / 2
-            let point = CGPoint(x: cx + r * cos(angle), y: cy + r * sin(angle))
-            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        /// One frame of the mood: in widgets and Live Activities, which
+        /// render one frame, a change of mood moves the halftone highlight
+        /// and the eyes to the new pose.
+        static func still(_ mood: CharacterAvatar.Mood) -> Pose {
+            switch mood {
+            case .idle: Pose(yaw: -0.7, glance: 0)
+            case .working: Pose(yaw: 1.1, glance: 1)
+            case .needsInput: Pose(yaw: 0, glance: 0, ripple: 0.6)
+            }
         }
-        path.closeSubpath()
-        return path
+    }
+
+    /// One dot's look for a pose: radius, grey ink, and how much of the
+    /// bot's color shows.
+    struct Ink {
+        let dot: Dot
+        let radius: CGFloat
+        let ink: Double
+        let tint: Double
+        let eye: Bool
+    }
+
+    var body: some View {
+        let grid = DotGrid(size: size)
+        let step = size / CGFloat(grid.cells)
+        let dots = Self.grid(shape: shape, size: size, step: step, cells: grid.cells)
+        if paused {
+            // One view per dot (not a Canvas), so the system interpolates
+            // each dot's size and color between two poses.
+            ZStack(alignment: .topLeading) {
+                ForEach(Self.inks(dots, grid: grid, step: step, size: size, pose: .still(mood)), id: \.dot.id) { d in
+                    Circle()
+                        .fill(Palette.text.opacity(d.ink))
+                        .overlay(Circle().fill(color.opacity(d.tint)))
+                        .frame(width: d.radius * 2, height: d.radius * 2)
+                        .position(d.dot.center)
+                        .opacity(d.eye ? 0 : 1)
+                }
+            }
+            .frame(width: size, height: size)
+        } else {
+            let still = mood == .idle || reduceMotion
+            TimelineView(.animation(paused: still)) { timeline in
+                let t = still ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600)
+                // Glance: whole-cell steps left / center / right, like a small display.
+                let pose = Pose(yaw: mood == .working ? t * 1.4 : -0.7,
+                                glance: mood == .working ? Int((sin(t * 2 * .pi / 3.2) * 1.4).rounded()) : 0,
+                                blinking: !still && (t / 4.7).truncatingRemainder(dividingBy: 1) < 0.035,
+                                ripple: mood == .needsInput ? t * 5 : nil)
+                Canvas { ctx, _ in
+                    for d in Self.inks(dots, grid: grid, step: step, size: size, pose: pose) where !d.eye {
+                        let p = d.dot.center, r = d.radius
+                        let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
+                        ctx.fill(dot, with: .color(Palette.text.opacity(d.ink)))
+                        if d.tint > 0 { ctx.fill(dot, with: .color(color.opacity(d.tint))) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Shades the dots as a lit ball; the eyes stay hollow.
+    static func inks(_ dots: [Dot], grid: DotGrid, step: CGFloat, size: CGFloat, pose: Pose) -> [Ink] {
+        let eyeRows = pose.blinking ? Array(grid.eyeRows.suffix(1)) : grid.eyeRows
+        let eyeCols = grid.eyeColumns.map { $0 + pose.glance }
+        let half = size / 2
+        let lx = sin(pose.yaw) * 0.8, ly = 0.55, lz = cos(pose.yaw) * 0.5 + 0.6  // never fully behind
+        let ll = (lx * lx + ly * ly + lz * lz).squareRoot()
+        return dots.map { d in
+            let p = d.center
+            let u = (p.x - half) / half, v = (half - p.y) / half
+            let z = max(0.2, 1 - u * u - v * v).squareRoot()
+            let nl = (u * u + v * v + z * z).squareRoot()
+            var shade = 0.3 + 0.7 * max(0, (u * lx + v * ly + z * lz) / (nl * ll))
+            if let phase = pose.ripple {
+                let ripple = 0.5 + 0.5 * sin((u * u + v * v).squareRoot() * 9 - phase)
+                shade *= 0.6 + 0.4 * ripple
+            }
+            return Ink(dot: d,
+                       radius: step * 0.4 * (0.7 + 0.3 * shade),
+                       ink: 0.4 + 0.4 * shade,
+                       tint: shade > 0.6 ? (shade - 0.6) / 0.4 : 0,
+                       eye: eyeCols.contains(d.col) && eyeRows.contains(d.row))
+        }
+    }
+
+    struct Dot {
+        let row: Int
+        let col: Int
+        let center: CGPoint
+        var id: Int { row * 100 + col }
+    }
+
+    /// Square-grid dot centers that fall inside the silhouette.
+    static func grid(shape: String, size: CGFloat, step: CGFloat, cells: Int) -> [Dot] {
+        let path = CharacterShape(kind: shape).path(in: CGRect(x: 0, y: 0, width: size, height: size))
+        var out: [Dot] = []
+        for row in 0..<cells {
+            for col in 0..<cells {
+                let p = CGPoint(x: (CGFloat(col) + 0.5) * step, y: (CGFloat(row) + 0.5) * step)
+                if path.contains(p) { out.append(Dot(row: row, col: col, center: p)) }
+            }
+        }
+        return out
     }
 }
 
-/// A cloud: three overlapping arcs on a flat base.
-struct CloudShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width, h = rect.height
-        path.addArc(center: CGPoint(x: w * 0.32, y: h * 0.58), radius: w * 0.26,
-                    startAngle: .degrees(90), endAngle: .degrees(270), clockwise: false)
-        path.addArc(center: CGPoint(x: w * 0.55, y: h * 0.42), radius: w * 0.28,
-                    startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
-        path.addArc(center: CGPoint(x: w * 0.74, y: h * 0.60), radius: w * 0.22,
-                    startAngle: .degrees(270), endAngle: .degrees(90), clockwise: false)
-        path.addLine(to: CGPoint(x: w * 0.90, y: h * 0.86))
-        path.addLine(to: CGPoint(x: w * 0.10, y: h * 0.86))
-        path.closeSubpath()
-        return path
+/// A bot's character: the dot-matrix person. No letters — the shape and
+/// colour are the face. A custom photo (set by the user) replaces it;
+/// that is handled by `AvatarView`, not here.
+struct CharacterAvatar: View {
+    enum Mood: Sendable { case idle, working, needsInput }
+
+    let shape: String
+    let color: Color
+    let size: CGFloat
+    let mood: Mood
+    let still: Bool
+
+    /// `still` draws one frame of the mood (widgets and Live Activities
+    /// render one frame); a change of mood then moves the halftone
+    /// highlight and the eyes, animatable dot by dot.
+    init(shape: String, color: String, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false) {
+        self.init(shape: shape, tint: Palette.avatarColor(named: color), size: size, mood: mood, still: still)
+    }
+
+    init(shape: String, tint: Color, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false) {
+        self.shape = shape
+        self.color = tint
+        self.size = size
+        self.mood = mood
+        self.still = still
+    }
+
+    init(bot: Bot, size: CGFloat = 40, animated: Bool = true) {
+        self.init(shape: bot.avatarShape, color: bot.avatarColor, size: size, mood: animated ? bot.mood : .idle)
+    }
+
+    /// The bot's current mood, drawn as one frame.
+    init(bot: Bot, size: CGFloat = 40, still: Bool) {
+        self.init(shape: bot.avatarShape, color: bot.avatarColor, size: size, mood: bot.mood, still: still)
+    }
+
+    var body: some View {
+        DottedBody(shape: shape, color: color, size: size, mood: mood, paused: still)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
-/// A teardrop: a circle with the top pulled to a point.
-struct TeardropShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width, h = rect.height
-        path.move(to: CGPoint(x: w * 0.50, y: h * 0.02))
-        path.addCurve(to: CGPoint(x: w * 0.98, y: h * 0.58),
-                      control1: CGPoint(x: w * 0.78, y: h * 0.22),
-                      control2: CGPoint(x: w * 0.98, y: h * 0.36))
-        path.addCurve(to: CGPoint(x: w * 0.50, y: h * 0.98),
-                      control1: CGPoint(x: w * 0.98, y: h * 0.82),
-                      control2: CGPoint(x: w * 0.78, y: h * 0.98))
-        path.addCurve(to: CGPoint(x: w * 0.02, y: h * 0.58),
-                      control1: CGPoint(x: w * 0.22, y: h * 0.98),
-                      control2: CGPoint(x: w * 0.02, y: h * 0.82))
-        path.addCurve(to: CGPoint(x: w * 0.50, y: h * 0.02),
-                      control1: CGPoint(x: w * 0.02, y: h * 0.36),
-                      control2: CGPoint(x: w * 0.22, y: h * 0.22))
-        path.closeSubpath()
-        return path
+extension Bot {
+    var mood: CharacterAvatar.Mood { needsYouOutside ? .needsInput : isBusyOutside ? .working : .idle }
+
+    /// It needs the user while the chat or one of its tasks waits on them.
+    var needsYouOutside: Bool {
+        needsInput || work.contains { $0.status == "needsYou" }
+    }
+
+    /// Something goes on, in its chat or its box.
+    var isBusyOutside: Bool {
+        isWorking || needsYouOutside || work.contains { $0.isLive || $0.status == "waiting" }
     }
 }
 
-/// A bot/group avatar: coloured shape with the first letter of the name.
-/// Falls back to a blue blob when the colour or shape name is unknown.
+/// A group chat's face, clustered like iMessage: two bots tucked
+/// diagonally, three in a triangle, four in a 2×2 grid; past four the
+/// last cell counts the rest.
+struct GroupAvatar: View {
+    let members: [Bot]
+    let size: CGFloat
+    let animated: Bool
+
+    init(members: [Bot], size: CGFloat = 40, animated: Bool = true) {
+        self.members = members
+        self.size = size
+        self.animated = animated
+    }
+
+    var body: some View {
+        ZStack {
+            switch members.count {
+            case 0:
+                Image(systemName: "person.2")
+                    .font(.system(size: size * 0.4))
+                    .foregroundStyle(.secondary)
+            case 1:
+                CharacterAvatar(bot: members[0], size: size, animated: animated)
+            case 2:
+                place(members[1], size * 0.66, .topTrailing)
+                place(members[0], size * 0.66, .bottomLeading)
+            case 3:
+                place(members[0], size * 0.55, .top)
+                place(members[1], size * 0.55, .bottomLeading)
+                place(members[2], size * 0.55, .bottomTrailing)
+            default:
+                place(members[0], size * 0.5, .topLeading)
+                place(members[1], size * 0.5, .topTrailing)
+                place(members[2], size * 0.5, .bottomLeading)
+                if members.count == 4 {
+                    place(members[3], size * 0.5, .bottomTrailing)
+                } else {
+                    Text("+\(members.count - 3)")
+                        .font(.system(size: size * 0.24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .frame(width: size * 0.5, height: size * 0.5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    private func place(_ bot: Bot, _ side: CGFloat, _ corner: Alignment) -> some View {
+        CharacterAvatar(bot: bot, size: side, animated: animated)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: corner)
+    }
+}
+
+/// A bot's character, or a group's `members`. A photo the user set for
+/// the bot replaces the character, clipped to the same shape.
+struct BotAvatar: View {
+    let bot: Bot
+    let members: [Bot]
+    let size: CGFloat
+    let animated: Bool
+    @ObservedObject private var avatarStore = AvatarStore.shared
+
+    init(bot: Bot, members: [Bot] = [], size: CGFloat = 44, animated: Bool = true) {
+        self.bot = bot
+        self.members = members
+        self.size = size
+        self.animated = animated
+    }
+
+    var body: some View {
+        if let photo = avatarStore.photo(for: bot.id) {
+            Image(uiImage: photo)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(AvatarClipShape(shape: AvatarShape(rawValue: bot.avatarShape) ?? .blob))
+        } else if bot.isGroup {
+            GroupAvatar(members: members, size: size, animated: animated)
+        } else {
+            CharacterAvatar(bot: bot, size: size, animated: animated)
+        }
+    }
+}
+
+/// Avatar with the roster status dot: black = unread, orange = needs you.
+/// A group shows its `members`.
+struct AvatarWithStatus: View {
+    let bot: Bot
+    let members: [Bot]
+    let size: CGFloat
+
+    init(bot: Bot, members: [Bot] = [], size: CGFloat = 44) {
+        self.bot = bot
+        self.members = members
+        self.size = size
+    }
+
+    var body: some View {
+        BotAvatar(bot: bot, members: members, size: size)
+            .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
+                if bot.needsYouOutside {
+                    Image(systemName: "exclamationmark")
+                        .font(.system(size: size * 0.2, weight: .black))
+                        .foregroundStyle(Palette.onWarning)
+                        .frame(width: size * 0.36, height: size * 0.36)
+                        .background(Palette.warning, in: Circle())
+                        .overlay(Circle().stroke(Palette.background, lineWidth: 2))
+                } else if bot.unread > 0 {
+                    Circle()
+                        .fill(Palette.accentFill)
+                        .frame(width: size * 0.28, height: size * 0.28)
+                        .overlay(Circle().stroke(Palette.background, lineWidth: 2))
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if bot.lead { LeadAgentBadge(size: max(12, size * 0.34)) }
+            }
+    }
+}
+
+/// The lead agent's star, on a warning circle.
+struct LeadAgentBadge: View {
+    let size: CGFloat
+    init(size: CGFloat) { self.size = size }
+
+    var body: some View {
+        Image(systemName: "star.fill")
+            .font(.system(size: size * 0.58, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Palette.warning, in: Circle())
+            .accessibilityLabel(L("主智能体"))
+    }
+}
+
+/// A bot/group avatar: the dot-matrix character, or the user's chosen
+/// photo when one is set for the owner (or a photo override is passed).
+/// The photo is shown instead, clipped to the same shape.
 struct AvatarView: View {
+    var bot: Bot?
     var name: String
     var colorName: String
     var shapeName: String
     var size: CGFloat
+    var ownerId: String?
+    var photoOverride: UIImage?
+    @ObservedObject private var avatarStore = AvatarStore.shared
 
     init(bot: Bot, size: CGFloat) {
+        self.bot = bot
         name = bot.name
         colorName = bot.avatarColor
         shapeName = bot.avatarShape
         self.size = size
+        ownerId = bot.id
+        photoOverride = nil
     }
 
     init(name: String, color: String, shape: String, size: CGFloat) {
@@ -173,24 +429,41 @@ struct AvatarView: View {
         colorName = color
         shapeName = shape
         self.size = size
+        ownerId = nil
+        photoOverride = nil
+    }
+
+    init(name: String, color: String, shape: String, size: CGFloat, ownerId: String?, photoOverride: UIImage? = nil) {
+        self.name = name
+        colorName = color
+        shapeName = shape
+        self.size = size
+        self.ownerId = ownerId
+        self.photoOverride = photoOverride
     }
 
     var body: some View {
         let shape = AvatarShape(rawValue: shapeName) ?? .blob
         let color = Palette.avatarColor(named: colorName)
-        ZStack {
-            shape.path(in: CGRect(x: 0, y: 0, width: size, height: size))
-                .fill(color)
-            Text(firstLetter)
-                .font(.system(size: size * 0.42, weight: .semibold))
-                .foregroundStyle(.white)
+        if let photo = photoOverride ?? ownerId.flatMap({ avatarStore.photo(for: $0) }) {
+            Image(uiImage: photo)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(AvatarClipShape(shape: shape))
+        } else if let bot {
+            CharacterAvatar(bot: bot, size: size)
+        } else {
+            CharacterAvatar(shape: shapeName, tint: color, size: size)
         }
-        .frame(width: size, height: size)
     }
+}
 
-    private var firstLetter: String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first else { return "?" }
-        return String(first).uppercased()
+/// The avatar's shape as a SwiftUI Shape, for clipping photos to it.
+struct AvatarClipShape: Shape {
+    var shape: AvatarShape
+
+    func path(in rect: CGRect) -> Path {
+        shape.path(in: rect)
     }
 }

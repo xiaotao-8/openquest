@@ -190,6 +190,23 @@ struct HostAPI: Sendable {
         _ = try await connection.call(method: "stop", body: try body(["botId": botId]))
     }
 
+    /// Stops the bot's work: every live task, or just `taskId`.
+    func stopWork(botId: String, taskId: String? = nil) async throws {
+        var dict: [String: Any] = ["botId": botId]
+        if let taskId { dict["taskId"] = taskId }
+        _ = try await connection.call(method: "stopWork", body: try body(dict))
+    }
+
+    /// A work action: "workFirst", "dropWork" or "retryWork".
+    func work(method: String, botId: String, taskId: String) async throws {
+        _ = try await connection.call(method: method, body: try body(["botId": botId, "taskId": taskId]))
+    }
+
+    /// Cuts `taskId` in ahead of `insteadOf`'s task.
+    func workCutIn(botId: String, taskId: String, insteadOf: String) async throws {
+        _ = try await connection.call(method: "workCutIn", body: try body(["botId": botId, "taskId": taskId, "insteadOf": insteadOf]))
+    }
+
     func markRead(botId: String) async throws {
         _ = try await connection.call(method: "markRead", body: try body(["botId": botId]))
     }

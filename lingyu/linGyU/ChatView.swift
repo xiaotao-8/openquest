@@ -18,6 +18,8 @@ struct ChatView: View {
     @State private var errorMessage: String?
     @State private var showingTrace = false
     @State private var didLoadHistory = false
+    @State private var showingWork = false
+    @State private var showingStopDialog = false
 
     private var mirror: EventMirror { store.connector.mirror }
     private var bot: Bot? { mirror.bot(id: botId) }
@@ -36,18 +38,23 @@ struct ChatView: View {
 
     var body: some View {
         if let bot {
-            VStack(spacing: 0) {
-                messageList(bot: bot)
-                Composer(
-                    bot: bot,
-                    text: $draftText,
-                    isWorking: bot.isWorking,
-                    isOnline: isOnline,
-                    onSend: send,
-                    onStop: stop
-                )
-            }
-            .background(Palette.background)
+            messageList(bot: bot)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 6) {
+                        if !bot.workSections.isIdle {
+                            WorkCapsule(bot: bot, onStop: { showingStopDialog = true }, onTap: { showingWork = true })
+                        }
+                        Composer(
+                            bot: bot,
+                            text: $draftText,
+                            isWorking: bot.isWorking,
+                            isOnline: isOnline,
+                            onSend: send,
+                            onStop: stop
+                        )
+                    }
+                }
+                .background(Palette.background)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -59,7 +66,6 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("在对话中查找"))
@@ -81,6 +87,14 @@ struct ChatView: View {
         .overlay {
             if showingMiniWindow {
                 MiniWindow(title: miniWindowTitle, onClose: { showingMiniWindow = false })
+            }
+        }
+        .codyncSheet(isPresented: $showingWork) {
+            AllWorkView()
+        }
+        .stopWorkDialog(isPresented: $showingStopDialog) {
+            Task {
+                try? await store.connector.api?.stopWork(botId: botId, taskId: bot.workSections.stoppable?.id)
             }
         }
         .onAppear {
@@ -122,24 +136,21 @@ struct ChatView: View {
         Button {
             store.detailBotId = botId
         } label: {
-            VStack(spacing: 1) {
+            VStack(spacing: 0) {
                 HStack(spacing: 7) {
                     if let bot {
-                        if bot.isGroup {
-                            GroupAvatarView(bot: bot, size: 22)
-                        } else {
-                            AvatarView(bot: bot, size: 22)
-                        }
+                        BotAvatar(bot: bot, members: bot.members.compactMap { mirror.bot(id: $0) }, size: 22)
                         Text(bot.name)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Palette.text)
                             .lineLimit(1)
                     }
                 }
-                HStack(spacing: 3) {
+                HStack(spacing: 6) {
                     Image(systemName: connectionIcon)
                         .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(Palette.secondary)
+                        .frame(width: 12)
                     Text(connectionText)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.secondary)
@@ -182,27 +193,27 @@ struct ChatView: View {
                         HStack {
                             Spacer()
                             Spinner(size: 14)
-                            Text(L("正在加载更早的消息"))
-                                .font(.footnote)
-                                .foregroundStyle(Palette.secondary)
                             Spacer()
                         }
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 14)
                     }
                     if timeline.isEmpty {
-                        IntroCard(bot: bot)
+                        IntroCard(bot: bot, members: bot.members.compactMap { mirror.bot(id: $0) })
                             .padding(.top, 40)
                     }
                     ForEach(Array(timeline.enumerated()), id: \.element.id) { index, entry in
                         let previous = index > 0 ? timeline[index - 1] : nil
-                        if let previous, entry.createdAt - previous.createdAt > 3600 * 1000 {
+                        if index == 0 || (previous.map { entry.createdAt - $0.createdAt > 3600 * 1000 } ?? false) {
                             TimeSeparatorRow(millis: entry.createdAt)
                         }
                         MessageRow(
                             entry: entry,
                             bot: bot,
                             isGroupHead: isGroupHead(index: index),
+                            author: authorBot(for: entry),
                             onResend: resend,
+                            onDelete: deleteEntry,
+                            onCancel: cancelEntry,
                             onShowBrowser: { title in
                                 miniWindowTitle = title
                                 showingMiniWindow = true
@@ -213,7 +224,7 @@ struct ChatView: View {
                     }
                     if bot.isWorking {
                         WorkingIndicator(bot: bot)
-                            .padding(.top, 12)
+                            .padding(.top, 6)
                     }
                     Color.clear
                         .frame(height: 8)
@@ -367,6 +378,23 @@ struct ChatView: View {
         }
     }
 
+    /// The bot that spoke an entry (group chats): the author, else the chat bot.
+    private func authorBot(for entry: Entry) -> Bot? {
+        mirror.bot(id: entry.data.author ?? entry.botId)
+    }
+
+    /// Drops a failed local message from the timeline.
+    private func deleteEntry(_ entry: Entry) {
+        guard let nonce = entry.data.clientNonce else { return }
+        mirror.removeLocalEntry(botId: entry.botId, clientNonce: nonce)
+    }
+
+    /// Cancels a queued local message (it stays as "not sent — stopped").
+    private func cancelEntry(_ entry: Entry) {
+        guard let nonce = entry.data.clientNonce else { return }
+        mirror.updateLocalEntry(botId: entry.botId, clientNonce: nonce, status: "cancelled")
+    }
+
     // MARK: - Drafts
 
     private var draftKey: String { "cn.lingyu.draft.\(botId)" }
@@ -385,15 +413,18 @@ struct MessageRow: View {
     var entry: Entry
     var bot: Bot
     var isGroupHead: Bool
+    var author: Bot?
     var onResend: (Entry) -> Void
+    var onDelete: (Entry) -> Void
+    var onCancel: (Entry) -> Void
     var onShowBrowser: (String) -> Void
 
     var body: some View {
         switch entry.kind {
         case "user":
-            UserBubble(entry: entry, onResend: { onResend(entry) })
+            UserBubble(entry: entry, onResend: { onResend(entry) }, onDelete: { onDelete(entry) }, onCancel: { onCancel(entry) })
         case "agent":
-            AgentBubble(entry: entry, bot: bot)
+            AgentBubble(entry: entry, bot: bot, isGroupHead: isGroupHead, author: author)
         case "permission":
             if entry.isAskCard {
                 DecisionCard(entry: entry, bot: bot)
@@ -413,12 +444,14 @@ struct MessageRow: View {
 struct UserBubble: View {
     var entry: Entry
     var onResend: () -> Void
+    var onDelete: () -> Void
+    var onCancel: () -> Void
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             HStack {
                 Spacer(minLength: 56)
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     if let attachments = entry.data.attachments, !attachments.isEmpty {
                         ForEach(attachments, id: \.id) { attachment in
                             HStack(spacing: 6) {
@@ -438,37 +471,59 @@ struct UserBubble: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18))
+                .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
             statusRow
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    @ViewBuilder
+    /// Timestamp (always, the message's own event time) + delivery status
+    /// (when it isn't the default "sent" state), in one small row under
+    /// the bubble, right-aligned with it.
     private var statusRow: some View {
+        HStack(spacing: 6) {
+            Text(RelativeTime.clock(entry.createdAt))
+                .font(.caption2)
+                .foregroundStyle(Palette.tertiary)
+            statusLabel
+        }
+    }
+
+    @ViewBuilder
+    private var statusLabel: some View {
         switch entry.data.status {
         case "sending":
             Text(L("发送中…"))
                 .font(.caption2)
                 .foregroundStyle(Palette.tertiary)
         case "failed":
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Text(L("发送失败"))
-                    .font(.caption2)
                     .foregroundStyle(Palette.danger)
-                Button(L("重发"), action: onResend)
-                .font(.caption2)
-                .foregroundStyle(Palette.text)
+                Button(L("重发"), systemImage: "arrow.clockwise", action: onResend)
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel(L("重发"))
+                Button(L("删除"), systemImage: "trash", action: onDelete)
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel(L("删除"))
             }
+            .buttonStyle(.plain)
+            .font(.caption2.bold())
         case "cancelled":
             Text(L("未发送，已停止"))
                 .font(.caption2)
                 .foregroundStyle(Palette.tertiary)
         case "waiting", "held":
-            Text(L("等待电脑上线"))
-                .font(.caption2)
-                .foregroundStyle(Palette.tertiary)
+            HStack(spacing: 10) {
+                Text(L("等待电脑上线"))
+                    .foregroundStyle(Palette.tertiary)
+                Button(L("取消"), systemImage: "xmark.circle", action: onCancel)
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel(L("取消发送"))
+            }
+            .buttonStyle(.plain)
+            .font(.caption2)
         case "delivering":
             Text(L("已送达电脑"))
                 .font(.caption2)
@@ -482,20 +537,31 @@ struct UserBubble: View {
 struct AgentBubble: View {
     var entry: Entry
     var bot: Bot
+    var isGroupHead: Bool
+    var author: Bot?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            AvatarView(bot: bot, size: 28)
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
+            if bot.isGroup, isGroupHead, let author {
+                AuthorLabel(author: author)
+            }
+            if entry.data.thread != nil {
+                WorkThreadLine(data: entry.data)
+                    .padding(.leading, 4)
+            }
+            HStack {
                 Text(markdownText)
                     .font(.body)
                     .foregroundStyle(Palette.text)
                     .textSelection(.enabled)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18))
+                    .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                Spacer(minLength: 40)
             }
-            Spacer(minLength: 40)
+            Text(RelativeTime.clock(entry.createdAt))
+                .font(.caption2)
+                .foregroundStyle(Palette.tertiary)
         }
     }
 
@@ -508,20 +574,52 @@ struct AgentBubble: View {
     }
 }
 
+/// The author line above a group message: the speaking bot's avatar and
+/// name in its own colour.
+struct AuthorLabel: View {
+    var author: Bot
+
+    var body: some View {
+        HStack(spacing: 6) {
+            AvatarView(bot: author, size: 26)
+            Text(author.name)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Palette.avatarColor(named: author.avatarColor))
+        }
+    }
+}
+
 struct NoticeRow: View {
     var entry: Entry
 
     var body: some View {
-        HStack {
-            Spacer()
-            Text(entry.data.text ?? "")
-                .font(.footnote)
-                .foregroundStyle(entry.data.style == "error" ? Palette.danger : Palette.secondary)
-                .multilineTextAlignment(.center)
-            Spacer()
+        if entry.data.style == "error" {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Palette.danger)
+                    Text(entry.data.text ?? "")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.text)
+                }
+                WorkThreadLine(data: entry.data)
+                    .padding(.leading, 4)
+            }
+            .padding(12)
+            .background(Palette.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack {
+                Spacer()
+                Text(entry.data.text ?? "")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .multilineTextAlignment(.center)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
     }
 }
 
@@ -599,48 +697,73 @@ struct TimeSeparatorRow: View {
     }
 }
 
-/// The working indicator at the end of the timeline (§4.4).
+/// The bot's current activity and elapsed time; with thinking details on
+/// (Settings), a tap unfolds the turn's steps.
 struct WorkingIndicator: View {
     var bot: Bot
     @EnvironmentObject private var store: AppStore
     @State private var stepsExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var open: Bool { store.showThinkingDetails && stepsExpanded }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                if store.showThinkingDetails {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        VStack(alignment: .leading, spacing: 0) {
+            if store.showThinkingDetails {
+                Button {
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
                         stepsExpanded.toggle()
                     }
+                } label: {
+                    status.contentShape(Rectangle())
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(bot.needsInput ? Palette.warning : Palette.secondary)
-                        .frame(width: 16, height: 16)
-                    Text(bot.needsInput ? L("需要你确认") : (bot.activity.isEmpty ? L("工作中…") : bot.activity))
-                        .font(.subheadline)
-                        .foregroundStyle(bot.needsInput ? Palette.warning : Palette.secondary)
-                        .lineLimit(1)
-                    Spacer()
-                    if store.showThinkingDetails {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Palette.tertiary)
-                            .rotationEffect(.degrees(stepsExpanded ? 90 : 0))
-                    }
-                }
+                .buttonStyle(.plain)
+                .accessibilityHint(L(open ? "隐藏步骤" : "显示步骤"))
+                .accessibilityValue(L(open ? "已展开" : "已折叠"))
+            } else {
+                status
             }
-            .buttonStyle(.plain)
-            .disabled(!store.showThinkingDetails)
-            if stepsExpanded {
+            if open {
                 WorkingSteps(botId: bot.id)
+                    .padding(.top, 12)
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18))
+        .frame(maxWidth: open ? .infinity : nil, alignment: .leading)
+        .background(Palette.bubbleAgent, in: shape)
+        // Folding steps never cross the pill's edge.
+        .clipShape(shape)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)
+    }
+
+    private var status: some View {
+        HStack(spacing: 8) {
+            ThinkingOrb(
+                state: bot.needsInput ? .listening : .working,
+                size: 16,
+                color: bot.needsInput ? Palette.warning : Palette.secondary
+            )
+            Text(bot.needsInput ? L("需要你确认") : (bot.activity.isEmpty ? L("工作中…") : bot.activity))
+                .font(.subheadline)
+                .foregroundStyle(bot.needsInput ? Palette.warning : Palette.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: open ? .infinity : nil, alignment: .leading)
+            if let startedAt = bot.startedAt {
+                Text(Date(timeIntervalSince1970: TimeInterval(startedAt) / 1000), style: .timer)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(Palette.tertiary)
+            }
+            if store.showThinkingDetails {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Palette.tertiary)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+            }
+        }
     }
 }
 
@@ -657,7 +780,7 @@ struct WorkingSteps: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 if steps.isEmpty {
                     Text(L("还没有内容。"))
                         .font(.subheadline)
@@ -684,10 +807,11 @@ struct WorkingSteps: View {
 /// The empty-chat intro card (§4.6).
 struct IntroCard: View {
     var bot: Bot
+    var members: [Bot]
 
     var body: some View {
         VStack(spacing: 12) {
-            AvatarView(bot: bot, size: 72)
+            BotAvatar(bot: bot, members: members, size: 72)
             Text(bot.name)
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.text)
@@ -700,6 +824,12 @@ struct IntroCard: View {
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
             }
+            if bot.isGroup {
+                Text(L("大家轮流回答。@ 某个智能体，只问它一个。"))
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.secondary)
+                    .multilineTextAlignment(.center)
+            }
             Text(L("告诉它你需要什么。完成或需要你时，你会收到通知。"))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
@@ -707,7 +837,7 @@ struct IntroCard: View {
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 24)
     }
 
     private var agentSubtitle: String {
@@ -715,7 +845,7 @@ struct IntroCard: View {
     }
 
     private var groupSubtitle: String {
-        let names = bot.members.joined(separator: " · ")
+        let names = members.map(\.name).joined(separator: " · ")
         return names.isEmpty ? L("群聊") : names
     }
 }

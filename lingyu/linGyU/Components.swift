@@ -1,5 +1,38 @@
 import SwiftUI
 
+// MARK: - Motion
+
+/// The original's motion constants, so presses, tabs and layout changes
+/// feel the same. With Reduce Motion on, durations drop to 0.
+enum Motion {
+    static let hover = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.12)
+    static let fade = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.12)
+    static let press = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.05)
+    static let morph = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.2)
+    static let layout = Animation.spring(duration: 0.3, bounce: 0)
+    static let conversation = Animation.spring(duration: 0.42, bounce: 0)
+    static let activityPhase = Animation.spring(duration: 0.6, bounce: 0.3)
+    static let pressScale: CGFloat = 0.98
+
+    static func reduced(_ animation: Animation, _ reduce: Bool) -> Animation? {
+        reduce ? nil : animation
+    }
+
+    @MainActor static func animate(_ change: () -> Void) {
+        let reduce = UIAccessibility.isReduceMotionEnabled
+        withAnimation(reduced(layout, reduce), change)
+    }
+}
+
+/// Press: shrink to 98% in 50ms, spring back.
+struct PressScale: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+    }
+}
+
 // MARK: - Buttons
 
 struct PrimaryButtonStyle: ButtonStyle {
@@ -53,7 +86,8 @@ extension ButtonStyle where Self == SecondaryButtonStyle {
     static var secondary: SecondaryButtonStyle { SecondaryButtonStyle() }
 }
 
-/// A full-width primary action (min height 50).
+/// A full-width primary action. No fixed height: the original's
+/// StyledButton has no minHeight (~44pt from its padding).
 struct PrimaryActionButton: View {
     var title: String
     var isEnabled: Bool = true
@@ -63,7 +97,6 @@ struct PrimaryActionButton: View {
         Button(action: action) {
             Text(title)
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 50)
         }
         .buttonStyle(.primary)
         .disabled(!isEnabled)
@@ -91,25 +124,31 @@ extension ButtonStyle where Self == IconButtonStyle {
 
 // MARK: - Switch
 
-/// The Codync switch: black/white track, never green.
+/// The Codync switch: the label on the left, the switch on the right.
+/// Black/white track, never green.
 struct CodyncSwitchStyle: ToggleStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        Button {
-            configuration.isOn.toggle()
-        } label: {
-            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(configuration.isOn ? Palette.accentFill : Palette.bubbleUser)
-                    .frame(width: 34, height: 20)
-                Circle()
-                    .fill(configuration.isOn ? Palette.onAccent : .white)
-                    .frame(width: 16, height: 16)
-                    .padding(2)
+        HStack(spacing: 12) {
+            configuration.label
+            Spacer(minLength: 0)
+            Button {
+                configuration.isOn.toggle()
+            } label: {
+                ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                    Capsule()
+                        .fill(configuration.isOn ? Palette.accentFill : Palette.bubbleUser)
+                        .frame(width: 34, height: 20)
+                    Circle()
+                        .fill(configuration.isOn ? Palette.onAccent : .white)
+                        .frame(width: 16, height: 16)
+                        .padding(2)
+                }
             }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .opacity(isEnabled ? 1 : 0.4)
     }
 }
@@ -157,26 +196,39 @@ struct SegmentedChoice<Value: Hashable & Equatable>: View {
 struct TabChoice: View {
     var titles: [String]
     @Binding var selection: Int
+    var small: Bool = false
+    @Namespace private var namespace
+
+    private func tabs(font: Font) -> some View {
+        HStack(spacing: 2) {
+            ForEach(titles.indices, id: \.self) { index in
+                Button {
+                    withAnimation(Motion.hover) { selection = index }
+                } label: {
+                    Text(titles[index])
+                        .font(font)
+                        .foregroundStyle(selection == index ? Palette.text : Palette.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background {
+                            if selection == index {
+                                Capsule()
+                                    .fill(Palette.bubbleAgent)
+                                    .matchedGeometryEffect(id: "TabChoice", in: namespace)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(titles.indices, id: \.self) { index in
-                    Button {
-                        selection = index
-                    } label: {
-                        Text(titles[index])
-                            .font(.subheadline)
-                            .foregroundStyle(selection == index ? Palette.text : Palette.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                selection == index ? Palette.bubbleAgent : Color.clear,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
+        // When they all fit, show them all; otherwise scroll.
+        ViewThatFits(in: .horizontal) {
+            tabs(font: small ? .footnote : .subheadline)
+            ScrollView(.horizontal, showsIndicators: false) {
+                tabs(font: small ? .footnote : .subheadline)
             }
         }
     }
@@ -216,20 +268,35 @@ struct CardSection<Content: View>: View {
     var title: String?
     var footer: String?
     var outlined: Bool = false
+    var accessory: AnyView?
     @ViewBuilder var content: Content
+
+    init(title: String? = nil, footer: String? = nil, outlined: Bool = false, accessory: AnyView? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.footer = footer
+        self.outlined = outlined
+        self.accessory = accessory
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let title {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.text)
-                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.text)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    accessory
+                }
+                .padding(.leading, 2)
             }
             if outlined {
                 VStack(spacing: 0) {
                     content
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
@@ -239,6 +306,7 @@ struct CardSection<Content: View>: View {
                 VStack(spacing: 0) {
                     content
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16))
             }
             if let footer {
@@ -246,9 +314,11 @@ struct CardSection<Content: View>: View {
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
                     .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 2)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -271,14 +341,29 @@ struct Hairline: View {
     }
 }
 
-struct ValueRow: View {
+/// A row with a label and a value. The value is either a string or a view
+/// (a picker or a switch). No chevron: it shows, it doesn't go anywhere.
+struct ValueRow<Value: View>: View {
     var label: String
     var detail: String?
-    var value: String?
+    var value: Value
+
+    init(label: String, detail: String? = nil, value: String?) where Value == Text {
+        self.label = label
+        self.detail = detail
+        self.value = Text(value ?? "")
+            .foregroundStyle(Palette.secondary)
+    }
+
+    init(label: String, detail: String? = nil, @ViewBuilder value: () -> Value) {
+        self.label = label
+        self.detail = detail
+        self.value = value()
+    }
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(label)
                     .foregroundStyle(Palette.text)
                 if let detail {
@@ -286,14 +371,10 @@ struct ValueRow: View {
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
                         .lineSpacing(2)
-                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 12)
-            if let value {
-                Text(value)
-                    .foregroundStyle(Palette.secondary)
-            }
+            value
         }
     }
 }
@@ -453,5 +534,112 @@ struct Spinner: View {
         ProgressView()
             .controlSize(.small)
             .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Choice picker
+
+/// One of a few choices, picked from a system menu: the value and a
+/// down chevron in an outlined pill. Long option labels wrap onto two
+/// lines. Pass `disabled` for options that only say something.
+struct ChoicePicker<ID: Hashable>: View {
+    let selection: Binding<ID>
+    let options: [(id: ID, label: String)]
+    var disabled: Set<ID> = []
+    var fill: Color = .clear
+    var fitsAvailableWidth: Bool = false
+    var image: ((ID) -> Image?)? = nil
+
+    var body: some View {
+        let selected = options.first { $0.id == selection.wrappedValue }
+        DropdownMenu(items: {
+            options.map { option in
+                MenuItem(option.label, image: image?(option.id), selected: option.id == selection.wrappedValue,
+                         enabled: !disabled.contains(option.id)) {
+                    selection.wrappedValue = option.id
+                }
+            }
+        }) {
+            HStack(spacing: 6) {
+                if let image = selected.flatMap({ image?($0.id) }) {
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                }
+                Text(selected?.label ?? "")
+                    .font(.body)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Palette.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .frame(maxWidth: fitsAvailableWidth ? .infinity : nil, alignment: .leading)
+            .background(fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Palette.border, lineWidth: 1))
+        }
+    }
+}
+
+/// A switch row: a label, an optional explanation, and the switch on the
+/// right, for use inside a card.
+struct SwitchRow: View {
+    var label: String
+    var detail: String?
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .foregroundStyle(Palette.text)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(Palette.secondary)
+                        .lineSpacing(2)
+                }
+            }
+        }
+        .toggleStyle(.codync)
+    }
+}
+
+// MARK: - Glass & pills
+
+extension View {
+    /// The app's glass: liquid glass on iOS 26, ultra-thin material below.
+    func glass<S: Shape>(in shape: S) -> some View {
+        if #available(iOS 26, *) {
+            return AnyView(self.glassEffect(.regular, in: shape))
+        } else {
+            return AnyView(self.background(.ultraThinMaterial, in: shape))
+        }
+    }
+
+    /// A small pill: the shape used for chips, badges and the composer capsule.
+    func pill() -> some View {
+        padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// The same pill, outlined instead of filled.
+    func outlinedPill() -> some View {
+        padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Palette.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Palette.border, lineWidth: 1))
+    }
+
+    /// A card outline: a rounded rectangle with a hairline border.
+    func outlinedCard(cornerRadius: CGFloat = 14, dashed: Bool = false) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 3] : []))
+        )
     }
 }

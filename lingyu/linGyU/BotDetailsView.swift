@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// The bot detail sheet (§6): identity header + five tabs
 /// (Details / Computer / Library / Memory / Settings). Settings autosave
@@ -70,7 +71,7 @@ struct BotDetailsView: View {
 
     private var identityHeader: some View {
         VStack(spacing: 10) {
-            AvatarView(bot: bot, size: 72)
+            BotAvatar(bot: bot, members: bot.members.compactMap { store.connector.mirror.bot(id: $0) }, size: 72)
             Text(bot.name)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Palette.text)
@@ -370,7 +371,7 @@ struct SettingsTab: View {
                             Text(L("头像"))
                                 .foregroundStyle(Palette.text)
                             Spacer()
-                            AvatarView(name: draft.name ?? bot.name, color: draft.avatarColor ?? bot.avatarColor, shape: draft.avatarShape ?? bot.avatarShape, size: 28)
+                            AvatarView(name: draft.name ?? bot.name, color: draft.avatarColor ?? bot.avatarColor, shape: draft.avatarShape ?? bot.avatarShape, size: 28, ownerId: bot.id)
                         }
                     }
                     .buttonStyle(.plain)
@@ -458,6 +459,7 @@ struct SettingsTab: View {
         .codyncSheet(isPresented: $showingAvatarPicker) {
             AvatarPicker(
                 name: draft.name ?? bot.name,
+                ownerId: bot.id,
                 color: Binding(
                     get: { draft.avatarColor ?? bot.avatarColor },
                     set: { draft.avatarColor = $0; onChange() }
@@ -471,12 +473,18 @@ struct SettingsTab: View {
     }
 }
 
-/// Avatar picker: 11 colours × 8 shapes in ring-selection grids.
+/// Avatar picker: tap the avatar to pick a photo, or keep the letter disc
+/// and choose from 11 colours × 8 shapes. A photo, once set, is shown
+/// everywhere the avatar appears; removing it restores the letter disc.
 struct AvatarPicker: View {
     var name: String
+    var ownerId: String
     @Binding var color: String
     @Binding var shape: String
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var avatarStore = AvatarStore.shared
+    @State private var showingPhotoPicker = false
+    @State private var photoItem: PhotosPickerItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -485,7 +493,22 @@ struct AvatarPicker: View {
             }
             ScrollView {
                 VStack(spacing: 24) {
-                    AvatarView(name: name, color: color, shape: shape, size: 72)
+                    VStack(spacing: 10) {
+                        Button {
+                            showingPhotoPicker = true
+                        } label: {
+                            AvatarView(name: name, color: color, shape: shape, size: 72, ownerId: ownerId)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L("选择照片"))
+                        if avatarStore.hasPhoto(for: ownerId) {
+                            Button(L("移除照片"), role: .destructive) {
+                                avatarStore.remove(for: ownerId)
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.danger)
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 10) {
                         Text(L("颜色"))
                             .font(.system(size: 15, weight: .semibold))
@@ -540,6 +563,15 @@ struct AvatarPicker: View {
             }
         }
         .background(Palette.background)
+        .photosPicker(isPresented: $showingPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let image = await AvatarStore.load(item) {
+                    avatarStore.save(image, for: ownerId)
+                }
+            }
+        }
     }
 }
 
@@ -555,6 +587,9 @@ struct NewBotView: View {
     @State private var permission = "ask"
     @State private var isCreating = false
     @State private var errorMessage: String?
+    @State private var pendingPhoto: UIImage?
+    @State private var showingPhotoPicker = false
+    @State private var photoItem: PhotosPickerItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -563,7 +598,13 @@ struct NewBotView: View {
             }
             ScrollView {
                 VStack(spacing: 24) {
-                    AvatarView(name: name.isEmpty ? "?" : name, color: color, shape: shape, size: 72)
+                    Button {
+                        showingPhotoPicker = true
+                    } label: {
+                        AvatarView(name: name.isEmpty ? "?" : name, color: color, shape: shape, size: 72, ownerId: nil, photoOverride: pendingPhoto)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("选择照片"))
                     TextField(L("名字"), text: $name)
                         .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
@@ -619,6 +660,13 @@ struct NewBotView: View {
             }
         }
         .background(Palette.background)
+        .photosPicker(isPresented: $showingPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                pendingPhoto = await AvatarStore.load(item)
+            }
+        }
     }
 
     private func create() {
@@ -637,6 +685,9 @@ struct NewBotView: View {
             do {
                 let bot = try await api.createBot(draft: draft)
                 await MainActor.run {
+                    if let pendingPhoto {
+                        AvatarStore.shared.save(pendingPhoto, for: bot.id)
+                    }
                     dismiss()
                     store.openChat(botId: bot.id)
                 }
@@ -706,6 +757,9 @@ struct NewGroupView: View {
     @State private var leadId: String?
     @State private var isCreating = false
     @State private var errorMessage: String?
+    @State private var pendingPhoto: UIImage?
+    @State private var showingPhotoPicker = false
+    @State private var photoItem: PhotosPickerItem?
 
     private var candidates: [Bot] {
         store.connector.mirror.bots.filter { !$0.isGroup }
@@ -718,6 +772,13 @@ struct NewGroupView: View {
             }
             ScrollView {
                 VStack(spacing: 24) {
+                    Button {
+                        showingPhotoPicker = true
+                    } label: {
+                        AvatarView(name: name.isEmpty ? "?" : name, color: "blue", shape: "blob", size: 72, ownerId: nil, photoOverride: pendingPhoto)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("选择照片"))
                     TextField(L("群名"), text: $name)
                         .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
@@ -795,6 +856,13 @@ struct NewGroupView: View {
             }
         }
         .background(Palette.background)
+        .photosPicker(isPresented: $showingPhotoPicker, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                pendingPhoto = await AvatarStore.load(item)
+            }
+        }
     }
 
     private func create() {
@@ -813,6 +881,9 @@ struct NewGroupView: View {
                     try? await api.setLead(botId: leadId)
                 }
                 await MainActor.run {
+                    if let pendingPhoto {
+                        AvatarStore.shared.save(pendingPhoto, for: bot.id)
+                    }
                     dismiss()
                     store.openChat(botId: bot.id)
                 }

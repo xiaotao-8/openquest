@@ -64,6 +64,13 @@ struct PairingView: View {
                     PrimaryActionButton(title: isPairing ? L("正在配对…") : L("配对"), isEnabled: !isPairing && !linkText.isEmpty) {
                         startPairing()
                     }
+                    Button(L("跳过")) {
+                        dismiss()
+                        onDone?()
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .padding(.top, 10)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)

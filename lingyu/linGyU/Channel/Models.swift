@@ -552,6 +552,8 @@ struct EntryData: Codable, Equatable, Sendable {
     var handoff: HandoffInfo?
     var routineId: String?
     var style: String?
+    /// The thread this entry belongs to (work threads, `WorkThreadLine`).
+    var thread: ThreadRef?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -590,6 +592,7 @@ struct EntryData: Codable, Equatable, Sendable {
         handoff = container.lenient(HandoffInfo.self, forKey: .handoff)
         routineId = container.lenient(String.self, forKey: .routineId)
         style = container.lenient(String.self, forKey: .style)
+        thread = container.lenient(ThreadRef.self, forKey: .thread)
     }
 
     /// Empty data (used for locally-built entries).
@@ -601,6 +604,7 @@ struct EntryData: Codable, Equatable, Sendable {
         replyTo = nil; reactions = nil; attachments = nil; files = nil; voiceNote = nil
         call = nil; callSeconds = nil; pasted = nil; from = nil; memory = nil
         memoryFile = nil; compaction = nil; handoff = nil; routineId = nil; style = nil
+        thread = nil
     }
 }
 

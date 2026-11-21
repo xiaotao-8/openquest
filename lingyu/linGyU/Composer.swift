@@ -25,10 +25,8 @@ struct Composer: View {
     var onStop: () -> Void
 
     @State private var attachments: [PendingAttachment] = []
-    @State private var showingPhotoPicker = false
-    @State private var showingDocumentPicker = false
-    @State private var errorMessage: String?
-    @FocusState private var fieldFocused: Bool
+    @State private var showingCallLater = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var trimmedEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -41,6 +39,9 @@ struct Composer: View {
         return true
     }
 
+    /// The one-line field's height is 54pt: max(22 + 2·10, 34) + 2·6,
+    /// the same as the + circle beside it.
+
     var body: some View {
         VStack(spacing: 0) {
             if let errorMessage {
@@ -50,34 +51,39 @@ struct Composer: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
             }
-            if !attachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(attachments) { attachment in
-                            AttachmentChip(attachment: attachment) {
-                                attachments.removeAll { $0.id == attachment.id }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .padding(.top, 8)
-            }
             HStack(alignment: .bottom, spacing: 8) {
                 plusButton
-                HStack(alignment: .bottom, spacing: 0) {
-                    TextField(placeholder, text: $text, axis: .vertical)
-                        .font(.body)
-                        .lineLimit(1...8)
-                        .focused($fieldFocused)
-                        .padding(.leading, 18)
-                        .padding(.vertical, 6)
-                    micButton
-                    trailingButton
+                VStack(alignment: .leading, spacing: 0) {
+                    if !attachments.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(attachments) { attachment in
+                                    AttachmentChip(attachment: attachment) {
+                                        attachments.removeAll { $0.id == attachment.id }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                        .padding(.top, 8)
+                    }
+                    HStack(alignment: .bottom, spacing: 8) {
+                        TextField(placeholder, text: $text, axis: .vertical)
+                            .font(.body)
+                            .textFieldStyle(.plain)
+                            .lineLimit(1...8)
+                            .focused($fieldFocused)
+                            .padding(.vertical, 10)
+                        micButton
+                            .padding(.bottom, max(0, (22 + 2 * 10 - 34) / 2))
+                        trailingButton
+                            .padding(.bottom, max(0, (22 + 2 * 10 - 34) / 2))
+                    }
+                    .padding(.leading, 18)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 6)
                 }
-                .padding(.trailing, 6)
-                .frame(minHeight: 54)
-                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 24))
+                .glass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
             .padding(.horizontal, 16)
             .padding(.top, 6)
@@ -93,6 +99,9 @@ struct Composer: View {
                 addFiles(urls)
             }
         }
+        .codyncDialog(isPresented: $showingCallLater, title: L("通话稍后推出"), message: L("语音通话会在后续阶段加入，现在还不能打电话。"), actions: [
+            CodyncDialogAction(title: L("好"), action: {}),
+        ])
     }
 
     private var placeholder: String {
@@ -106,75 +115,93 @@ struct Composer: View {
     }
 
     private var plusButton: some View {
-        Menu {
-            Button {
-                showingPhotoPicker = true
-            } label: {
-                Label(L("照片"), systemImage: "photo.on.rectangle")
-            }
-            Button {
-                showingDocumentPicker = true
-            } label: {
-                Label(L("文件"), systemImage: "folder")
-            }
+        DropdownMenu {
+            var items = [
+                MenuItem(L("照片"), icon: "photo.on.rectangle") { showingPhotoPicker = true },
+                MenuItem(L("文件"), icon: "folder") { showingDocumentPicker = true },
+            ]
             if UIPasteboard.general.hasImages || UIPasteboard.general.hasURLs {
-                Button {
-                    pasteFromClipboard()
-                } label: {
-                    Label(L("粘贴"), systemImage: "doc.on.clipboard")
-                }
+                items.append(MenuItem(L("粘贴"), icon: "doc.on.clipboard") { pasteFromClipboard() })
             }
+            return items
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(Palette.text)
                 .frame(width: 54, height: 54)
-                .background(Palette.bubbleAgent, in: Circle())
+                .glass(in: Circle())
         }
     }
 
+    /// Dictation, beside send / call: a light circle with its engine menu.
+    /// Phase 1 has one engine — the keyboard's dictation, one tap away —
+    /// so the mic focuses the field; voice engines are a later phase.
     private var micButton: some View {
-        Button {
-            // Phase 1: focus the field so the keyboard's dictation mic is
-            // one tap away. Voice engines are a Phase 2 item.
-            fieldFocused = true
-        } label: {
-            Image(systemName: "mic")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Palette.secondary)
-                .frame(width: 34, height: 34)
+        HStack(spacing: 0) {
+            Button {
+                fieldFocused = true
+            } label: {
+                Image(systemName: "mic")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Palette.secondary)
+                    .frame(width: 34, height: 34)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressScale())
+            .accessibilityLabel(L("听写"))
+            DictationEngineMenu(height: 34)
         }
-        .buttonStyle(.plain)
+        .background(Palette.bubbleAgent, in: Capsule())
+    }
+
+    private enum Trailing: Equatable { case stop, call, send }
+
+    /// One button that morphs between call, send and stop: its symbol
+    /// replaces itself, its fill crossfades and the capsule narrows to a
+    /// circle, so switching never pops.
+    private var trailing: Trailing {
+        if isWorking, trimmedEmpty, attachments.isEmpty { return .stop }
+        if trimmedEmpty, attachments.isEmpty { return .call }
+        return .send
     }
 
     @ViewBuilder
     private var trailingButton: some View {
-        if !trimmedEmpty || !attachments.isEmpty {
-            Button {
-                send()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(canSend ? Palette.onAccent : Palette.tertiary)
-                    .frame(width: 34, height: 34)
-                    .background(canSend ? Palette.accentFill : Palette.accentDim, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
-        } else if isWorking {
-            Button(action: onStop) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Palette.onAccent)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.accentFill, in: Circle())
-            }
-            .buttonStyle(.plain)
-        } else {
-            // Idle, empty, no files: no trailing action in Phase 1
-            // (voice calls are a later phase).
-            Color.clear.frame(width: 0, height: 34)
+        let state = trailing
+        let enabled = state != .send || canSend
+        let (symbol, label, size): (String, String, CGFloat) = switch state {
+        case .stop: ("stop.fill", L("停止"), 12)
+        case .call: ("waveform", L("通话"), 15)
+        case .send: ("arrow.up", L("发送"), 14)
         }
+        let fill: Color = switch state {
+        case .send: canSend ? Palette.accentFill : Palette.accentDim
+        case .stop, .call: Palette.accentFill
+        }
+        let ink: Color = switch state {
+        case .send: canSend ? Palette.onAccent : Palette.tertiary
+        case .stop, .call: Palette.onAccent
+        }
+        Button {
+            switch state {
+            case .stop: onStop()
+            case .call: showingCallLater = true
+            case .send: send()
+            }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .bold))
+                .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(ink)
+                .frame(width: state == .call ? 34 * 1.35 : 34, height: 34)
+                .background(fill, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressScale())
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .animation(Motion.reduced(Motion.morph, reduceMotion), value: state)
+        .animation(Motion.reduced(Motion.morph, reduceMotion), value: canSend)
     }
 
     private func send() {
@@ -253,6 +280,30 @@ struct AttachmentChip: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Palette.bubbleAgent, in: Capsule())
+    }
+}
+
+// MARK: - Dictation engine menu
+
+/// Beside the composer's mic, in its capsule: which speech dictation uses.
+/// Phase 1 has one engine — the device's own dictation, reached through
+/// the keyboard — so the menu lists just it; providers come later.
+struct DictationEngineMenu: View {
+    let height: CGFloat
+    @AppStorage("cn.lingyu.dictationEngine") private var engine = "device"
+
+    var body: some View {
+        DropdownMenu {
+            [MenuItem(L("设备自带听写"), selected: engine == "device") { engine = "device" }]
+        } label: {
+            Image(systemName: "chevron.up")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Palette.secondary)
+                .frame(width: 14, height: height)
+                .padding(.trailing, 6)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L("听写引擎"))
     }
 }
 
