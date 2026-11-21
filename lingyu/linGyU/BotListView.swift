@@ -653,7 +653,7 @@ struct ComputersView: View {
         store.accountComputers.contains { $0.computerId == computerId }
     }
 
-    private func accountHosting(for computerId: String) -> AccountComputer.Cloud? {
+    private func accountHosting(for computerId: String) -> CloudHosting? {
         store.accountComputers.first { $0.computerId == computerId }?.cloud
     }
 
