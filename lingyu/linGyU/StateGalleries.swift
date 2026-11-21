@@ -815,7 +815,7 @@ struct WidgetGalleryView: View {
 
     /// The providers are the backends the user's own bots actually use.
     private var providers: [(id: String, label: String)] {
-        Array(Set(bots.map(\.backend))).sorted().map { backend in
+        Array(Set(bots.map(\.backend).filter { !$0.isEmpty })).sorted().map { backend in
             (id: backend, label: backend.prefix(1).uppercased() + backend.dropFirst())
         }
     }
