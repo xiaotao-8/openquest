@@ -288,6 +288,9 @@ workflows:
           # grant 在后（privacy <device> grant <service> <bundle>），
           # 错写成 privacy grant … 时命令静默失败（被 || true 吞掉），框还在。
           xcrun simctl privacy "$SIM_UDID" grant microphone cn.lingyu
+          # Index 22: 麦克风框没了，但通话又弹了语音识别框（SFSpeechRecognizer
+          # 是另一个权限）。两个一起预授权。
+          xcrun simctl privacy "$SIM_UDID" grant speech-recognition cn.lingyu
           # DIAG (Build #15/#16: app exits within seconds of every launch,
           # screenshots all home screen). Launch with console attached so a
           # Swift fatal error / dyld failure is captured, then dump the
