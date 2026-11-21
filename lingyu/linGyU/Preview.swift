@@ -289,8 +289,8 @@ enum PreviewRunner {
 
     /// One demo computer + hello with the ECS host's real values, for the
     /// computer-management sheet preview (in-memory only, never persisted).
-    /// The hello reports an update (2.51.0) so the version row's update
-    /// state is visible too.
+    /// The hello reports the live host's current version (2.51.0), so the
+    /// version row shows "已是最新版本" and no update prompt appears.
     private static func demoComputer() -> Computer? {
         try? JSONDecoder().decode(Computer.self, from: Data("""
         {"id":"demo-computer","name":"ECS","signKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","boxKey":null,"urls":["http://47.238.160.204:19222"],"cloud":null,"device":"linux","color":null,"route":"direct","notifications":null}
@@ -307,7 +307,7 @@ enum PreviewRunner {
 
     private static func demoHello() -> HelloReply? {
         try? JSONDecoder().decode(HelloReply.self, from: Data("""
-        {"hostId":"demo-host","computerId":"demo-computer","name":"ECS","version":"2.50.0","schema":8,"canUpdate":true,"latestVersion":"2.51.0","autoOrder":false,"urls":["http://47.238.160.204:19222"],"rev":1}
+        {"hostId":"demo-host","computerId":"demo-computer","name":"ECS","version":"2.51.0","schema":8,"canUpdate":true,"latestVersion":"2.51.0","autoOrder":false,"urls":["http://47.238.160.204:19222"],"rev":1}
         """.utf8))
     }
 
