@@ -97,3 +97,5 @@ internationalization.md
 
 # Build artifacts (never commit IPAs)
 *.ipa
+# XcodeGen 生成的工程不进仓库（native/ 与 lingyu/ 均现场生成）
+*.xcodeproj/

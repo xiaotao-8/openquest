@@ -1,0 +1,22 @@
+# linGyU — 全新原生 App（Phase 1 起点，FUSION_PLAN.md §6）
+#
+# 规矩（用户 2026-11-21 定）：从零重写，零复用 native/（openquest-native）
+# 任何代码；显示名 linGyU，bundle id cn.lingyu；最低 iOS 26。
+# 本目录在 Phase 1 准备阶段只放本文件；Swift 源码由 app coder 写入 linGyU/。
+# 生成工程：cd lingyu && xcodegen generate（.xcodeproj 不进仓库，CI 现场生成）。
+
+name: linGyU
+options:
+  deploymentTarget:
+    iOS: "26.0"
+targets:
+  linGyU:
+    type: application
+    platform: iOS
+    # Phase 1：只做主 App，不做 widget 扩展（小组件 Phase 3 再定）。
+    sources: [linGyU]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: cn.lingyu
+      INFOPLIST_FILE: linGyU/Info.plist
+      SWIFT_VERSION: "5.9"
+      TARGETED_DEVICE_FAMILY: "1,2"

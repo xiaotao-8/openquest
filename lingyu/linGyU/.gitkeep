@@ -1,0 +1,2 @@
+# 空目录占位：xcodegen 要求 project.yml 里声明的 sources 目录存在。
+# Swift 源码由 app coder 写入本目录；本文件只为让空目录能进 git。
