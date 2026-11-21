@@ -24,6 +24,11 @@ struct ChatView: View {
     @State private var showingStopDialog = false
     @State private var showingCall = false
     @State private var didHandleCallPreview = false
+    @State private var shareImage: UIImage?
+    @State private var shareLog: String?
+    @State private var showingShareSheet = false
+    @State private var copiedSessionId = false
+    @State private var didHandleCandidatePreview = false
 
     private var mirror: EventMirror { store.connector.mirror }
     private var bot: Bot? { mirror.bot(id: botId) }
@@ -63,6 +68,7 @@ struct ChatView: View {
                         }
                         Composer(
                             bot: bot,
+                            sessions: mirror.bots,
                             text: $draftText,
                             isWorking: bot.isWorking,
                             isOnline: isOnline,
@@ -127,6 +133,20 @@ struct ChatView: View {
         .codyncSheet(isPresented: $showingCall) {
             CallView(bot: bot, store: store, onEnd: endCall)
         }
+        .sheet(isPresented: $showingShareSheet) {
+            ActivityShareView(items: shareSheetItems)
+        }
+        .overlay(alignment: .top) {
+            if copiedSessionId {
+                Text(L("已复制会话 ID"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Palette.text)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Palette.bubbleAgent, in: Capsule())
+                    .padding(.top, 8)
+            }
+        }
         .stopWorkDialog(isPresented: $showingStopDialog) {
             Task {
                 try? await store.connector.api?.stopWork(botId: botId, taskId: bot.workSections.stoppable?.id)
@@ -134,6 +154,10 @@ struct ChatView: View {
         }
         .onAppear {
             loadDraft()
+            if !didHandleCandidatePreview, case .seeded(let options) = store.previewMode, options.candidates {
+                didHandleCandidatePreview = true
+                draftText = "@"
+            }
             if !didHandleCallPreview, case .seeded(let options) = store.previewMode, options.call {
                 didHandleCallPreview = true
                 showingCall = true
@@ -204,6 +228,55 @@ struct ChatView: View {
             }
         }
         .buttonStyle(.plain)
+        .contextActions { sessionMenuItems() }
+    }
+
+    // MARK: - Session menu
+
+    /// Long-press the title for the session menu (FishPocket
+    /// SessionTitleMenu). The title tap still opens the bot details
+    /// and the phone/find buttons do not move: the menu takes no new
+    /// space. Rename/fork/archive have no host method (HostAPI has no
+    /// session rename, fork, or archive call), so they stay visible
+    /// and disabled with the reason in the row instead of pretending
+    /// to work. The session id is the bot id: one chat is one bot.
+    private func sessionMenuItems() -> [MenuItem] {
+        guard let bot else { return [] }
+        return [
+            MenuItem(L("重命名 · 电脑端暂不支持"), icon: "lock", enabled: false) {},
+            MenuItem(L("分叉会话 · 电脑端暂不支持"), icon: "lock", enabled: false) {},
+            MenuItem(L("归档会话 · 电脑端暂不支持"), icon: "lock", enabled: false) {},
+            MenuItem(L("分享为图片"), icon: "photo") { shareAsImage(bot: bot) },
+            MenuItem(L("导出日志"), icon: "square.and.arrow.up") { exportLog(bot: bot) },
+            MenuItem(L("复制会话 ID"), icon: "doc.on.doc") { copySessionId() },
+        ]
+    }
+
+    private var shareSheetItems: [Any] {
+        if let shareImage { return [shareImage] }
+        if let shareLog { return [shareLog] }
+        return []
+    }
+
+    private func shareAsImage(bot: Bot) {
+        shareLog = nil
+        shareImage = SessionShareImageRenderer.render(botName: bot.name, entries: timeline, authorName: { authorBot(for: $0)?.name ?? bot.name })
+        showingShareSheet = true
+    }
+
+    private func exportLog(bot: Bot) {
+        shareImage = nil
+        shareLog = SessionShareLog.text(botName: bot.name, sessionId: bot.id, entries: timeline, authorName: { authorBot(for: $0)?.name ?? bot.name })
+        showingShareSheet = true
+    }
+
+    private func copySessionId() {
+        UIPasteboard.general.string = botId
+        copiedSessionId = true
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await MainActor.run { copiedSessionId = false }
+        }
     }
 
     private var isOnline: Bool {
@@ -556,6 +629,14 @@ struct MessageRow: View {
             ToolCallRow(entry: entry, onShowBrowser: onShowBrowser)
         case "call":
             CallLineRow(entry: entry)
+        case "view":
+            if entry.isViewCard {
+                ViewCardView(entry: entry, bot: bot)
+            }
+        case "learning":
+            if entry.isLearningCard {
+                LearningCard(entry: entry, bot: bot)
+            }
         default:
             EmptyView()
         }
@@ -679,10 +760,16 @@ struct AgentBubble: View {
                     .padding(.leading, 4)
             }
             HStack {
-                Text(markdownText)
-                    .font(.body)
-                    .foregroundStyle(Palette.text)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                    if (entry.data.text ?? "").contains("```schemaJson") {
+                        GenUIMessageView(text: entry.data.text ?? "")
+                    } else {
+                        Text(markdownText)
+                            .font(.body)
+                            .foregroundStyle(Palette.text)
+                            .textSelection(.enabled)
+                    }
+                }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

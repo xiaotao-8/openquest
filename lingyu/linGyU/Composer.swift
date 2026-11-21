@@ -18,6 +18,9 @@ struct PendingAttachment: Identifiable {
 
 struct Composer: View {
     var bot: Bot
+    /// Every session the "@" panel can mention (the mirror's real bot
+    /// list, passed by the chat page).
+    var sessions: [Bot] = []
     @Binding var text: String
     var isWorking: Bool
     var isOnline: Bool
@@ -40,6 +43,7 @@ struct Composer: View {
     @StateObject private var talkRecognizer = OneShotSpeechRecognizer()
     @State private var holdingTalk = false
     @State private var talkCancelling = false
+    @State private var showAllCandidates = false
 
     private var trimmedEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -66,6 +70,11 @@ struct Composer: View {
             }
             if holdingTalk {
                 holdTalkBanner
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+            }
+            if let trigger = CandidateTrigger.parse(text) {
+                CandidatePanel(trigger: trigger, sessions: sessions, showAll: $showAllCandidates, onSelectSession: insertSessionMention)
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
             }
@@ -117,6 +126,20 @@ struct Composer: View {
                 addFiles(urls)
             }
         }
+        .onChange(of: text) { _, _ in
+            if CandidateTrigger.parse(text) == nil {
+                showAllCandidates = false
+            }
+        }
+    }
+
+    /// Replaces the trailing "@query" with "@Name " so the mention
+    /// stays in the text the host already parses for group routing.
+    private func insertSessionMention(_ session: Bot) {
+        guard let range = CandidateTrigger.mentionRange(in: text) else { return }
+        text.replaceSubrange(range, with: "@\(session.name) ")
+        showAllCandidates = false
+        fieldFocused = true
     }
 
     private var placeholder: String {

@@ -52,6 +52,8 @@ struct SettingsView: View {
     @State private var showingVault = false
     @State private var showingNetwork = false
     @State private var showingVoice = false
+    @State private var showingIMBridge = false
+    @State private var showingPhoneControl = false
     @State private var didHandlePreview = false
     @State private var notificationStatus = ""
     @State private var iconBadge = false
@@ -73,6 +75,7 @@ struct SettingsView: View {
                 voiceSection
                 permissionsSection
                 dataSection
+                connectionsSection
                 shortcutSection
                 notificationsSection
                 analyticsSection
@@ -121,6 +124,12 @@ struct SettingsView: View {
         }
         .codyncSheet(isPresented: $showingVoice) {
             NavigationStack { VoiceSettingsView() }
+        }
+        .codyncSheet(isPresented: $showingIMBridge) {
+            NavigationStack { IMBridgeView() }
+        }
+        .codyncSheet(isPresented: $showingPhoneControl) {
+            NavigationStack { PhoneControlView() }
         }
         .codyncDialog(
             isPresented: $showingDeleteDialog,
@@ -511,6 +520,49 @@ struct SettingsView: View {
                 } label: {
                     HStack {
                         Text(L("安全凭证库"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - External connections (IM bridge, phone control)
+
+    /// Phase 4: IM bridge (credentials saved on this phone, engine not
+    /// connected) and phone control (iCTRL status, unverified on device).
+    private var connectionsSection: some View {
+        CardSection(title: L("外部连接")) {
+            CardRow {
+                Button {
+                    showingIMBridge = true
+                } label: {
+                    HStack {
+                        Text(L("IM 桥接"))
+                            .foregroundStyle(Palette.text)
+                        Spacer()
+                        Text(L("未接通"))
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Hairline()
+            CardRow {
+                Button {
+                    showingPhoneControl = true
+                } label: {
+                    HStack {
+                        Text(L("操控手机"))
                             .foregroundStyle(Palette.text)
                         Spacer()
                         Image(systemName: "chevron.right")

@@ -405,6 +405,16 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-extensions.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 4 G：Cordis 面板（扩展页 → 动态插件，诚实空态）。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewExtensions -PreviewCordis
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-extensions-cordis.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 4 G：连接器详情页（版本/来源/兼容性/说明文档/举报行）。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewExtensions -PreviewConnectorDetail
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-extensions-detail.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewHostNetwork
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-host-network.png
@@ -412,6 +422,42 @@ workflows:
           xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewUsage
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-usage.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 4 E：候选面板（@ 会话 + 禁用的文件组）与 GenUI 只读渲染。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewChat -PreviewCandidates
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-candidates.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewChat -PreviewGenUI
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-genui.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 4 F：视图卡与学习提案种子（无需 host）。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewViewCard
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-viewcard.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewLearning
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-learning.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          # Phase 4 H：IM 桥接 / 操控手机 / 导入智能体 / 电脑操作四页。
+          # 操控手机在模拟器上一定显示“未安装”（模拟器里没有 iCTRL），是预期状态。
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewIMBridge
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-im-bridge.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewPhoneControl
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-phone-control.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewBotImport
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-bot-import.png
+          xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
+          xcrun simctl launch "$SIM_UDID" cn.lingyu -- -PreviewSeed -PreviewComputerUse
+          sleep 6
+          xcrun simctl io "$SIM_UDID" screenshot preview-computer-use.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
           # 真聊截图：对 ECS live host 跑一次真实对话。LINGYU_PREVIEW_PAIRING
           # （preview-pairing.json 的 base64）须事先在 Codemagic 环境变量里配好
@@ -449,7 +495,7 @@ workflows:
           sleep 6
           xcrun simctl io "$SIM_UDID" screenshot preview-call.png
           xcrun simctl terminate "$SIM_UDID" cn.lingyu || true
-          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-host-network.png preview-usage.png preview-live.png preview-live-approval.png || true
+          ls -lh preview-empty.png preview-list.png preview-chat.png preview-approval.png preview-ask.png preview-settings.png preview-page-discover.png preview-page-state.png preview-pairing-install.png preview-pairing-scan.png preview-computers.png preview-discover-full.png preview-state-full.png preview-state-routines.png preview-upcoming.png preview-soul.png preview-identity.png preview-audit.png preview-vault.png preview-network.png preview-data-controls.png preview-voice.png preview-call.png preview-extensions.png preview-extensions-cordis.png preview-extensions-detail.png preview-host-network.png preview-usage.png preview-candidates.png preview-genui.png preview-viewcard.png preview-learning.png preview-im-bridge.png preview-phone-control.png preview-bot-import.png preview-computer-use.png preview-live.png preview-live-approval.png || true
       - name: 设备版未签名 IPA
         script: |
           set -e
@@ -486,8 +532,18 @@ workflows:
       - lingyu/preview-voice.png
       - lingyu/preview-call.png
       - lingyu/preview-extensions.png
+      - lingyu/preview-extensions-cordis.png
+      - lingyu/preview-extensions-detail.png
       - lingyu/preview-host-network.png
       - lingyu/preview-usage.png
+      - lingyu/preview-candidates.png
+      - lingyu/preview-genui.png
+      - lingyu/preview-viewcard.png
+      - lingyu/preview-learning.png
+      - lingyu/preview-im-bridge.png
+      - lingyu/preview-phone-control.png
+      - lingyu/preview-bot-import.png
+      - lingyu/preview-computer-use.png
       - lingyu/preview-live.png
       - lingyu/preview-live-approval.png
       - lingyu/linGyU-unsigned.ipa

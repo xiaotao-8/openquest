@@ -21,6 +21,9 @@ struct ExtensionsView: View {
     @State private var showingCredentials = false
     @State private var viewingAgent: Backend?
     @State private var viewingConnector: MarketConnector?
+    @State private var viewingSkill: MarketSkill?
+    @State private var showingCordis = false
+    @State private var didHandlePreview = false
     @State private var connectors: [InstalledConnector] = []
     @State private var connectorsError: String?
     @State private var connectorsLoaded = false
@@ -98,6 +101,7 @@ struct ExtensionsView: View {
                     } else {
                         skillsTab
                     }
+                    cordisSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
@@ -106,6 +110,16 @@ struct ExtensionsView: View {
         }
         .background(Palette.background)
         .task { await load() }
+        .onAppear {
+            if !didHandlePreview, case .seeded(let options) = store.previewMode {
+                didHandlePreview = true
+                if options.cordis {
+                    showingCordis = true
+                } else if options.connectorDetail {
+                    viewingConnector = ExtensionsDemo.marketConnectors.first
+                }
+            }
+        }
         .codyncSheet(isPresented: $showingCredentials) {
             NavigationStack { CredentialVaultView() }
         }
@@ -124,6 +138,29 @@ struct ExtensionsView: View {
             if let connector = viewingConnector {
                 MarketConnectorDetailView(connector: connector, onInstalled: { Task { await reloadConnectors() } })
             }
+        }
+        .codyncSheet(isPresented: Binding(
+            get: { viewingSkill != nil },
+            set: { if !$0 { viewingSkill = nil } }
+        )) {
+            if let skill = viewingSkill {
+                MarketSkillDetailView(skill: skill, onInstalled: { Task { await reloadSkills() } })
+            }
+        }
+        .codyncSheet(isPresented: $showingCordis) {
+            CordisPanelView()
+        }
+    }
+
+    /// Cordis (DSH 动态插件) entry. No separate tab: the panel opens
+    /// as a sheet from here. See CordisViews.swift for why the panel
+    /// is an honest empty state on this host.
+    private var cordisSection: some View {
+        CardSection(title: L("动态插件")) {
+            Button { showingCordis = true } label: {
+                MarketRowContent(title: L("Cordis 动态插件"), detail: L("智能体运行时定义的插件"), trailing: nil)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -385,17 +422,20 @@ struct ExtensionsView: View {
                     ForEach(shownSkills) { skill in
                         CardRow {
                             HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(skill.name)
-                                        .foregroundStyle(Palette.text)
-                                    if !skill.description.isEmpty {
-                                        Text(skill.description)
-                                            .font(.caption)
-                                            .foregroundStyle(Palette.secondary)
-                                            .lineLimit(2)
+                                Button { viewingSkill = skill } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(skill.name)
+                                            .foregroundStyle(Palette.text)
+                                        if !skill.description.isEmpty {
+                                            Text(skill.description)
+                                                .font(.caption)
+                                                .foregroundStyle(Palette.secondary)
+                                                .lineLimit(2)
+                                        }
                                     }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .buttonStyle(.plain)
                                 if skill.installed {
                                     Text(L("已安装"))
                                         .font(.caption)
@@ -571,6 +611,18 @@ private struct MarketConnectorDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var installingOption: String?
     @State private var installError: String?
+    @State private var showingReport = false
+
+    /// The host market sends no compatibility block and no readme for
+    /// a connector (MarketConnector carries only name/title/description/
+    /// version/website/installed/options), so those sections say so
+    /// instead of inventing them. Likewise the host has no version pins
+    /// (no pins mechanism in codync-host 2.51.0) and no report service.
+    private var hasVersion: Bool { !(connector.version ?? "").isEmpty }
+    private var sourceURL: URL? {
+        guard let website = connector.website, !website.isEmpty else { return nil }
+        return URL(string: website)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -589,6 +641,44 @@ private struct MarketConnectorDetailView: View {
                         Text(L("已安装"))
                             .font(.subheadline)
                             .foregroundStyle(Palette.secondary)
+                    }
+                    CardSection(title: L("详情")) {
+                        if hasVersion {
+                            CardRow { ValueRow(label: L("版本"), value: connector.version) }
+                            Hairline()
+                        }
+                        CardRow {
+                            if let url = sourceURL {
+                                ValueRow(label: L("来源")) {
+                                    Link(connector.website ?? "", destination: url)
+                                        .foregroundStyle(Palette.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            } else {
+                                ValueRow(label: L("来源"), value: hasVersion ? "\(connector.name)@\(connector.version ?? "")" : connector.name)
+                            }
+                        }
+                    }
+                    CardSection(title: L("兼容性")) {
+                        CardRow {
+                            DisabledText(
+                                title: L("市场没有提供兼容性说明"),
+                                detail: L("安装前请确认它能在你的电脑上运行。"))
+                        }
+                        Hairline()
+                        CardRow {
+                            DisabledText(
+                                title: L("本机没有版本钉"),
+                                detail: L("这台电脑不会把连接器固定在某个版本。"))
+                        }
+                    }
+                    CardSection(title: L("说明文档")) {
+                        CardRow {
+                            DisabledText(
+                                title: L("没有说明文档"),
+                                detail: L("市场没有提供这个连接器的说明文档。"))
+                        }
                     }
                     if connector.options.isEmpty {
                         DisabledCard(
@@ -631,6 +721,12 @@ private struct MarketConnectorDetailView: View {
                             }
                         }
                     }
+                    CardSection(title: L("举报")) {
+                        Button { showingReport = true } label: {
+                            MarketRowContent(title: L("举报此连接器"), detail: L("有问题的内容、恶意行为或冒充，都可以举报。"), trailing: nil)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     if let installError {
                         Text(installError)
                             .font(.body)
@@ -644,6 +740,9 @@ private struct MarketConnectorDetailView: View {
             }
         }
         .background(Palette.background)
+        .codyncSheet(isPresented: $showingReport) {
+            PluginReportSheet(name: connector.name, version: connector.version)
+        }
     }
 
     private func install(option: MarketInstallOption) async {
@@ -658,6 +757,123 @@ private struct MarketConnectorDetailView: View {
             installError = extensionErrorText(error)
         }
         installingOption = nil
+    }
+}
+
+/// One registry skill: what the market says about it, with the same
+/// honest gaps as the connector detail — the host market sends no
+/// compatibility info and no readme for a skill, the host has no
+/// version pins, and there is no report service.
+private struct MarketSkillDetailView: View {
+    var skill: MarketSkill
+    var onInstalled: () -> Void
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var installing = false
+    @State private var installError: String?
+    @State private var showingReport = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader(title: skill.name) {
+                dismiss()
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if !skill.description.isEmpty {
+                        Text(skill.description)
+                            .font(.body)
+                            .foregroundStyle(Palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if skill.installed {
+                        Text(L("已安装"))
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.secondary)
+                    }
+                    CardSection(title: L("详情")) {
+                        CardRow { ValueRow(label: L("来源"), value: skill.source) }
+                    }
+                    CardSection(title: L("兼容性")) {
+                        CardRow {
+                            DisabledText(
+                                title: L("市场没有提供兼容性说明"),
+                                detail: L("安装前请确认它能在你的电脑上运行。"))
+                        }
+                        Hairline()
+                        CardRow {
+                            DisabledText(
+                                title: L("本机没有版本钉"),
+                                detail: L("这台电脑不会把技能固定在某个版本。"))
+                        }
+                    }
+                    CardSection(title: L("说明文档")) {
+                        CardRow {
+                            DisabledText(
+                                title: L("没有说明文档"),
+                                detail: L("市场没有提供这个技能的说明文档。"))
+                        }
+                    }
+                    if !skill.installed {
+                        CardSection(title: L("安装方式")) {
+                            CardRow {
+                                Button {
+                                    Task { await install() }
+                                } label: {
+                                    HStack {
+                                        Spacer()
+                                        if installing {
+                                            Spinner(size: 16)
+                                        } else {
+                                            Text(L("安装"))
+                                                .font(.body.weight(.semibold))
+                                                .foregroundStyle(Palette.text)
+                                        }
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(installing)
+                                .opacity(installing ? 0.5 : 1)
+                            }
+                        }
+                    }
+                    CardSection(title: L("举报")) {
+                        Button { showingReport = true } label: {
+                            MarketRowContent(title: L("举报此技能"), detail: L("有问题的内容、恶意行为或冒充，都可以举报。"), trailing: nil)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if let installError {
+                        Text(installError)
+                            .font(.body)
+                            .foregroundStyle(Palette.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+                .padding(.bottom, 24)
+            }
+        }
+        .background(Palette.background)
+        .codyncSheet(isPresented: $showingReport) {
+            PluginReportSheet(name: skill.name, version: nil)
+        }
+    }
+
+    private func install() async {
+        guard let api = store.connector.api else { return }
+        installing = true
+        installError = nil
+        do {
+            try await api.installSkill(source: skill.source)
+            onInstalled()
+            dismiss()
+        } catch {
+            installError = extensionErrorText(error)
+        }
+        installing = false
     }
 }
 
@@ -901,7 +1117,7 @@ private enum ExtensionsDemo {
 
     static let marketConnectors: [MarketConnector] = [
         """
-        {"name":"demo-search","title":"网页搜索","description":"让智能体查网页。","installed":false,"options":[{"id":"remote","kind":"remote","label":"远程服务","inputs":[]}]}
+        {"name":"demo-search","title":"网页搜索","description":"让智能体查网页。","version":"1.2.0","website":"https://example.com/demo-search","installed":false,"options":[{"id":"remote","kind":"remote","label":"远程服务","inputs":[]}]}
         """,
     ].compactMap { decode(MarketConnector.self, $0) }
 

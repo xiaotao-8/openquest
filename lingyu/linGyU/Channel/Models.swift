@@ -640,6 +640,13 @@ struct EntryData: Codable, Equatable, Sendable {
     var handoff: HandoffInfo?
     var routineId: String?
     var style: String?
+    /// View card payload (kind "view", FishPocket `show_view`).
+    /// Nil on every host that has no view cards — codync-host 2.51.0
+    /// has none (probe 2026-11-22: `view-reply` → 404 unknown method).
+    var view: ViewCardPayload?
+    /// Learning proposal payload (kind "learning", FishPocket
+    /// `learning-answer`). Nil likewise; same probe: 404 unknown method.
+    var learning: LearningProposal?
     /// The thread this entry belongs to (work threads, `WorkThreadLine`).
     var thread: ThreadRef?
 
@@ -680,6 +687,8 @@ struct EntryData: Codable, Equatable, Sendable {
         handoff = container.lenient(HandoffInfo.self, forKey: .handoff)
         routineId = container.lenient(String.self, forKey: .routineId)
         style = container.lenient(String.self, forKey: .style)
+        view = container.lenient(ViewCardPayload.self, forKey: .view)
+        learning = container.lenient(LearningProposal.self, forKey: .learning)
         thread = container.lenient(ThreadRef.self, forKey: .thread)
     }
 
@@ -692,6 +701,7 @@ struct EntryData: Codable, Equatable, Sendable {
         replyTo = nil; reactions = nil; attachments = nil; files = nil; voiceNote = nil
         call = nil; callSeconds = nil; pasted = nil; from = nil; memory = nil
         memoryFile = nil; compaction = nil; handoff = nil; routineId = nil; style = nil
+        view = nil; learning = nil
         thread = nil
     }
 }
@@ -710,7 +720,7 @@ struct Entry: Codable, Equatable, Identifiable, Sendable {
     /// Whether the chat bubble list shows this entry (§6.4).
     var isChat: Bool {
         switch kind {
-        case "user", "permission":
+        case "user", "permission", "view", "learning":
             return true
         case "notice":
             if data.memory != nil || data.memoryFile != nil || data.compaction != nil { return false }
@@ -986,5 +996,472 @@ struct RoutineWebhook: Codable, Equatable, Sendable {
         key = container.lenient(String.self, forKey: .key) ?? ""
         connected = container.lenient(Bool.self, forKey: .connected) ?? false
         needsAccount = container.lenient(Bool.self, forKey: .needsAccount)
+    }
+}
+
+// MARK: - View card + learning proposal (FishPocket show_view / learning; Phase 4, agent F)
+//
+// Appended only — no existing model above was changed. Both payloads ride
+// on `EntryData.view` / `EntryData.learning` (new optional fields, nil on
+// hosts without them). codync-host 2.51.0 has neither: its EntryKind is
+// only user/agent/thought/tool/plan/permission/notice
+// (host/src/store/model.rs), `view-reply`, `dismiss-view` and
+// `learning-answer` all answer 404 "unknown method" on the live host
+// (probe 2026-11-22, /tmp/agent-f-probe.py), and the preview bot's own
+// tool search finds no `show_view` tool. Until a host gains them, the
+// cards render from Preview seed data only, and every host-bound button
+// is a disabled state with a reason (§1.6.4). Entry kinds are "view"
+// and "learning" (defined here, since the host defines none); see
+// phase4/agent-f/wiring-notes.md for the ChatView wiring.
+
+extension JSONValue {
+    /// Numeric view of a JSON value (for formulas and charts): ints and
+    /// doubles as-is, numeric strings parsed, anything else nil.
+    var asDouble: Double? {
+        switch self {
+        case .int(let value): return Double(value)
+        case .double(let value): return value
+        case .string(let value): return Double(value)
+        default: return nil
+        }
+    }
+
+    var asBool: Bool? {
+        if case .bool(let value) = self { return value }
+        return nil
+    }
+
+    var asString: String? {
+        switch self {
+        case .string(let value): return value
+        case .int(let value): return String(value)
+        case .double(let value): return DeepViewNumber.format(value)
+        case .bool(let value): return value ? L("是") : L("否")
+        default: return nil
+        }
+    }
+
+    /// The values of an array value, or nil.
+    var asArray: [JSONValue]? {
+        if case .array(let value) = self { return value }
+        return nil
+    }
+}
+
+extension Entry {
+    /// A view card entry: kind "view" with a payload.
+    var isViewCard: Bool { kind == "view" && data.view != nil }
+    /// A learning proposal entry: kind "learning" with a payload.
+    var isLearningCard: Bool { kind == "learning" && data.learning != nil }
+}
+
+/// Number formatting shared by formulas, metrics and charts: `%g`
+/// (1240, not 1240.0; 0.5, not 0.500000).
+enum DeepViewNumber {
+    static func format(_ value: Double) -> String {
+        if value.isNaN || value.isInfinite { return "" }
+        if value.truncatingRemainder(dividingBy: 1) == 0, abs(value) < 1e15 {
+            return String(Int64(value))
+        }
+        return String(format: "%g", value)
+    }
+}
+
+/// One deep-view node (`{type, ...}`), decoded leniently: an unknown
+/// field or a mistyped node never fails the whole card — the node renders
+/// as its text, or not at all.
+struct DeepViewNode: Codable, Equatable, Sendable {
+    var type: String
+    /// Chart kind for `chart` nodes (`line` / `bar` / `donut` / ...).
+    var kind: String?
+    var label: String?
+    var text: String?
+    var title: String?
+    var detail: String?
+    var placeholder: String?
+    var html: String?
+    var unit: String?
+    var tone: String?
+    /// Literal value, or a formula object `{"=": "a + b"}`.
+    var value: JSONValue?
+    var children: [DeepViewNode]?
+    var columns: [String]?
+    var rows: [[JSONValue]]?
+    var series: [DeepViewSeries]?
+    var labels: [String]?
+    var options: [DeepViewOption]?
+    var fields: [DeepViewField]?
+    var sources: [DeepViewSource]?
+    var min: Double?
+    var max: Double?
+    var step: Double?
+    var readonly: Bool?
+    var multiline: Bool?
+    var action: String?
+
+    init(type: String) {
+        self.type = type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = container.lenient(String.self, forKey: .type) ?? "text"
+        kind = container.lenient(String.self, forKey: .kind)
+        label = container.lenient(String.self, forKey: .label)
+        text = container.lenient(String.self, forKey: .text)
+        title = container.lenient(String.self, forKey: .title)
+        detail = container.lenient(String.self, forKey: .detail)
+        placeholder = container.lenient(String.self, forKey: .placeholder)
+        html = container.lenient(String.self, forKey: .html)
+        unit = container.lenient(String.self, forKey: .unit)
+        tone = container.lenient(String.self, forKey: .tone)
+        value = container.lenient(JSONValue.self, forKey: .value)
+        children = container.lenient([DeepViewNode].self, forKey: .children)
+        columns = container.lenient([String].self, forKey: .columns)
+        rows = container.lenient([[JSONValue]].self, forKey: .rows)
+        series = container.lenient([DeepViewSeries].self, forKey: .series)
+        labels = container.lenient([String].self, forKey: .labels)
+        options = container.lenient([DeepViewOption].self, forKey: .options)
+        fields = container.lenient([DeepViewField].self, forKey: .fields)
+        sources = container.lenient([DeepViewSource].self, forKey: .sources)
+        min = container.lenient(Double.self, forKey: .min)
+        max = container.lenient(Double.self, forKey: .max)
+        step = container.lenient(Double.self, forKey: .step)
+        readonly = container.lenient(Bool.self, forKey: .readonly)
+        multiline = container.lenient(Bool.self, forKey: .multiline)
+        action = container.lenient(String.self, forKey: .action)
+    }
+
+    /// The node's display text: literal text/value, or a formula
+    /// evaluated against the current form values. A formula that cannot
+    /// be computed shows its source text, never a crash or a blank.
+    func displayText(values: [String: JSONValue]) -> String {
+        if let value {
+            return DeepViewValue.display(value, values: values)
+        }
+        return text ?? label ?? title ?? ""
+    }
+
+    /// True when the node's value is a formula object.
+    var isFormula: Bool {
+        if case .object(let dict) = value, dict["="] != nil { return true }
+        return false
+    }
+}
+
+/// One chart series: a label and one number per x label.
+struct DeepViewSeries: Codable, Equatable, Sendable {
+    var label: String
+    /// Raw values (numbers or numeric strings); non-numeric entries
+    /// become 0 when drawn, so a bad cell cannot break the chart.
+    var values: [JSONValue]
+
+    var numbers: [Double] { values.map { $0.asDouble ?? 0 } }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        label = container.lenient(String.self, forKey: .label) ?? ""
+        values = container.lenient([JSONValue].self, forKey: .values) ?? []
+    }
+}
+
+/// One option of an `options` / `choice` node: a label row plus an
+/// optional description line underneath.
+struct DeepViewOption: Codable, Equatable, Sendable, Identifiable {
+    var label: String
+    var detail: String?
+    var value: String?
+    var selected: Bool
+
+    var id: String { value ?? label }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        label = container.lenient(String.self, forKey: .label) ?? ""
+        detail = container.lenient(String.self, forKey: .detail)
+            ?? container.lenient(String.self, forKey: .description)
+        value = container.lenient(String.self, forKey: .value)
+        selected = container.lenient(Bool.self, forKey: .selected) ?? false
+    }
+
+    /// `description` is a decode-only alias for `detail`, so encode is
+    /// manual: the synthesized one would demand a `description` property.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(label, forKey: .label)
+        try container.encodeIfPresent(detail, forKey: .detail)
+        try container.encodeIfPresent(value, forKey: .value)
+        try container.encode(selected, forKey: .selected)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case label, detail, description, value, selected
+    }
+}
+
+/// One field of a `form` node. `id` falls back to `key`, then `label`.
+struct DeepViewField: Codable, Equatable, Sendable, Identifiable {
+    var id: String
+    var type: String
+    var label: String
+    var value: JSONValue?
+    var readonly: Bool
+    var placeholder: String?
+    var min: Double?
+    var max: Double?
+    var step: Double?
+    var options: [DeepViewOption]?
+    var multiline: Bool
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawId = container.lenient(String.self, forKey: .id)
+            ?? container.lenient(String.self, forKey: .key)
+        label = container.lenient(String.self, forKey: .label) ?? ""
+        id = rawId ?? label
+        type = container.lenient(String.self, forKey: .type) ?? "text"
+        value = container.lenient(JSONValue.self, forKey: .value)
+        readonly = container.lenient(Bool.self, forKey: .readonly) ?? false
+        placeholder = container.lenient(String.self, forKey: .placeholder)
+        min = container.lenient(Double.self, forKey: .min)
+        max = container.lenient(Double.self, forKey: .max)
+        step = container.lenient(Double.self, forKey: .step)
+        options = container.lenient([DeepViewOption].self, forKey: .options)
+        multiline = container.lenient(Bool.self, forKey: .multiline) ?? false
+    }
+
+    /// `key` is a decode-only alias for `id`, so encode is manual: the
+    /// synthesized one would demand a `key` property.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(type, forKey: .type)
+        try container.encode(label, forKey: .label)
+        try container.encodeIfPresent(value, forKey: .value)
+        try container.encode(readonly, forKey: .readonly)
+        try container.encodeIfPresent(placeholder, forKey: .placeholder)
+        try container.encodeIfPresent(min, forKey: .min)
+        try container.encodeIfPresent(max, forKey: .max)
+        try container.encodeIfPresent(step, forKey: .step)
+        try container.encodeIfPresent(options, forKey: .options)
+        try container.encode(multiline, forKey: .multiline)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, key, type, label, value, readonly, placeholder
+        case min, max, step, options, multiline
+    }
+}
+
+/// One entry of a `sources` node.
+struct DeepViewSource: Codable, Equatable, Sendable, Identifiable {
+    var title: String
+    var url: String?
+
+    var id: String { title + (url ?? "") }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = container.lenient(String.self, forKey: .title) ?? ""
+        url = container.lenient(String.self, forKey: .url)
+    }
+}
+
+/// A view card: `{id, title, view}` (FishPocket `team["views"]` shape).
+struct ViewCardPayload: Codable, Equatable, Sendable {
+    var id: String
+    var title: String
+    var view: DeepViewNode
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        title = container.lenient(String.self, forKey: .title) ?? L("视图")
+        view = container.lenient(DeepViewNode.self, forKey: .view) ?? DeepViewNode(type: "stack")
+    }
+}
+
+/// A learning proposal (FishPocket `live["learning"]`): a skill the
+/// bot taught itself, or a change to the folder's AGENTS.md.
+/// `kind` is "skill" or "agents".
+struct LearningProposal: Codable, Equatable, Sendable {
+    var id: String
+    var kind: String
+    var title: String
+    var summary: String?
+    var target: String?
+    var preview: String?
+    var diff: String?
+
+    /// The preview body, capped by the card at 220pt.
+    var previewText: String { diff ?? preview ?? summary ?? "" }
+
+    var isAgentsChange: Bool { kind == "agents" }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.lenient(String.self, forKey: .id) ?? ""
+        kind = container.lenient(String.self, forKey: .kind) ?? "skill"
+        title = container.lenient(String.self, forKey: .title) ?? ""
+        summary = container.lenient(String.self, forKey: .summary)
+        target = container.lenient(String.self, forKey: .target)
+        preview = container.lenient(String.self, forKey: .preview)
+        diff = container.lenient(String.self, forKey: .diff)
+    }
+}
+
+/// Value display + formula evaluation for deep-view nodes. Formulas are
+/// only `+ - * / ( )` and field references (bare `name` or `{name}`);
+/// anything else — unknown field, non-numeric input, divide by zero,
+/// bad syntax — evaluates to nil and the caller shows the source text.
+enum DeepViewValue {
+    static func display(_ value: JSONValue, values: [String: JSONValue]) -> String {
+        if case .object(let dict) = value, let raw = dict["="]?.asString {
+            if let result = FormulaEvaluator.evaluate(raw, values: values) {
+                return DeepViewNumber.format(result)
+            }
+            return raw
+        }
+        return value.asString ?? ""
+    }
+
+    /// The numeric value of a node value (literal or computed formula),
+    /// for charts, metrics and progress bars.
+    static func number(_ value: JSONValue?, values: [String: JSONValue]) -> Double? {
+        guard let value else { return nil }
+        if case .object(let dict) = value, let raw = dict["="]?.asString {
+            return FormulaEvaluator.evaluate(raw, values: values)
+        }
+        return value.asDouble
+    }
+}
+
+enum FormulaEvaluator {
+    /// Evaluates `expr` with field values taken from `values` (numeric
+    /// fields only). Returns nil on any failure — the caller shows the
+    /// source text instead.
+    static func evaluate(_ expr: String, values: [String: JSONValue]) -> Double? {
+        var numbers: [String: Double] = [:]
+        for (key, value) in values {
+            if let number = value.asDouble { numbers[key] = number }
+        }
+        var parser = Parser(expr, numbers: numbers)
+        guard let result = parser.parseExpression(), parser.atEnd else { return nil }
+        guard result.isFinite else { return nil }
+        return result
+    }
+
+    private struct Parser {
+        private var tokens: [Token]
+        private var index = 0
+        private var numbers: [String: Double]
+
+        init(_ expr: String, numbers: [String: Double]) {
+            self.numbers = numbers
+            self.tokens = Self.tokenize(expr)
+        }
+
+        private enum Token: Equatable {
+            case number(Double)
+            case name(String)
+            case op(Character)
+            case lparen
+            case rparen
+        }
+
+        private static func tokenize(_ expr: String) -> [Token] {
+            var out: [Token] = []
+            let chars = Array(expr)
+            var i = 0
+            while i < chars.count {
+                let ch = chars[i]
+                if ch.isWhitespace { i += 1; continue }
+                if ch.isNumber || ch == "." {
+                    var j = i
+                    var seenDot = false
+                    while j < chars.count, chars[j].isNumber || chars[j] == "." {
+                        if chars[j] == "." {
+                            if seenDot { break }
+                            seenDot = true
+                        }
+                        j += 1
+                    }
+                    if let number = Double(String(chars[i..<j])) { out.append(.number(number)) }
+                    i = j
+                    continue
+                }
+                if ch == "{" {
+                    var j = i + 1
+                    while j < chars.count, chars[j] != "}" { j += 1 }
+                    let name = String(chars[(i + 1)..<min(j, chars.count)])
+                        .trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty { out.append(.name(name)) }
+                    i = min(j + 1, chars.count)
+                    continue
+                }
+                if ch.isLetter || ch == "_" {
+                    var j = i
+                    while j < chars.count, chars[j].isLetter || chars[j].isNumber || chars[j] == "_" { j += 1 }
+                    out.append(.name(String(chars[i..<j])))
+                    i = j
+                    continue
+                }
+                if "+-*/".contains(ch) { out.append(.op(ch)); i += 1; continue }
+                if ch == "(" { out.append(.lparen); i += 1; continue }
+                if ch == ")" { out.append(.rparen); i += 1; continue }
+                // Any other character makes the whole expression invalid.
+                return []
+            }
+            return out
+        }
+
+        var atEnd: Bool { index >= tokens.count }
+
+        mutating func parseExpression() -> Double? {
+            guard var result = parseTerm() else { return nil }
+            while index < tokens.count, case .op(let ch) = tokens[index], ch == "+" || ch == "-" {
+                index += 1
+                guard let rhs = parseTerm() else { return nil }
+                result = ch == "+" ? result + rhs : result - rhs
+            }
+            return result
+        }
+
+        private mutating func parseTerm() -> Double? {
+            guard var result = parseFactor() else { return nil }
+            while index < tokens.count, case .op(let ch) = tokens[index], ch == "*" || ch == "/" {
+                index += 1
+                guard let rhs = parseFactor() else { return nil }
+                if ch == "*" { result *= rhs } else {
+                    guard rhs != 0 else { return nil }
+                    result /= rhs
+                }
+            }
+            return result
+        }
+
+        private mutating func parseFactor() -> Double? {
+            guard index < tokens.count else { return nil }
+            switch tokens[index] {
+            case .number(let value):
+                index += 1
+                return value
+            case .name(let name):
+                index += 1
+                return numbers[name]
+            case .op("-"):
+                index += 1
+                guard let value = parseFactor() else { return nil }
+                return -value
+            case .lparen:
+                index += 1
+                guard let value = parseExpression() else { return nil }
+                guard index < tokens.count, tokens[index] == .rparen else { return nil }
+                index += 1
+                return value
+            default:
+                return nil
+            }
+        }
     }
 }

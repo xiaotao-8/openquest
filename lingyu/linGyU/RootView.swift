@@ -17,6 +17,14 @@ struct RootView: View {
             NetworkView()
         } else if case .seeded(let options) = store.previewMode, options.usage {
             HostUsageView()
+        } else if case .seeded(let options) = store.previewMode, options.imBridge {
+            IMBridgeView()
+        } else if case .seeded(let options) = store.previewMode, options.phoneControl {
+            PhoneControlView()
+        } else if case .seeded(let options) = store.previewMode, options.botImport {
+            BotImportView()
+        } else if case .seeded(let options) = store.previewMode, options.computerUse {
+            ComputerUseView()
         } else if store.showingWelcome && !store.connector.isPaired && !store.isPreview {
             WelcomeView(onSkip: {
                 store.showingWelcome = false

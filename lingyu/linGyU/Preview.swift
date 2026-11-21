@@ -48,6 +48,28 @@ enum PreviewMode: Equatable {
         var usage = false
         /// Open the Upcoming sheet on the State tab.
         var upcoming = false
+        /// Open the lead bot's chat with "@" already typed, so the candidate
+        /// panel shows above the composer.
+        var candidates = false
+        /// Seed one agent message carrying a ```schemaJson block, so the
+        /// read-only GenUI rendering shows in the chat.
+        var genUI = false
+        /// Seed a demo view card (FishPocket show_view) in the lead bot's chat.
+        var viewCard = false
+        /// Seed a demo learning proposal in the lead bot's chat.
+        var learning = false
+        /// Show the Cordis panel sheet over the Extensions page.
+        var cordis = false
+        /// Open the first demo market connector's detail sheet over the Extensions page.
+        var connectorDetail = false
+        /// Show the IM bridge page instead of the tabs.
+        var imBridge = false
+        /// Show the phone-control (iCTRL) page instead of the tabs.
+        var phoneControl = false
+        /// Show the bot-import page instead of the tabs.
+        var botImport = false
+        /// Show the computer-use page instead of the tabs.
+        var computerUse = false
     }
 
     static func fromLaunchArguments() -> PreviewMode {
@@ -80,6 +102,16 @@ enum PreviewMode: Equatable {
         options.hostNetwork = args.contains("-PreviewHostNetwork")
         options.usage = args.contains("-PreviewUsage")
         options.upcoming = args.contains("-PreviewUpcoming")
+        options.candidates = args.contains("-PreviewCandidates")
+        options.genUI = args.contains("-PreviewGenUI")
+        options.viewCard = args.contains("-PreviewViewCard")
+        options.learning = args.contains("-PreviewLearning")
+        options.cordis = args.contains("-PreviewCordis")
+        options.connectorDetail = args.contains("-PreviewConnectorDetail")
+        options.imBridge = args.contains("-PreviewIMBridge")
+        options.phoneControl = args.contains("-PreviewPhoneControl")
+        options.botImport = args.contains("-PreviewBotImport")
+        options.computerUse = args.contains("-PreviewComputerUse")
         return .seeded(options)
     }
 
@@ -121,7 +153,7 @@ enum PreviewRunner {
         for bot in bots {
             mirror.apply(.bot(bot))
         }
-        for entry in demoEntries(bots: bots, now: now, approval: options.approval, ask: options.ask) {
+        for entry in demoEntries(bots: bots, now: now, approval: options.approval, ask: options.ask, genUI: options.genUI, viewCard: options.viewCard, learning: options.learning) {
             mirror.apply(.entry(entry))
         }
         if options.computers, let computer = demoComputer(), let hello = demoHello() {
@@ -141,7 +173,7 @@ enum PreviewRunner {
             store.selectedTab = 3
         } else if let page = options.page {
             store.selectedTab = page == "state" ? 2 : 1
-        } else if options.openChat || options.approval || options.ask || options.call {
+        } else if options.openChat || options.approval || options.ask || options.call || options.candidates || options.genUI || options.viewCard || options.learning {
             store.selectedTab = 0
             if let lead = bots.first {
                 store.navigationPath.append(lead.id)
@@ -252,7 +284,7 @@ enum PreviewRunner {
         """.utf8))
     }
 
-    private static func demoEntries(bots: [Bot], now: Int64, approval: Bool, ask: Bool) -> [Entry] {
+    private static func demoEntries(bots: [Bot], now: Int64, approval: Bool, ask: Bool, genUI: Bool = false, viewCard: Bool = false, learning: Bool = false) -> [Entry] {
         func entryJSON(_ json: String) -> Entry? {
             try? JSONDecoder().decode(Entry.self, from: Data(json.utf8))
         }
@@ -273,6 +305,31 @@ enum PreviewRunner {
         if ask {
             if let entry = entryJSON("""
             {"id":"demo-e4","seq":4,"botId":"\(lead)","rev":4,"kind":"permission","turn":2,"data":{"question":"登录测试修好后，要不要顺手把注册测试也跑一遍？","choices":["跑一遍","只跑登录测试","先不跑"],"recommended":0,"status":"pending"},"createdAt":\(now - 10_000),"updatedAt":\(now - 10_000)}
+            """) { entries.append(entry) }
+        }
+        if genUI {
+            let schema = """
+            {"componentName":"Page","children":[{"componentName":"TinyCard","props":{"title":"本周进度"},"children":[{"componentName":"Text","props":{"text":"登录测试已修复，跑了三遍都通过。"}}]},{"componentName":"TinyGrid","props":{"columns":[{"title":"任务","field":"task"},{"title":"状态","field":"status"}],"data":[{"task":"登录测试","status":"已完成"},{"task":"注册测试","status":"进行中"}]}}]}
+            """
+            let text = "这是本周的进度汇总：\n\n```schemaJson\n\(schema)\n```\n"
+            let dict: [String: Any] = [
+                "id": "demo-e5", "seq": 5, "botId": lead, "rev": 5, "kind": "agent", "turn": 3,
+                "data": ["text": text, "final": true, "author": lead],
+                "createdAt": now - 5_000, "updatedAt": now - 5_000,
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: dict),
+               let entry = try? JSONDecoder().decode(Entry.self, from: data) {
+                entries.append(entry)
+            }
+        }
+        if viewCard {
+            if let entry = entryJSON("""
+            {"id":"demo-e7","seq":7,"botId":"\(lead)","rev":7,"kind":"view","turn":2,"data":{"title":"本周花费汇总","status":"pending","view":{"id":"demo-view-1","title":"本周花费汇总","view":{"type":"stack","children":[{"type":"text","text":"本周三项开销合计 1,240 元，预算还剩 260 元。"},{"type":"metric","label":"合计","value":1240,"unit":"元"},{"type":"table","label":"花费明细","columns":["项目","金额"],"rows":[["餐饮",520],["交通",310],["日用",410]]},{"type":"chart","kind":"bar","label":"按项目","labels":["餐饮","交通","日用"],"series":[{"label":"金额","values":[520,310,410]}]},{"type":"metric","label":"预算结余","value":{"=":"budget - 1240"},"unit":"元"},{"type":"form","fields":[{"id":"budget","type":"number","label":"本周预算","value":1500},{"id":"food","type":"slider","label":"餐饮预算","value":520,"min":0,"max":1000,"step":10},{"id":"save","type":"options","label":"省钱方式","options":[{"label":"自己做饭","description":"每周约省 200 元","selected":true},{"label":"公交出行","description":"每周约省 80 元"}]},{"id":"note","type":"text","label":"备注","value":"","multiline":true},{"id":"lastweek","type":"text","label":"上周结余","value":"上周结余 120 元","readonly":true}]},{"type":"confirm","text":"确认按这份预算执行吗？"},{"type":"submit","label":"提交预算"}]}}},"createdAt":\(now - 5_000),"updatedAt":\(now - 5_000)}
+            """) { entries.append(entry) }
+        }
+        if learning {
+            if let entry = entryJSON("""
+            {"id":"demo-e8","seq":8,"botId":"\(lead)","rev":8,"kind":"learning","turn":2,"data":{"status":"pending","learning":{"id":"demo-learning-1","kind":"skill","title":"学到一个新技能：整理周报","summary":"本周的三次周报请求都用了同一套步骤，可以存成一个技能，下次直接调用。","target":"skills/weekly-report","preview":"# 整理周报\\n\\n1. 汇总本周已完成的事\\n2. 列出进行中的事\\n3. 写出下周计划"}},"createdAt":\(now - 2_000),"updatedAt":\(now - 2_000)}
             """) { entries.append(entry) }
         }
         return entries.compactMap { $0 }
