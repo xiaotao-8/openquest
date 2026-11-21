@@ -270,6 +270,13 @@ actor ChannelConnection {
         onDialEvent?("dial \(line)")
     }
 
+    /// Reports a post-dial channel event to the live diagnostics (nil in
+    /// normal use). Lines carry no secrets: only step names, ids, and
+    /// counts. The dial lines keep their "dial " prefix; these do not.
+    func report(_ line: String) {
+        onDialEvent?(line)
+    }
+
     /// "host:port" for a blob URL — no path, no secret, safe to log.
     private static func dialLabel(_ url: String) -> String {
         guard let parts = URLComponents(string: url), let host = parts.host else { return "?" }
@@ -342,6 +349,7 @@ actor ChannelConnection {
         }
         do {
             try await socket.sendText(helloText)
+            report("hs sent \(helloText.count) bytes")
         } catch {
             throw ChannelHandshakeError.failed
         }
@@ -401,6 +409,7 @@ actor ChannelConnection {
         guard let keys = ChannelCrypto.deriveKeys(transcriptHash: transcript, sharedSecret: sharedSecret) else {
             throw ChannelHandshakeError.failed
         }
+        report("welcome ok")
         return (FrameSealer(key: keys.d2h), FrameOpener(key: keys.h2d, limit: 16 * 1024 * 1024))
     }
 
@@ -415,6 +424,15 @@ actor ChannelConnection {
         self.connectedSince = Date()
         startWriter(socket: socket)
         startHeartbeat()
+        // The inbound loop MUST run concurrently with the hello call: the
+        // hello reply is dispatched by the loop, so awaiting the call
+        // before starting the loop deadlocks — Build #9 dialled ok every
+        // round while hello never arrived, because nothing was reading
+        // the socket while serve() awaited the hello reply.
+        let inbound = Task<ChannelOutcome, Never> { [weak self] in
+            guard let self else { return .retry(L("连接断开了。正在重连。")) }
+            return await self.inboundLoop(socket: socket)
+        }
         setState(.ready)
         if !isPairing {
             do {
@@ -423,25 +441,31 @@ actor ChannelConnection {
                     onHelloReply?(reply)
                 }
             } catch {
+                inbound.cancel()
                 return finishServe(outcome: .retry(L("连接已建立，但电脑没有回应。正在重试。")))
             }
         }
-        // Inbound loop: the actor stays reentrant at this await.
-        var outcome: ChannelOutcome = .retry(L("连接断开了。正在重连。"))
+        let outcome = await inbound.value
+        return finishServe(outcome: outcome)
+    }
+
+    /// Reads inbound frames until the socket closes. Runs as a concurrent
+    /// task so calls made while serving (notably the hello call) can be
+    /// dispatched while `serve()` awaits them.
+    private func inboundLoop(socket: URLSessionChannelSocket) async -> ChannelOutcome {
         while true {
             do {
                 let text = try await socket.receiveText()
                 lastReceived = Date()
                 try dispatchInbound(text)
             } catch let closed as SocketClosed {
-                outcome = self.outcome(forCloseCode: closed.code)
-                break
+                report("inbound closed \(closed.code)")
+                return outcome(forCloseCode: closed.code)
             } catch {
-                outcome = .retry(L("连接断开了。正在重连。"))
-                break
+                report("inbound error")
+                return .retry(L("连接断开了。正在重连。"))
             }
         }
-        return finishServe(outcome: outcome)
     }
 
     private func finishServe(outcome: ChannelOutcome) -> ChannelOutcome {

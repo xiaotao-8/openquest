@@ -46,6 +46,7 @@ extension ChannelConnection {
                 calls[id] = continuation
                 do {
                     try enqueueInner(payload)
+                    report("inner sent id=\(id) m=\(method)")
                 } catch {
                     calls.removeValue(forKey: id)
                     continuation.resume(throwing: HostCallError.unreachable)
@@ -136,6 +137,7 @@ extension ChannelConnection {
         let id = idNumber.uint32Value
         if let ok = inner["ok"] {
             guard let continuation = calls.removeValue(forKey: id) else { return }
+            report("inner reply id=\(id) ok")
             if let data = try? JSONSerialization.data(withJSONObject: ok) {
                 continuation.resume(returning: data)
             } else {
@@ -146,6 +148,7 @@ extension ChannelConnection {
         if let err = inner["err"] as? [String: Any] {
             guard let continuation = calls.removeValue(forKey: id) else { return }
             let code = err["code"] as? String
+            report("inner reply id=\(id) err \(code ?? "?")")
             let message = err["message"] as? String
             switch code {
             case "not_found":

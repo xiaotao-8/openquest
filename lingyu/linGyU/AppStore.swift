@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// The app's single store. Owns the connector, the persisted settings, and
@@ -49,6 +50,8 @@ final class AppStore: ObservableObject {
     /// even if start() never runs.
     let liveDiag = LiveDiag()
 
+    private var cancellables = Set<AnyCancellable>()
+
     /// True when this launch is (or was meant to be) a live preview run:
     /// either the mode parsed as live, or a `-PreviewPairing` argument is
     /// present in any form. The overlay shows in both cases so a parsing
@@ -66,6 +69,19 @@ final class AppStore: ObservableObject {
         reduceMotion = UserDefaults.standard.bool(forKey: "cn.lingyu.reduceMotion")
         appearance = UserDefaults.standard.string(forKey: "cn.lingyu.appearance") ?? "system"
         previewMode = PreviewMode.fromLaunchArguments()
+        // The UI observes only the store, but reads connector/mirror state
+        // through it (roster, chat, connection badge) — no view observes
+        // the connector or the mirror directly. Without forwarding, their
+        // changes never re-render anything: Build #8's live screenshots
+        // showed stale seeded bots in the roster while the diag card
+        // (which observes LiveDiag) already said bots=0, and the chat
+        // would likewise never show arriving messages.
+        connector.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
+        connector.mirror.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
         let args = ProcessInfo.processInfo.arguments
         let pairingArg = args.contains("-PreviewPairing") || args.contains { $0.hasPrefix("-PreviewPairing=") }
         liveDiag.record("init mode=\(previewMode) argc=\(args.count) pairingArg=\(pairingArg) paired=\(connector.isPaired)")
