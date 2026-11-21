@@ -1,3 +1,4 @@
+import Security
 import SwiftUI
 
 /// First-launch flow: Welcome → Install → Scan → Tabs (or Skip → Tabs).

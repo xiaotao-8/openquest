@@ -71,6 +71,14 @@ actor ChannelConnection {
     private var backoffAttempt = 0
     private var nextRequestId: UInt32 = 0
 
+    /// Allocates the next inner-RPC request id (§7). Isolated so the
+    /// InnerRPC extension in the other file can use it lawfully.
+    func allocateRequestId() -> UInt32 {
+        nextRequestId &+= 1
+        if nextRequestId == 0 { nextRequestId = 1 }
+        return nextRequestId
+    }
+
     var calls: [UInt32: CheckedContinuation<Data, Error>] = [:]
     var streams: [UInt32: AsyncThrowingStream<Data, Error>.Continuation] = [:]
 

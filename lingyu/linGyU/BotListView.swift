@@ -355,7 +355,7 @@ struct GroupAvatarView: View {
 
     var body: some View {
         let members = bot.members.prefix(4).compactMap { store.connector.mirror.bot(id: $0) }
-        let grid = Array(members) + Array(repeating: nil as Bot?, count: max(0, 4 - members.count))
+        let grid: [Bot?] = members.map(Optional.init) + Array(repeating: nil, count: max(0, 4 - members.count))
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .fill(Palette.bubbleAgent)

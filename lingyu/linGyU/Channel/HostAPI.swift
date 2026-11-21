@@ -262,8 +262,8 @@ struct HostAPI: Sendable {
 
     /// The events subscription, mapped to decoded `HostEvent`s. One per
     /// connection; resubscribe from the persisted `rev` on every reconnect.
-    func events(since: Int64) -> AsyncThrowingStream<HostEvent, Error> {
-        let raw = connection.stream(.events(since: since, client: "ios"))
+    func events(since: Int64) async -> AsyncThrowingStream<HostEvent, Error> {
+        let raw = await connection.stream(.events(since: since, client: "ios"))
         return AsyncThrowingStream { continuation in
             Task {
                 do {

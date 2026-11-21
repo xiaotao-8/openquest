@@ -21,9 +21,7 @@ extension ChannelConnection {
     // MARK: - Id allocation
 
     private func nextId() -> UInt32 {
-        nextRequestId &+= 1
-        if nextRequestId == 0 { nextRequestId = 1 }
-        return nextRequestId
+        allocateRequestId()
     }
 
     // MARK: - Call
@@ -38,11 +36,11 @@ extension ChannelConnection {
         guard calls.count < 32 else { throw HostCallError.tooLarge }
         let id = nextId()
         var payload = Data()
-        payload.append("{\"id\":\(id),\"m\":\"".utf8)
-        payload.append(method.utf8)
-        payload.append("\",\"b\":".utf8)
+        payload.append(contentsOf: "{\"id\":\(id),\"m\":\"".utf8)
+        payload.append(contentsOf: method.utf8)
+        payload.append(contentsOf: "\",\"b\":".utf8)
         payload.append(body ?? Data("{}".utf8))
-        payload.append("}".utf8)
+        payload.append(contentsOf: "}".utf8)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
                 calls[id] = continuation
@@ -96,16 +94,16 @@ extension ChannelConnection {
                 let id = self.nextId()
                 self.streams[id] = continuation
                 var payload = Data()
-                payload.append("{\"id\":\(id),\"sub\":\"".utf8)
+                payload.append(contentsOf: "{\"id\":\(id),\"sub\":\"".utf8)
                 switch request {
                 case .events(let since, let client):
-                    payload.append("events".utf8)
-                    payload.append("\",\"b\":{\"since\":\(since),\"client\":\"\(client)\"}".utf8)
+                    payload.append(contentsOf: "events".utf8)
+                    payload.append(contentsOf: "\",\"b\":{\"since\":\(since),\"client\":\"\(client)\"}".utf8)
                 case .term(let termId):
-                    payload.append("term".utf8)
-                    payload.append("\",\"b\":{\"term\":\"\(termId)\"}".utf8)
+                    payload.append(contentsOf: "term".utf8)
+                    payload.append(contentsOf: "\",\"b\":{\"term\":\"\(termId)\"}".utf8)
                 }
-                payload.append("}".utf8)
+                payload.append(contentsOf: "}".utf8)
                 do {
                     try self.enqueueInner(payload)
                 } catch {

@@ -40,7 +40,7 @@ final class EventMirror: ObservableObject {
             while !Task.isCancelled {
                 needsResync = false
                 do {
-                    let stream = api.events(since: rev)
+                    let stream = await api.events(since: rev)
                     for try await event in stream {
                         apply(event)
                         if needsResync || Task.isCancelled { break }
