@@ -493,7 +493,9 @@ private func extensionErrorText(_ error: Error) -> String {
 /// A disabled block: a title, a reason, and nothing to tap. Used
 /// wherever the host has no API for a tab, so the page never invents
 /// rows.
-private struct DisabledCard: View {
+/// A card explaining why something is unavailable, with the host-side
+/// reason. Shared by ExtensionsViews, CordisViews and PluginReportViews.
+struct DisabledCard: View {
     var title: String
     var detail: String
 
