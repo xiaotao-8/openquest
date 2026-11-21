@@ -486,7 +486,7 @@ struct ComputersView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var forgettingComputer: Computer?
-    @State private var showingCloudLoginInfo = false
+    @State private var showingSignIn = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -540,14 +540,19 @@ struct ComputersView: View {
                 },
             ]
         )
-        .codyncDialog(
-            isPresented: $showingCloudLoginInfo,
-            title: L("云电脑"),
-            message: L("云电脑需要登录账号后连接，后续版本支持。现在可以先用配对码加自己搭的电脑。"),
-            actions: [
-                CodyncDialogAction(title: L("知道了")) {},
-            ]
-        )
+        .codyncSheet(isPresented: $showingSignIn) {
+            SignInSheet()
+        }
+        .onAppear {
+            if store.account.isSignedIn {
+                Task { await store.refreshAccountCloud() }
+            }
+        }
+        .onChange(of: store.account.isSignedIn) { _, signedIn in
+            if signedIn {
+                Task { await store.refreshAccountCloud() }
+            }
+        }
     }
 
     /// One paired own computer: tap to make it current, forget on its own row.
@@ -589,9 +594,10 @@ struct ComputersView: View {
         }
     }
 
-    /// The account's cloud computers. Display only for now: a cloud
-    /// computer connects through the account sign-in, which lands later,
-    /// so no online state is claimed for it.
+    /// The account's cloud computers. Signed out, the pre-set display item
+    /// shows with an unknown state. Signed in, the list comes from the
+    /// account cloud: real online state, region and machine state — and no
+    /// bot count, because the cloud reports none.
     private var cloudSection: some View {
         CardSection(title: L("云电脑"), footer: L("一个账号最多可加 %d 台云电脑。", CloudComputer.accountLimit)) {
             ForEach(store.connector.cloudComputers) { cloud in
@@ -604,11 +610,12 @@ struct ComputersView: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundStyle(Palette.text)
                             Spacer()
-                            Text(L("未知"))
+                            let status = cloudStatus(cloud)
+                            Text(status.text)
                                 .font(.subheadline)
-                                .foregroundStyle(Palette.warning)
+                                .foregroundStyle(status.color)
                         }
-                        Text(L("%@ · %d 个智能体", cloud.region, cloud.botCount))
+                        Text(cloudSubtitle(cloud))
                             .font(.caption)
                             .foregroundStyle(Palette.secondary)
                     }
@@ -617,14 +624,39 @@ struct ComputersView: View {
                     Hairline()
                 }
             }
-            Hairline()
-            CardRow {
-                Button(L("登录账号")) {
-                    showingCloudLoginInfo = true
+            if !store.account.isSignedIn {
+                Hairline()
+                CardRow {
+                    Button(L("登录账号")) {
+                        showingSignIn = true
+                    }
+                    .foregroundStyle(Palette.text)
                 }
-                .foregroundStyle(Palette.text)
             }
         }
+    }
+
+    /// The cloud's own state words first (a sleeping machine is not
+    /// offline); otherwise the host's heartbeat; unknown when unfetched.
+    private func cloudStatus(_ cloud: CloudComputer) -> (text: String, color: Color) {
+        switch cloud.state {
+        case "starting": return (L("启动中"), Palette.warning)
+        case "stopped", "stopping": return (L("休眠"), Palette.warning)
+        case "failed": return (L("异常"), Palette.danger)
+        default: break
+        }
+        if cloud.online == true { return (L("在线"), Palette.secondary) }
+        if cloud.online == false { return (L("离线"), Palette.warning) }
+        return (L("未知"), Palette.warning)
+    }
+
+    /// Region, plus the bot count only for the pre-set display item that
+    /// carries one. Account computers have no bot count to show.
+    private func cloudSubtitle(_ cloud: CloudComputer) -> String {
+        if let botCount = cloud.botCount {
+            return L("%@ · %d 个智能体", cloud.region, botCount)
+        }
+        return cloud.region
     }
 
     private var connectionText: String {

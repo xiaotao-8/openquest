@@ -9,14 +9,22 @@ name: linGyU
 options:
   deploymentTarget:
     iOS: "26.0"
+packages:
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    exactVersion: 1.5.6
 targets:
   linGyU:
     type: application
     platform: iOS
     # Phase 1：只做主 App，不做 widget 扩展（小组件 Phase 3 再定）。
     sources: [linGyU]
+    dependencies:
+      - package: Clerk
+        product: ClerkKit
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: cn.lingyu
       INFOPLIST_FILE: linGyU/Info.plist
+      CODE_SIGN_ENTITLEMENTS: linGyU/linGyU.entitlements
       SWIFT_VERSION: "5.9"
       TARGETED_DEVICE_FAMILY: "1,2"

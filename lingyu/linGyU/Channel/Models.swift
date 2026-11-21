@@ -113,7 +113,15 @@ struct CloudComputer: Codable, Equatable, Sendable, Identifiable {
     var id: String
     var name: String
     var region: String
-    var botCount: Int
+    /// How many bots run on it — only the pre-set display item carries
+    /// one. The account cloud reports no bot count, so a computer fetched
+    /// from the account has nil here and no number is shown for it.
+    var botCount: Int?
+    /// Live state from the account cloud, when fetched: online is the
+    /// host's heartbeat, state is the cloud machine's state
+    /// (starting/running/stopping/stopped/failed). Nil means unknown.
+    var online: Bool?
+    var state: String?
 
     /// The account allows at most this many cloud computers.
     static let accountLimit = 3

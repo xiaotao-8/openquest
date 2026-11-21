@@ -79,6 +79,21 @@ final class HostConnector: ObservableObject {
         return true
     }
 
+    /// Replaces the cloud list with computers fetched from the account
+    /// (only cloud-hosted ones are shown here). Callers map the account
+    /// response into display records; no bot count is invented.
+    func updateCloudComputers(_ list: [CloudComputer]) {
+        cloudComputers = list
+        saveCloudComputers()
+    }
+
+    /// Drops account-fetched cloud computers and restores the pre-login
+    /// display item (unknown state). Used on sign-out and account deletion.
+    func resetCloudComputers() {
+        cloudComputers = Self.seededCloudComputers
+        saveCloudComputers()
+    }
+
     // MARK: - Normal mode
 
     func connect(computer: Computer, identity: any SigningIdentity) async {
@@ -345,6 +360,13 @@ final class HostConnector: ObservableObject {
         }
     }
 
+    /// The pre-login display item: the account's one cloud computer
+    /// (United States, 1 bot). Its state is unknown until the account
+    /// sign-in lands — never shown as online.
+    private static let seededCloudComputers = [
+        CloudComputer(id: "cloud-1", name: "云电脑", region: "美国", botCount: 1)
+    ]
+
     /// Loads the stored cloud list, seeding the account's one cloud
     /// computer (United States, 1 bot) the first time. Its state is
     /// unknown until the account sign-in lands — never shown as online.
@@ -353,7 +375,7 @@ final class HostConnector: ObservableObject {
            let list = try? JSONDecoder().decode([CloudComputer].self, from: data) {
             return list
         }
-        let seeded = [CloudComputer(id: "cloud-1", name: "云电脑", region: "美国", botCount: 1)]
+        let seeded = Self.seededCloudComputers
         if let data = try? JSONEncoder().encode(seeded) {
             UserDefaults.standard.set(data, forKey: cloudComputersKey)
         }

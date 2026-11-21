@@ -43,6 +43,7 @@ struct SettingsView: View {
     @State private var showingLog = false
     @State private var showingAnalyticsInfo = false
     @State private var showingStartOverDialog = false
+    @State private var showingDeleteDialog = false
     @State private var showingBypassDialog = false
     @State private var notificationStatus = ""
     @State private var iconBadge = false
@@ -56,6 +57,7 @@ struct SettingsView: View {
                     .foregroundStyle(Palette.text)
                     .padding(.top, 20)
                 profileSection
+                accountSection
                 appearanceSection
                 languageSection
                 thinkingSection
@@ -82,9 +84,30 @@ struct SettingsView: View {
         .codyncSheet(isPresented: $showingLog) {
             LogView()
         }
+        .codyncSheet(isPresented: $store.showingSignIn) {
+            SignInSheet()
+        }
         .codyncSheet(isPresented: $showingAnalyticsInfo) {
             AnalyticsInfoView()
         }
+        .codyncDialog(
+            isPresented: $showingDeleteDialog,
+            title: L("删除账号？"),
+            message: L("删除账号后，账号会被永久删除，云电脑列表会回到未登录时的显示。这部手机上已配对的电脑不受影响。"),
+            actions: [
+                CodyncDialogAction(title: L("取消")) {},
+                CodyncDialogAction(title: L("删除账号"), isDestructive: true) {
+                    Task { @MainActor in
+                        do {
+                            try await store.account.deleteUser()
+                            store.connector.resetCloudComputers()
+                        } catch {
+                            store.account.errorMessage = L("删除失败，请重试。")
+                        }
+                    }
+                },
+            ]
+        )
         .codyncDialog(
             isPresented: $showingStartOverDialog,
             title: L("重新开始？"),
@@ -92,8 +115,12 @@ struct SettingsView: View {
             actions: [
                 CodyncDialogAction(title: L("取消")) {},
                 CodyncDialogAction(title: L("重新开始"), isDestructive: true) {
-                    store.connector.forgetAllComputers()
-                    store.showingWelcome = true
+                    Task { @MainActor in
+                        await store.account.signOutAll()
+                        store.connector.forgetAllComputers()
+                        store.connector.resetCloudComputers()
+                        store.showingWelcome = true
+                    }
                 },
             ]
         )
@@ -159,6 +186,81 @@ struct SettingsView: View {
     private var displayName: String {
         let trimmed = myName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? L("我") : trimmed
+    }
+
+    // MARK: - Account
+
+    /// The account sign-in. Signed out: one button opens the sign-in sheet.
+    /// Signed in: the account's email (and avatar, when the account has an
+    /// https one) with sign-out and delete-account actions. Signing out
+    /// keeps the local pairing and device key; deleting the account only
+    /// clears the account's own data on this phone.
+    private var accountSection: some View {
+        CardSection(title: L("账号")) {
+            if store.account.isSignedIn {
+                CardRow {
+                    HStack(spacing: 14) {
+                        accountAvatar
+                        Text(store.account.email ?? "")
+                            .font(.body)
+                            .foregroundStyle(Palette.text)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Hairline()
+                CardRow {
+                    Button(L("登出"), role: .destructive) {
+                        Task { @MainActor in await store.signOutAccount() }
+                    }
+                    .foregroundStyle(Palette.danger)
+                }
+                Hairline()
+                CardRow {
+                    Button(L("删除账号"), role: .destructive) {
+                        showingDeleteDialog = true
+                    }
+                    .foregroundStyle(Palette.danger)
+                }
+            } else {
+                CardRow {
+                    Button(L("登录账号")) {
+                        store.showingSignIn = true
+                    }
+                    .foregroundStyle(Palette.text)
+                }
+            }
+            if let message = store.account.errorMessage, store.account.isSignedIn {
+                Hairline()
+                CardRow {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.danger)
+                }
+            }
+        }
+    }
+
+    private var accountAvatar: some View {
+        Group {
+            if let url = store.account.avatarURL {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Palette.surface
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(Circle())
+            } else {
+                ZStack {
+                    Circle().fill(Palette.surface)
+                    Text(String((store.account.email ?? "?").prefix(1)).uppercased())
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(Palette.secondary)
+                }
+                .frame(width: 64, height: 64)
+            }
+        }
     }
 
     // MARK: - Appearance

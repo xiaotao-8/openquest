@@ -298,6 +298,10 @@ private struct ScanPage: View {
     @State private var pairing = false
     @State private var pasted = ""
     @State private var error: String?
+    /// The last error was a bare short code without a sign-in: offer the
+    /// sign-in sheet next to it.
+    @State private var shortCodeNeedsSignIn = false
+    @State private var showingSignIn = false
     /// The phone couldn't reach the computer (not a refusal from it): the network hint helps.
     @State private var unreachable = false
     /// Bumped after a failed pair so the scanner starts looking again.
@@ -366,6 +370,10 @@ private struct ScanPage: View {
                 if let error {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        if shortCodeNeedsSignIn {
+                            Button(L("登录账号")) { showingSignIn = true }
+                                .font(.footnote.weight(.medium))
+                        }
                         // The usual cause: the phone has no road to the computer yet.
                         if unreachable {
                             Label(L("检查这台 iPhone 和电脑是否在同一 Wi-Fi，或都开了 Tailscale。"), systemImage: "wifi.exclamationmark")
@@ -397,6 +405,9 @@ private struct ScanPage: View {
             .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
+        .codyncSheet(isPresented: $showingSignIn) {
+            SignInSheet()
+        }
         // Coming back from the Tailscale app: show whether it's connected now.
         .onChange(of: scenePhase) { _, phase in if phase == .active { tailscaleOn = Tailscale.isConnected } }
     }
@@ -465,16 +476,47 @@ private struct ScanPage: View {
         // A short code works once: Return pressed again while it resolves mustn't spend it twice.
         guard !pairing else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A bare short code cannot be resolved by the app alone: looking
-        // it up needs the account sign-in, which this version does not
-        // have yet. Say so plainly, with the working path, instead of a
-        // bare refusal.
-        if PairingLink.normaliseShortCode(trimmed) != nil {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                error = L("只输配对码还配不上：配对码要登录账号才能查到完整信息。请扫电脑上的二维码，或粘贴电脑显示的完整链接。")
-                unreachable = false
+        // A bare short code resolves through the account cloud. Signed out,
+        // say so plainly and offer the sign-in, instead of a bare refusal.
+        if let code = PairingLink.normaliseShortCode(trimmed) {
+            guard store.account.isSignedIn, let cloud = store.account.cloudClient() else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    error = L("只输配对码还配不上：配对码要登录账号才能查到完整信息。请扫电脑上的二维码，或粘贴电脑显示的完整链接。")
+                    shortCodeNeedsSignIn = true
+                    unreachable = false
+                }
+                attempt += 1
+                return
             }
-            attempt += 1
+            withAnimation(.easeInOut(duration: 0.2)) {
+                error = nil
+                shortCodeNeedsSignIn = false
+            }
+            pairing = true
+            Task {
+                defer { pairing = false }
+                do {
+                    let linkText = try await cloud.pairingLink(code: code)
+                    guard case .success(let link) = PairingLink.parse(linkText) else {
+                        throw PairingProblem.invalid
+                    }
+                    try await runPairing(link: link)
+                } catch {
+                    if let cloudError = error as? CloudError, cloudError.isNotFound {
+                        self.error = L("配对码过期或已用，请重新出示")
+                    } else if let cloudError = error as? CloudError {
+                        self.error = cloudError.localizedDescription
+                    } else if error is PairingProblem {
+                        self.error = L("这个链接不对。请重新复制电脑上显示的完整链接。")
+                    } else if case .failed(let message) = store.connector.pairingState {
+                        self.error = message
+                    } else {
+                        self.error = L("配对失败。请重试。")
+                    }
+                    unreachable = false
+                    attempt += 1
+                }
+            }
             return
         }
         let parsed = PairingLink.parse(trimmed)
@@ -485,19 +527,21 @@ private struct ScanPage: View {
                 } else {
                     error = L("这个链接不对。请重新复制电脑上显示的完整链接。")
                 }
+                shortCodeNeedsSignIn = false
                 unreachable = false
             }
             attempt += 1
             return
         }
-        withAnimation(.easeInOut(duration: 0.2)) { error = nil }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            error = nil
+            shortCodeNeedsSignIn = false
+        }
         pairing = true
-        let deviceName = UIDevice.current.name
         Task {
             defer { pairing = false }
             do {
-                _ = try await store.connector.pair(link: link, deviceName: deviceName)
-                pasted = ""
+                try await runPairing(link: link)
             } catch {
                 if case .failed(let message) = store.connector.pairingState {
                     self.error = message
@@ -513,6 +557,15 @@ private struct ScanPage: View {
                 attempt += 1
             }
         }
+    }
+
+    /// Runs the pairing flow for a validated link: the computer approves
+    /// with the 6-digit check code, then normal mode connects. Throws the
+    /// host's message on failure.
+    private func runPairing(link: PairingLink) async throws {
+        let deviceName = UIDevice.current.name
+        _ = try await store.connector.pair(link: link, deviceName: deviceName)
+        pasted = ""
     }
 }
 

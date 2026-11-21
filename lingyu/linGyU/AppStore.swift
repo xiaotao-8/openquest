@@ -7,6 +7,11 @@ import SwiftUI
 @MainActor
 final class AppStore: ObservableObject {
     let connector = HostConnector()
+    /// The account session (Clerk). Owns sign-in/out and the cloud client.
+    let account = AccountStore()
+
+    /// Whether the sign-in sheet is showing (from Settings).
+    @Published var showingSignIn = false
 
     // MARK: - Settings (persisted)
 
@@ -91,6 +96,9 @@ final class AppStore: ObservableObject {
         connector.mirror.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }.store(in: &cancellables)
+        account.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }.store(in: &cancellables)
         let args = ProcessInfo.processInfo.arguments
         let pairingArg = args.contains("-PreviewPairing") || args.contains { $0.hasPrefix("-PreviewPairing=") }
         liveDiag.record("init mode=\(previewMode) argc=\(args.count) pairingArg=\(pairingArg) paired=\(connector.isPaired)")
@@ -110,6 +118,15 @@ final class AppStore: ObservableObject {
 
     func start() {
         liveDiag.record("start() mode=\(previewMode)")
+        // Signed in already (session restored): refresh the account's
+        // cloud computers in the background. Failures are silent — a
+        // token that isn't fresh yet heals on the next refresh.
+        Task {
+            _ = await account.waitUntilReady(timeout: .seconds(10))
+            if account.isSignedIn {
+                await refreshAccountCloud()
+            }
+        }
         switch previewMode {
         case .none:
             if connector.isPaired {
@@ -142,5 +159,50 @@ final class AppStore: ObservableObject {
 
     func setLanguage(_ code: String) {
         language = code
+    }
+
+    // MARK: - Account cloud
+
+    /// Refreshes the account's cloud computers from the cloud and replaces
+    /// the display list with the real ones (online state, region, machine
+    /// state). No bot count is reported by the cloud, so none is shown.
+    /// Silent on failure: 401/429/5xx are transient and heal on the next
+    /// refresh; the user is never bounced to the sign-in page.
+    func refreshAccountCloud() async {
+        guard let cloud = account.cloudClient() else { return }
+        do {
+            async let computers = cloud.computers()
+            async let status = cloud.cloudStatus()
+            let (list, cloudStatus) = try await (computers, status)
+            let states = Dictionary(
+                uniqueKeysWithValues: (cloudStatus.cloudComputers ?? []).compactMap { machine in
+                    machine.computerId.map { ($0, machine.state) }
+                }
+            )
+            let display = list
+                .filter { $0.cloud != nil }
+                .map { computer in
+                    CloudComputer(
+                        id: computer.computerId,
+                        name: computer.name,
+                        region: computer.cloud?.region ?? "",
+                        botCount: nil,
+                        online: computer.online,
+                        state: states[computer.computerId] ?? computer.cloud?.state
+                    )
+                }
+            connector.updateCloudComputers(display)
+        } catch {
+            // Transient (or signed out mid-flight): keep the last list.
+        }
+    }
+
+    /// Signs out of the account and restores the pre-login cloud display.
+    /// Local pairing and device keys are untouched.
+    func signOutAccount() async {
+        await account.signOut()
+        if !account.isSignedIn {
+            connector.resetCloudComputers()
+        }
     }
 }
