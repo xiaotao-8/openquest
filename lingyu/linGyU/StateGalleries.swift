@@ -31,6 +31,7 @@ struct BotActivityPresentation: Hashable, Sendable {
         case "needsInput": .needsInput
         case "idle", "completed": .completed
         case "error": .failed
+        case "onCall": .onCall
         default: .waiting
         }
         self.phase = isStale && (phase == .working || phase == .needsInput || phase == .sending) ? .stale : phase
@@ -1119,6 +1120,7 @@ struct ActivityGalleryView: View {
         case .completed: "idle"
         case .failed: "error"
         case .waiting: "unknown"
+        case .onCall: "onCall"
         }
         return .init(status: status, activity: phase == .needsInput ? L("看看提议的改动。") : L("正在跑测试。"),
                      isStale: phase == .stale)
