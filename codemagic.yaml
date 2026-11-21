@@ -282,6 +282,9 @@ workflows:
             -destination "id=$SIM_UDID" -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO
           APP=$(find build-sim/Build/Products -name "linGyU.app" -maxdepth 3 | head -1)
           xcrun simctl install "$SIM_UDID" "$APP"
+          # Index 20: PreviewCall 首次触发麦克风授权框，之后 6 张截图全被
+          # 该系统框盖住。预先授权，截图里不再弹框。
+          xcrun simctl privacy grant microphone "$SIM_UDID" cn.lingyu || true
           # DIAG (Build #15/#16: app exits within seconds of every launch,
           # screenshots all home screen). Launch with console attached so a
           # Swift fatal error / dyld failure is captured, then dump the
