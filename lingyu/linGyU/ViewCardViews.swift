@@ -403,7 +403,10 @@ struct DeepViewBody: View {
         let fallback = Set((node.options ?? []).filter { $0.selected }.map { $0.id })
         return Binding(
             get: {
-                Set(values.wrappedValue[key]?.asArray?.compactMap { $0.asString } ?? fallback)
+                if let arr = values.wrappedValue[key]?.asArray {
+                    return Set(arr.compactMap { $0.asString })
+                }
+                return fallback
             },
             set: { values.wrappedValue[key] = .array($0.sorted().map { JSONValue.string($0) }) }
         )
@@ -491,7 +494,10 @@ struct FormFieldRow: View {
         let fallback = Set((field.options ?? []).filter { $0.selected }.map { $0.id })
         return Binding(
             get: {
-                Set(values.wrappedValue[field.id]?.asArray?.compactMap { $0.asString } ?? fallback)
+                if let arr = values.wrappedValue[field.id]?.asArray {
+                    return Set(arr.compactMap { $0.asString })
+                }
+                return fallback
             },
             set: { values.wrappedValue[field.id] = .array($0.sorted().map { JSONValue.string($0) }) }
         )
