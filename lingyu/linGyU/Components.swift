@@ -413,20 +413,33 @@ struct CodyncDialogView: View {
                     .foregroundStyle(Palette.secondary)
                 VStack(spacing: 8) {
                     ForEach(actions) { item in
-                        Button {
-                            onDismiss()
-                            item.action()
-                        } label: {
-                            Text(item.title)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(item.isDestructive ? .danger : .secondary)
+                        dialogActionButton(item)
                     }
                 }
             }
             .padding(20)
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 16))
             .padding(.horizontal, 24)
+        }
+    }
+
+    /// The two branches must stay separate: `.danger` is DangerButtonStyle and
+    /// `.secondary` is SecondaryButtonStyle, and a ternary over two different
+    /// concrete styles does not type-check (Build #5: PrimitiveButtonStyle
+    /// has no member 'danger'/'secondary').
+    @ViewBuilder
+    private func dialogActionButton(_ item: CodyncDialogAction) -> some View {
+        let button = Button {
+            onDismiss()
+            item.action()
+        } label: {
+            Text(item.title)
+                .frame(maxWidth: .infinity)
+        }
+        if item.isDestructive {
+            button.buttonStyle(.danger)
+        } else {
+            button.buttonStyle(.secondary)
         }
     }
 }
